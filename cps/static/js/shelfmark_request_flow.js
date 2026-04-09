@@ -263,8 +263,8 @@
       return {
         kind: 'cross_origin',
         bannerLevel: 'alert-warning',
-        bannerText: 'Direct Request in Shelfmark needs a same-origin or reverse-proxied Shelfmark deployment. Open in Shelfmark remains the safe fallback for this setup.',
-        actionState: buildOpenState('This CWA page and Shelfmark are on different browser origins. Direct browser requests are not reliable across origins, so opening Shelfmark is the safe fallback.')
+        bannerText: 'Direct Request in Shelfmark needs a same-origin or reverse-proxied browser URL for Shelfmark. Open in Shelfmark remains the safe fallback for this setup.',
+        actionState: buildOpenState('This CWA page and the browser-facing Shelfmark URL are on different origins. Configure Shelfmark Browser URL to the same-origin or reverse-proxied Shelfmark address if you want direct request buttons here.')
       };
     }
 

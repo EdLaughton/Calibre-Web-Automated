@@ -103,6 +103,8 @@ class ShelfmarkResultView:
 @dataclass(frozen=True)
 class ShelfmarkResultSummary:
     total_results: int = 0
+    total_available: int = 0
+    has_more: bool = False
     already_in_library: int = 0
     external_candidates: int = 0
     library_match_unavailable: int = 0
@@ -143,6 +145,10 @@ class ShelfmarkSearchSection:
     enabled: bool
     available: bool
     query: str
+    page: int = DEFAULT_SHELFMARK_PAGE
+    has_more: bool = False
+    total_available: int = 0
+    open_search_url: str | None = None
     query_label: str | None = None
     context_hint: str | None = None
     message: str | None = None
@@ -156,6 +162,10 @@ class ShelfmarkSearchSection:
             "enabled": self.enabled,
             "available": self.available,
             "query": self.query,
+            "page": self.page,
+            "has_more": self.has_more,
+            "total_available": self.total_available,
+            "open_search_url": self.open_search_url,
             "query_label": self.query_label,
             "context_hint": self.context_hint,
             "message": self.message,
@@ -170,19 +180,30 @@ class ShelfmarkSearchSection:
 class ShelfmarkClientConfig:
     enabled: bool
     base_url: str
+    browser_base_url: str
     username: str | None
     password: str | None
     timeout_seconds: int = DEFAULT_SHELFMARK_TIMEOUT_SECONDS
 
 
+@dataclass(frozen=True)
+class ShelfmarkSearchResponse:
+    books: tuple[dict[str, Any], ...]
+    page: int = DEFAULT_SHELFMARK_PAGE
+    total_found: int = 0
+    has_more: bool = False
+
+
 def get_shelfmark_client_config() -> ShelfmarkClientConfig:
     base_url = str(getattr(config, "config_shelfmark_url", "") or "").strip()
+    browser_base_url = str(getattr(config, "config_shelfmark_browser_url", "") or "").strip() or base_url
     username = str(getattr(config, "config_shelfmark_username", "") or "").strip() or None
     password = str(getattr(config, "config_shelfmark_password_e", "") or "").strip() or None
     enabled = bool(getattr(config, "config_shelfmark_search", False) and base_url)
     return ShelfmarkClientConfig(
         enabled=enabled,
         base_url=base_url,
+        browser_base_url=browser_base_url,
         username=username,
         password=password,
     )
@@ -287,6 +308,22 @@ def build_shelfmark_open_url(
         params["title"] = title
     if primary_author:
         params["author"] = primary_author
+    return _with_query(_join_base_url(base_url, "/"), params)
+
+
+def build_shelfmark_search_url(
+    base_url: str,
+    *,
+    query: str,
+    content_type: str = SHELFMARK_CONTENT_TYPE,
+    page: int = DEFAULT_SHELFMARK_PAGE,
+) -> str:
+    params = {
+        "content_type": content_type,
+        "sort": DEFAULT_SHELFMARK_SORT,
+        "page": str(page),
+        "query": query,
+    }
     return _with_query(_join_base_url(base_url, "/"), params)
 
 
@@ -537,7 +574,7 @@ def build_shelfmark_result_view(
     *,
     library_match: ShelfmarkLibraryMatch | None,
     detail_url: str | None,
-    shelfmark_base_url: str,
+    shelfmark_browser_base_url: str,
     probe_state: ShelfmarkProbeState | None = None,
 ) -> ShelfmarkResultView:
     title = _resolve_shelfmark_title(book) or _("Unknown title")
@@ -568,7 +605,7 @@ def build_shelfmark_result_view(
         title=title,
         subtitle=_normalize_text(book.get("subtitle")),
         authors=authors,
-        cover_url=_normalize_shelfmark_cover_url(shelfmark_base_url, book.get("cover_url")),
+        cover_url=_normalize_shelfmark_cover_url(shelfmark_browser_base_url, book.get("cover_url")),
         description=_normalize_text(book.get("description")),
         publish_year=_normalize_int(book.get("publish_year")),
         source_url=_normalize_text(book.get("source_url")),
@@ -579,9 +616,9 @@ def build_shelfmark_result_view(
         library_book_title=library_match.title if library_match is not None else None,
         library_book_url=library_book_url,
         detail_url=detail_url,
-        shelfmark_base_url=shelfmark_base_url,
+        shelfmark_base_url=shelfmark_browser_base_url,
         shelfmark_open_url=build_shelfmark_open_url(
-            shelfmark_base_url,
+            shelfmark_browser_base_url,
             title=title,
             authors=authors,
             hardcover_id=hardcover_id,
@@ -592,7 +629,12 @@ def build_shelfmark_result_view(
     )
 
 
-def summarize_shelfmark_results(results: Sequence[ShelfmarkResultView]) -> ShelfmarkResultSummary:
+def summarize_shelfmark_results(
+    results: Sequence[ShelfmarkResultView],
+    *,
+    total_available: int | None = None,
+    has_more: bool = False,
+) -> ShelfmarkResultSummary:
     total_results = len(results)
     already_in_library = sum(1 for result in results if result.library_state.key == "already_in_library")
     library_match_unavailable = sum(
@@ -601,6 +643,8 @@ def summarize_shelfmark_results(results: Sequence[ShelfmarkResultView]) -> Shelf
     external_candidates = total_results - already_in_library - library_match_unavailable
     return ShelfmarkResultSummary(
         total_results=total_results,
+        total_available=max(total_results, int(total_available or 0)),
+        has_more=bool(has_more),
         already_in_library=already_in_library,
         external_candidates=external_candidates,
         library_match_unavailable=library_match_unavailable,
@@ -664,6 +708,10 @@ def search_shelfmark_results(
             enabled=True,
             available=True,
             query="",
+            page=DEFAULT_SHELFMARK_PAGE,
+            has_more=False,
+            total_available=0,
+            open_search_url=build_shelfmark_search_url(config_data.browser_base_url, query="") if config_data.browser_base_url else None,
             query_label=query_label,
             context_hint=context_hint,
             message=empty_message,
@@ -675,7 +723,8 @@ def search_shelfmark_results(
 
     client = ShelfmarkClient(config_data)
     try:
-        books = client.search_books(normalized_query)
+        search_response = client.search_books(normalized_query)
+        books = search_response.books
         hardcover_ids = [value for value in (_extract_hardcover_id(book) for book in books) if value]
         library_matches = lookup_visible_library_matches(hardcover_ids)
         results = tuple(
@@ -683,15 +732,27 @@ def search_shelfmark_results(
                 book,
                 library_match=library_matches.get(_extract_hardcover_id(book) or ""),
                 detail_url=detail_url_builder(book),
-                shelfmark_base_url=config_data.base_url,
+                shelfmark_browser_base_url=config_data.browser_base_url,
             )
             for book in books
         )
-        summary = summarize_shelfmark_results(results)
+        summary = summarize_shelfmark_results(
+            results,
+            total_available=search_response.total_found,
+            has_more=search_response.has_more,
+        )
         return ShelfmarkSearchSection(
             enabled=True,
             available=True,
             query=normalized_query,
+            page=search_response.page,
+            has_more=search_response.has_more,
+            total_available=summary.total_available,
+            open_search_url=build_shelfmark_search_url(
+                config_data.browser_base_url,
+                query=normalized_query,
+                page=search_response.page,
+            ),
             query_label=query_label,
             context_hint=context_hint,
             results=results,
@@ -732,7 +793,7 @@ def fetch_shelfmark_detail(
         book,
         library_match=library_match,
         detail_url=detail_url,
-        shelfmark_base_url=config_data.base_url,
+        shelfmark_browser_base_url=config_data.browser_base_url,
         probe_state=probe_state,
     )
 
@@ -750,7 +811,7 @@ class ShelfmarkClient:
         limit: int = DEFAULT_SHELFMARK_LIMIT,
         provider: str = SHELFMARK_METADATA_PROVIDER,
         content_type: str = SHELFMARK_CONTENT_TYPE,
-    ) -> list[dict[str, Any]]:
+    ) -> ShelfmarkSearchResponse:
         self._ensure_authenticated()
         response = self._perform_request(
             "get",
@@ -777,7 +838,13 @@ class ShelfmarkClient:
             raise ShelfmarkIntegrationError(
                 _("Shelfmark returned an unexpected metadata search response. Expected a 'books' list.")
             )
-        return [book for book in books if isinstance(book, dict)]
+        normalized_books = tuple(book for book in books if isinstance(book, dict))
+        return ShelfmarkSearchResponse(
+            books=normalized_books,
+            page=_normalize_int(payload.get("page")) or DEFAULT_SHELFMARK_PAGE,
+            total_found=_normalize_int(payload.get("total_found")) or len(normalized_books),
+            has_more=bool(payload.get("has_more")),
+        )
 
     def fetch_book(self, provider: str, provider_id: str) -> dict[str, Any]:
         self._ensure_authenticated()

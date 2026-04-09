@@ -277,12 +277,18 @@ def _base_context():
             "enabled": True,
             "available": True,
             "query": "Dune",
+            "page": 1,
+            "has_more": True,
+            "total_available": 895,
+            "open_search_url": "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&page=1&query=Dune",
             "query_label": "External lookup query",
             "context_hint": "Duplicate awareness remains exact hardcover-id matching only.",
             "message": None,
             "message_level": "info",
             "summary": {
                 "total_results": 3,
+                "total_available": 895,
+                "has_more": True,
                 "already_in_library": 1,
                 "external_candidates": 1,
                 "library_match_unavailable": 1,
@@ -336,7 +342,10 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert html.index("Library Results") < html.index("Shelfmark External Results")
     assert 'class="shelfmark-external-shell"' in html
     assert "1 book" in html
-    assert "3 matches" in html
+    assert "Showing 3 of 895" in html
+    assert "CWA is previewing the first Shelfmark page here." in html
+    assert "See more in Shelfmark" in html
+    assert 'href="https://library.example.com/shelfmark/?content_type=ebook&amp;sort=relevance&amp;page=1&amp;query=Dune"' in html
     assert "shelfmark-section-pill" not in html
     assert "Already in Your Library" in html
     assert "External Candidates" in html
@@ -377,12 +386,15 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
 
     assert "Back to search results" in html
     assert 'href="/search?query=Dune"' in html
-    assert "Already in library via exact Hardcover ID match" in html
+    assert "Already in your library via an exact Hardcover ID match." in html
     assert "Existing CWA book" in html
     assert 'href="/book/7"' in html
     assert "Open existing CWA book" in html
     assert 'class="discover shelfmark-search-page shelfmark-detail-page"' in html
     assert 'class="shelfmark-detail-page__shell"' in html
+    assert 'class="shelfmark-detail-layout"' in html
+    assert 'class="shelfmark-detail-cover-card"' in html
+    assert 'class="shelfmark-detail-card shelfmark-detail-card--hero shelfmark-detail-card--success"' in html
     assert html.count("Open in Shelfmark") == 1
     assert 'target="_blank"' in html
 
@@ -392,8 +404,12 @@ def test_search_template_renders_intentional_zero_results_state():
     context = _base_context()
     context["shelfmark_section"] = {
         **context["shelfmark_section"],
+        "has_more": False,
+        "total_available": 0,
         "summary": {
             "total_results": 0,
+            "total_available": 0,
+            "has_more": False,
             "already_in_library": 0,
             "external_candidates": 0,
             "library_match_unavailable": 0,
@@ -413,3 +429,4 @@ def test_search_template_renders_intentional_zero_results_state():
     assert "No matches" in html
     assert "External lookup query" in html
     assert "<code>Dune</code>" in html
+    assert "Open this search in Shelfmark" in html

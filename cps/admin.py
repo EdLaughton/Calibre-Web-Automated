@@ -2356,6 +2356,7 @@ def _configuration_update_helper():
         # Shelfmark external search configuration
         _config_checkbox(to_save, "config_shelfmark_search")
         _config_string(to_save, "config_shelfmark_url")
+        _config_string(to_save, "config_shelfmark_browser_url")
         _config_string(to_save, "config_shelfmark_username")
         if to_save.get("config_shelfmark_password_e", ""):
             _config_string(to_save, "config_shelfmark_password_e")

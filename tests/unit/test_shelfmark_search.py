@@ -43,6 +43,7 @@ def shelfmark_module(monkeypatch):
     cps_module.config = types.SimpleNamespace(
         config_shelfmark_search=False,
         config_shelfmark_url="",
+        config_shelfmark_browser_url="",
         config_shelfmark_username="",
         config_shelfmark_password_e="",
     )
@@ -289,7 +290,7 @@ def test_build_result_view_links_existing_library_book(shelfmark_module):
             book,
             library_match=library_match,
             detail_url="/external/321",
-            shelfmark_base_url="https://shelfmark.example.com",
+            shelfmark_browser_base_url="https://shelfmark.example.com",
         )
 
     assert result.already_in_library is True
@@ -309,7 +310,7 @@ def test_build_result_view_normalizes_relative_shelfmark_cover_url(shelfmark_mod
         },
         library_match=None,
         detail_url="/external/222",
-        shelfmark_base_url="https://library.example.com/shelfmark",
+        shelfmark_browser_base_url="https://library.example.com/shelfmark",
     )
 
     assert result.cover_url == (
@@ -381,7 +382,12 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
     ]
 
     fake_client = mock.Mock()
-    fake_client.search_books.return_value = books
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=tuple(books),
+        page=1,
+        total_found=895,
+        has_more=True,
+    )
 
     with mock.patch.object(
         shelfmark_module,
@@ -389,6 +395,7 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
         return_value=shelfmark_module.ShelfmarkClientConfig(
             enabled=True,
             base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
             username=None,
             password=None,
         ),
@@ -412,9 +419,14 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
     assert section.results[0].already_in_library is True
     assert section.results[0].detail_url == "/external/dune"
     assert section.summary.total_results == 3
+    assert section.summary.total_available == 895
+    assert section.summary.has_more is True
     assert section.summary.already_in_library == 1
     assert section.summary.external_candidates == 1
     assert section.summary.library_match_unavailable == 1
+    assert section.total_available == 895
+    assert section.has_more is True
+    assert section.open_search_url == "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&page=1&query=dune"
     assert [group.key for group in section.groups] == [
         "already_in_library",
         "external_candidate",
@@ -513,6 +525,7 @@ def test_build_validator_trusts_exact_private_shelfmark_base_url(shelfmark_modul
     config_data = shelfmark_module.ShelfmarkClientConfig(
         enabled=True,
         base_url="http://192.168.0.87:8084",
+        browser_base_url="https://library.example.com/shelfmark",
         username=None,
         password=None,
     )
@@ -542,6 +555,7 @@ def test_create_session_scopes_validator_to_configured_base_url(shelfmark_module
     config_data = shelfmark_module.ShelfmarkClientConfig(
         enabled=True,
         base_url="http://192.168.0.87:8084",
+        browser_base_url="https://library.example.com/shelfmark",
         username=None,
         password=None,
     )
@@ -551,10 +565,23 @@ def test_create_session_scopes_validator_to_configured_base_url(shelfmark_module
     assert "validator" in calls[0]
 
 
+def test_get_client_config_uses_optional_browser_url_for_browser_actions(shelfmark_module):
+    shelfmark_module.config.config_shelfmark_search = True
+    shelfmark_module.config.config_shelfmark_url = "http://192.168.0.87:8084"
+    shelfmark_module.config.config_shelfmark_browser_url = "https://library.example.com/shelfmark"
+
+    config_data = shelfmark_module.get_shelfmark_client_config()
+
+    assert config_data.enabled is True
+    assert config_data.base_url == "http://192.168.0.87:8084"
+    assert config_data.browser_base_url == "https://library.example.com/shelfmark"
+
+
 def test_client_reports_blocked_untrusted_private_address_cleanly(shelfmark_module):
     config_data = shelfmark_module.ShelfmarkClientConfig(
         enabled=True,
         base_url="http://192.168.0.87:8084",
+        browser_base_url="https://library.example.com/shelfmark",
         username=None,
         password=None,
     )
@@ -573,6 +600,7 @@ def test_client_search_books_still_returns_normalized_results(shelfmark_module):
     config_data = shelfmark_module.ShelfmarkClientConfig(
         enabled=True,
         base_url="https://shelfmark.example.com",
+        browser_base_url="https://library.example.com/shelfmark",
         username=None,
         password=None,
     )
@@ -590,7 +618,10 @@ def test_client_search_books_still_returns_normalized_results(shelfmark_module):
                         "title": "Dune",
                         "authors": ["Frank Herbert"],
                     }
-                ]
+                ],
+                "page": 1,
+                "total_found": 42,
+                "has_more": True,
             }
 
     calls = []
@@ -601,16 +632,19 @@ def test_client_search_books_still_returns_normalized_results(shelfmark_module):
             return FakeResponse()
 
     client = shelfmark_module.ShelfmarkClient(config_data, session=FakeSession())
-    books = client.search_books("dune")
+    response = client.search_books("dune")
 
-    assert books == [
+    assert response.books == (
         {
             "provider": "hardcover",
             "provider_id": "123",
             "title": "Dune",
             "authors": ["Frank Herbert"],
-        }
-    ]
+        },
+    )
+    assert response.page == 1
+    assert response.total_found == 42
+    assert response.has_more is True
     assert calls[0]["kwargs"]["params"] == {
         "query": "dune",
         "limit": shelfmark_module.DEFAULT_SHELFMARK_LIMIT,
@@ -625,6 +659,7 @@ def test_client_search_books_surfaces_auth_required_guidance_without_search_acco
     config_data = shelfmark_module.ShelfmarkClientConfig(
         enabled=True,
         base_url="https://shelfmark.example.com",
+        browser_base_url="https://library.example.com/shelfmark",
         username=None,
         password=None,
     )
@@ -651,6 +686,7 @@ def test_client_search_books_rejects_unexpected_payload_shape(shelfmark_module):
     config_data = shelfmark_module.ShelfmarkClientConfig(
         enabled=True,
         base_url="https://shelfmark.example.com",
+        browser_base_url="https://library.example.com/shelfmark",
         username=None,
         password=None,
     )
@@ -682,6 +718,7 @@ def test_search_results_unavailable_without_guessing(shelfmark_module):
         return_value=shelfmark_module.ShelfmarkClientConfig(
             enabled=True,
             base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
             username=None,
             password=None,
         ),
@@ -707,6 +744,7 @@ def test_search_results_return_info_message_when_advanced_query_is_not_clean(she
         return_value=shelfmark_module.ShelfmarkClientConfig(
             enabled=True,
             base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
             username=None,
             password=None,
         ),
