@@ -112,9 +112,12 @@
           <form class="navbar-form navbar-left cwa-navbar-search" role="search" action="{{url_for('search.simple_search')}}" method="GET" data-autocomplete-url="{{ url_for('search.autocomplete') }}">
             <div class="form-group input-group input-group-sm cwa-navbar-search-group">
               <label for="query" class="sr-only">{{_('Search')}}</label>
-              <input type="text" class="form-control" id="query" name="query" placeholder="{{_('Search books, authors, series')}}" value="{{searchterm}}" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="query_autocomplete" role="combobox">
-              <span class="input-group-btn">
-                <button type="submit" id="query_submit" class="btn btn-default">{{_('Search')}}</button>
+              <input type="text" class="form-control cwa-navbar-search-input" id="query" name="query" placeholder="{{_('Search books, authors, series')}}" value="{{searchterm}}" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="query_autocomplete" role="combobox">
+              <span class="input-group-btn cwa-navbar-search-actions">
+                <button type="submit" id="query_submit" class="btn btn-default cwa-navbar-search-submit" aria-label="{{_('Search')}}">
+                  <span class="glyphicon glyphicon-search" aria-hidden="true"></span>
+                  <span class="sr-only">{{_('Search')}}</span>
+                </button>
               </span>
             </div>
             <div id="query_autocomplete" class="cwa-search-autocomplete" role="listbox" hidden></div>
