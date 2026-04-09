@@ -293,6 +293,28 @@ def test_build_result_view_links_existing_library_book(shelfmark_module):
     assert result.action.mode == "view_library"
 
 
+def test_build_request_payload_uses_metadata_book_shape_with_explicit_wildcard_source(shelfmark_module):
+    payload = shelfmark_module.build_shelfmark_request_payload(
+        {
+            "provider": "hardcover",
+            "provider_id": "321",
+            "title": "External Title",
+            "subtitle": "Library duplicate",
+            "authors": ["Author One"],
+            "source_url": "https://source.example.com/321",
+            "identifiers": {"hardcover-id": "321"},
+        }
+    )
+
+    assert payload is not None
+    assert payload["book_data"]["provider"] == "hardcover"
+    assert payload["book_data"]["provider_id"] == "321"
+    assert payload["book_data"]["title"] == "External Title"
+    assert payload["context"]["source"] == "*"
+    assert payload["context"]["content_type"] == "ebook"
+    assert payload["context"]["request_level"] == "book"
+
+
 def test_search_results_normalize_external_and_duplicate_sections(shelfmark_module):
     books = [
         {

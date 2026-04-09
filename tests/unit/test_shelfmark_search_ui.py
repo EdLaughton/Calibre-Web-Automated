@@ -141,7 +141,10 @@ def _base_context():
         "detail_url": "/search/external/shelfmark/hardcover/999?query=dune",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
         "shelfmark_open_url": "https://library.example.com/shelfmark/?content_type=ebook&query=Already+Present&author=Author+One",
-        "request_payload": {"book_data": {"provider_id": "999"}},
+        "request_payload": {
+            "book_data": {"provider_id": "999", "title": "Already Present"},
+            "context": {"source": "*", "content_type": "ebook", "request_level": "book"},
+        },
         "library_state": {
             "key": "already_in_library",
             "label": "In library",
@@ -178,7 +181,10 @@ def _base_context():
         "detail_url": "/search/external/shelfmark/hardcover/222?query=dune",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
         "shelfmark_open_url": "https://library.example.com/shelfmark/?content_type=ebook&query=External+Candidate&author=Author+Two",
-        "request_payload": {"book_data": {"provider_id": "222", "title": "External Candidate"}},
+        "request_payload": {
+            "book_data": {"provider_id": "222", "title": "External Candidate"},
+            "context": {"source": "*", "content_type": "ebook", "request_level": "book"},
+        },
         "library_state": {
             "key": "external_candidate",
             "label": None,

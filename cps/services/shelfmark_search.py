@@ -297,6 +297,7 @@ def build_shelfmark_request_payload(book: Mapping[str, Any]) -> dict[str, Any] |
         },
         "content_type": SHELFMARK_CONTENT_TYPE,
         "context": {
+            "source": "*",
             "content_type": SHELFMARK_CONTENT_TYPE,
             "request_level": SHELFMARK_REQUEST_KIND,
         },

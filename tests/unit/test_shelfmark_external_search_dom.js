@@ -253,8 +253,11 @@ async function runScenario(options) {
   const sameOrigin = await runScenario({
     currentOrigin: 'https://library.example.com',
     baseUrl: 'https://library.example.com/shelfmark',
-    openUrl: 'https://library.example.com/shelfmark/?query=hardcover-id:222',
-    requestPayload: { book_data: { provider_id: '222', title: 'External Candidate' } },
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&query=External+Candidate&author=Author+Two',
+    requestPayload: {
+      book_data: { provider_id: '222', title: 'External Candidate' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
     responses: [
       { payload: { authenticated: true, auth_required: true } },
       { payload: { requests_enabled: true, defaults: { ebook: 'request_book' } } },
@@ -285,8 +288,11 @@ async function runScenario(options) {
   const crossOrigin = await runScenario({
     currentOrigin: 'https://library.example.com',
     baseUrl: 'https://shelfmark.example.com',
-    openUrl: 'https://shelfmark.example.com/?query=hardcover-id:222',
-    requestPayload: { book_data: { provider_id: '222', title: 'External Candidate' } }
+    openUrl: 'https://shelfmark.example.com/?content_type=ebook&query=External+Candidate&author=Author+Two',
+    requestPayload: {
+      book_data: { provider_id: '222', title: 'External Candidate' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    }
   });
 
   assert.equal(crossOrigin.fetchCalls.length, 0);
@@ -297,6 +303,40 @@ async function runScenario(options) {
     'Open in Shelfmark'
   );
   assert.match(crossOrigin.dom.status.textContent, /same-origin|reverse-proxied/i);
+
+  const releasePolicyFallback = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&query=External+Candidate&author=Author+Two',
+    requestPayload: {
+      book_data: { provider_id: '222', title: 'External Candidate' },
+      context: { source: 'direct_download', content_type: 'ebook', request_level: 'book' }
+    },
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      {
+        payload: {
+          requests_enabled: true,
+          defaults: { ebook: 'request_book' },
+          source_modes: [
+            {
+              source: 'direct_download',
+              browse_results_are_releases: true,
+              modes: { ebook: 'request_book' }
+            }
+          ]
+        }
+      }
+    ]
+  });
+
+  assert.equal(releasePolicyFallback.dom.action.dataset.mode, 'open');
+  assert.match(releasePolicyFallback.dom.action.className, /btn-default/);
+  assert.equal(
+    releasePolicyFallback.dom.action.querySelector('.js-shelfmark-action-label').textContent,
+    'Open in Shelfmark'
+  );
+  assert.match(releasePolicyFallback.dom.status.textContent, /still need Open in Shelfmark/i);
 
   console.log('test_shelfmark_external_search_dom.js: ok');
 })().catch((error) => {

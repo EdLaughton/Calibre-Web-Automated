@@ -10,9 +10,32 @@
   'use strict';
 
   var REQUEST_MODE = 'request_book';
+  var REQUEST_RELEASE_MODE = 'request_release';
+  var DOWNLOAD_MODE = 'download';
+  var BLOCKED_MODE = 'blocked';
+  var MODE_RANK = {
+    download: 0,
+    request_release: 1,
+    request_book: 2,
+    blocked: 3
+  };
+  var MATRIX_MODES = {
+    download: true,
+    request_release: true,
+    blocked: true
+  };
 
   function normalizeMode(value) {
     return (value || '').toString().trim().toLowerCase();
+  }
+
+  function normalizeContentType(value) {
+    return normalizeMode(value) === 'audiobook' ? 'audiobook' : 'ebook';
+  }
+
+  function normalizeSource(value) {
+    var source = normalizeMode(value);
+    return source || '*';
   }
 
   function buildOpenState(hint, label, buttonClass, iconClass) {
@@ -46,6 +69,167 @@
     error.requiredMode = data.requiredMode || null;
     error.isShelfmarkBrowserError = true;
     return error;
+  }
+
+  function capModeToCeiling(mode, ceiling) {
+    var modeRank = MODE_RANK[mode];
+    var ceilingRank = MODE_RANK[ceiling];
+    if (typeof modeRank !== 'number' || typeof ceilingRank !== 'number') {
+      return mode;
+    }
+    return modeRank < ceilingRank ? ceiling : mode;
+  }
+
+  function normalizeReleaseResultMode(policy, source, mode) {
+    if (mode !== REQUEST_MODE) {
+      return mode;
+    }
+    var normalizedSource = normalizeSource(source);
+    var sourceModes = Array.isArray(policy && policy.source_modes) ? policy.source_modes : [];
+    var sourceMode = sourceModes.find(function (entry) {
+      return normalizeSource(entry && entry.source) === normalizedSource;
+    });
+    return sourceMode && sourceMode.browse_results_are_releases ? REQUEST_RELEASE_MODE : mode;
+  }
+
+  function normalizeRuleSource(value) {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    var normalized = normalizeMode(value);
+    if (!normalized || normalized === 'any') {
+      return '*';
+    }
+    return normalized;
+  }
+
+  function normalizeRuleContentType(value) {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    var normalized = normalizeMode(value);
+    if (!normalized || normalized === 'any' || normalized === '*') {
+      return '*';
+    }
+    return normalizeContentType(normalized);
+  }
+
+  function parseMatrixMode(value) {
+    var normalized = normalizeMode(value);
+    return MATRIX_MODES[normalized] ? normalized : null;
+  }
+
+  function resolveDefaultModeFromPolicy(policy, contentType) {
+    if (!policy || !policy.requests_enabled) {
+      return DOWNLOAD_MODE;
+    }
+    var defaults = policy.defaults || {};
+    return normalizeMode(defaults[normalizeContentType(contentType)]) || DOWNLOAD_MODE;
+  }
+
+  function resolveSourceModeFromPolicy(policy, source, contentType) {
+    var normalizedSource = normalizeSource(source);
+    var normalizedContentType = normalizeContentType(contentType);
+    var defaultMode = resolveDefaultModeFromPolicy(policy, normalizedContentType);
+    if (defaultMode === DOWNLOAD_MODE && (!policy || !policy.requests_enabled)) {
+      return DOWNLOAD_MODE;
+    }
+
+    var sourceModes = Array.isArray(policy && policy.source_modes) ? policy.source_modes : [];
+    var sourceMode = sourceModes.find(function (entry) {
+      return normalizeSource(entry && entry.source) === normalizedSource;
+    });
+    if (sourceMode && sourceMode.modes) {
+      var fromSource = normalizeMode(sourceMode.modes[normalizedContentType]);
+      if (fromSource) {
+        return normalizeReleaseResultMode(
+          policy,
+          normalizedSource,
+          capModeToCeiling(fromSource, defaultMode)
+        );
+      }
+    }
+
+    var rules = Array.isArray(policy && policy.rules) ? policy.rules : [];
+    var precedence = [
+      [normalizedSource, normalizedContentType],
+      [normalizedSource, '*'],
+      ['*', normalizedContentType],
+      ['*', '*']
+    ];
+
+    for (var i = 0; i < precedence.length; i += 1) {
+      var sourceMatch = precedence[i][0];
+      var contentTypeMatch = precedence[i][1];
+      var matchedRule = rules.find(function (rule) {
+        if (!rule || typeof rule !== 'object') {
+          return false;
+        }
+        return normalizeRuleSource(rule.source) === sourceMatch
+          && normalizeRuleContentType(rule.content_type) === contentTypeMatch;
+      });
+
+      if (!matchedRule || typeof matchedRule !== 'object') {
+        continue;
+      }
+
+      var parsedMode = parseMatrixMode(matchedRule.mode);
+      if (!parsedMode) {
+        continue;
+      }
+
+      return normalizeReleaseResultMode(
+        policy,
+        normalizedSource,
+        capModeToCeiling(parsedMode, defaultMode)
+      );
+    }
+
+    return normalizeReleaseResultMode(policy, normalizedSource, defaultMode);
+  }
+
+  function getRequestPayloadContentType(requestPayload) {
+    return normalizeContentType(
+      requestPayload
+      && requestPayload.context
+      && requestPayload.context.content_type
+      || requestPayload && requestPayload.content_type
+      || requestPayload && requestPayload.book_data && requestPayload.book_data.content_type
+      || 'ebook'
+    );
+  }
+
+  function getRequestPayloadSource(requestPayload) {
+    return normalizeSource(
+      requestPayload
+      && requestPayload.context
+      && requestPayload.context.source
+    );
+  }
+
+  function getRequestPayloadLevel(requestPayload) {
+    var explicit = normalizeMode(
+      requestPayload
+      && requestPayload.context
+      && requestPayload.context.request_level
+    );
+    if (explicit) {
+      return explicit;
+    }
+    return requestPayload && requestPayload.release_data ? 'release' : 'book';
+  }
+
+  function describeRequiredMode(mode) {
+    if (mode === REQUEST_RELEASE_MODE) {
+      return 'Shelfmark policy for this result requires selecting a concrete release in Shelfmark before requesting.';
+    }
+    if (mode === DOWNLOAD_MODE) {
+      return 'Shelfmark policy for this result routes directly to download/release handling instead of a book-level request.';
+    }
+    if (mode === BLOCKED_MODE) {
+      return 'Shelfmark policy blocks direct requests for this result.';
+    }
+    return 'Shelfmark policy does not allow a direct book-level request for this result.';
   }
 
   function getOrigin(value, currentOrigin) {
@@ -104,6 +288,22 @@
       }
 
       if (error.status === 403) {
+        if (error.code === 'user_identity_unavailable') {
+          return {
+            kind: 'probe_identity_unavailable',
+            bannerLevel: 'alert-warning',
+            bannerText: 'Shelfmark is signed in in this browser, but that session is not mapped to a requestable Shelfmark user yet.',
+            actionState: buildOpenState('Shelfmark did not expose a request user identity for this browser session. Re-open Shelfmark, confirm the synced user is logged in there, and retry.')
+          };
+        }
+        if (error.code === 'requests_unavailable') {
+          return {
+            kind: 'probe_requests_unavailable',
+            bannerLevel: 'alert-warning',
+            bannerText: 'Shelfmark reports that the request workflow is unavailable for the current auth mode or policy.',
+            actionState: buildOpenState('Shelfmark reports that the request workflow is unavailable for the current auth mode or policy.')
+          };
+        }
         return {
           kind: 'probe_policy_failed',
           bannerLevel: 'alert-warning',
@@ -152,22 +352,41 @@
       };
     }
 
-    var defaults = policyPayload.defaults || {};
-    var ebookMode = normalizeMode(defaults.ebook);
-    if (ebookMode !== REQUEST_MODE) {
+    if (!options || !options.requestPayload) {
+      return {
+        kind: 'requestable',
+        bannerLevel: 'alert-success',
+        bannerText: 'Shelfmark session detected. Request buttons are enabled where the current policy allows direct book-level requests.',
+        actionState: buildRequestState('This browser already has a valid Shelfmark session. Each result is checked against the current Shelfmark policy before request buttons are enabled.')
+      };
+    }
+
+    var requestPayload = options.requestPayload;
+    var effectiveMode = resolveSourceModeFromPolicy(
+      policyPayload,
+      getRequestPayloadSource(requestPayload),
+      getRequestPayloadContentType(requestPayload)
+    );
+    var requestLevel = getRequestPayloadLevel(requestPayload);
+    if (effectiveMode !== REQUEST_MODE || requestLevel !== 'book') {
       return {
         kind: 'policy_blocked',
         bannerLevel: 'alert-warning',
-        bannerText: 'Shelfmark is signed in, but the current policy does not allow direct book-level requests here.',
-        actionState: buildOpenState('Shelfmark is signed in, but the current policy does not allow direct book-level requests for ebook results in this browser flow.')
+        bannerText: describeRequiredMode(effectiveMode),
+        actionState: buildOpenState(
+          describeRequiredMode(effectiveMode),
+          'Open in Shelfmark',
+          'btn-default',
+          'glyphicon glyphicon-new-window'
+        )
       };
     }
 
     return {
-        kind: 'requestable',
-        bannerLevel: 'alert-success',
-        bannerText: 'Shelfmark session detected. Direct requests will be attributed in Shelfmark as the current Shelfmark user.',
-        actionState: buildRequestState('This browser already has a valid Shelfmark session and the current Shelfmark policy allows direct book-level requests.')
+      kind: 'requestable',
+      bannerLevel: 'alert-success',
+      bannerText: 'Shelfmark session detected. Direct requests will be attributed in Shelfmark as the current Shelfmark user.',
+      actionState: buildRequestState('This browser already has a valid Shelfmark session and the current Shelfmark policy allows a direct book-level request for this result.')
     };
   }
 
@@ -207,6 +426,22 @@
       }
 
       if (error.status === 403) {
+        if (error.code === 'user_identity_unavailable') {
+          return {
+            kind: 'request_identity_failed',
+            bannerLevel: 'alert-warning',
+            bannerText: 'Shelfmark is signed in, but that browser session is not mapped to a requestable Shelfmark user yet.',
+            actionState: buildOpenState('Shelfmark did not expose a request user identity for this browser session. Open Shelfmark directly, confirm the synced user is logged in there, and retry.')
+          };
+        }
+        if (error.requiredMode === REQUEST_RELEASE_MODE || error.code === 'policy_requires_download') {
+          return {
+            kind: 'request_requires_release',
+            bannerLevel: 'alert-warning',
+            bannerText: 'Shelfmark policy requires a concrete release or download path for this result, so CWA cannot submit a direct book request here.',
+            actionState: buildOpenState('Shelfmark policy requires a concrete release or download path for this result. Open Shelfmark to choose the release there.')
+          };
+        }
         return {
           kind: 'request_policy_failed',
           bannerLevel: 'alert-warning',
@@ -242,10 +477,21 @@
 
   return {
     REQUEST_MODE: REQUEST_MODE,
+    REQUEST_RELEASE_MODE: REQUEST_RELEASE_MODE,
+    DOWNLOAD_MODE: DOWNLOAD_MODE,
+    BLOCKED_MODE: BLOCKED_MODE,
     normalizeMode: normalizeMode,
+    normalizeContentType: normalizeContentType,
+    normalizeSource: normalizeSource,
     buildOpenState: buildOpenState,
     buildRequestState: buildRequestState,
     createBrowserError: createBrowserError,
+    resolveDefaultModeFromPolicy: resolveDefaultModeFromPolicy,
+    resolveSourceModeFromPolicy: resolveSourceModeFromPolicy,
+    getRequestPayloadContentType: getRequestPayloadContentType,
+    getRequestPayloadSource: getRequestPayloadSource,
+    getRequestPayloadLevel: getRequestPayloadLevel,
+    describeRequiredMode: describeRequiredMode,
     isDirectRequestViable: isDirectRequestViable,
     resolveProbeState: resolveProbeState,
     resolveRequestOutcome: resolveRequestOutcome

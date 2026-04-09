@@ -162,6 +162,40 @@
     });
   }
 
+  function applyPerActionProbeStates(actions, probeOptions) {
+    var requestableCount = 0;
+    var blockedCount = 0;
+    var payloadCount = 0;
+
+    actions.forEach(function (node) {
+      var payload = parseJson(node.dataset.requestPayload);
+      if (!payload) {
+        return;
+      }
+      payloadCount += 1;
+      var outcome = flow.resolveProbeState({
+        baseUrl: probeOptions.baseUrl,
+        currentOrigin: probeOptions.currentOrigin,
+        authPayload: probeOptions.authPayload,
+        policyPayload: probeOptions.policyPayload,
+        requestPayload: payload
+      });
+      updateActionNode(node, outcome.actionState);
+      node.dataset.probeKind = outcome.kind;
+      if (outcome.actionState.mode === 'request') {
+        requestableCount += 1;
+      } else {
+        blockedCount += 1;
+      }
+    });
+
+    return {
+      payloadCount: payloadCount,
+      requestableCount: requestableCount,
+      blockedCount: blockedCount
+    };
+  }
+
   function applyProbeOutcome(actions, outcome) {
     applyActionState(actions, outcome.actionState);
     setStatusText(outcome.bannerText, outcome.bannerLevel);
@@ -201,7 +235,38 @@
         authPayload: authPayload,
         policyPayload: policyPayload
       });
-      applyProbeOutcome(actions, probeOutcome);
+      var perActionSummary = applyPerActionProbeStates(actions, {
+        baseUrl: baseUrl,
+        currentOrigin: currentOrigin,
+        authPayload: authPayload,
+        policyPayload: policyPayload
+      });
+
+      if (!perActionSummary.payloadCount) {
+        setStatusText(
+          'Shelfmark session detected. These results can be opened directly in Shelfmark, but none of them expose enough exact metadata for a direct request here.',
+          'alert-info'
+        );
+        return;
+      }
+
+      if (perActionSummary.requestableCount > 0 && perActionSummary.blockedCount > 0) {
+        setStatusText(
+          'Shelfmark session detected. Request buttons are enabled for requestable rows, and other rows still open in Shelfmark when policy or metadata requires it.',
+          'alert-success'
+        );
+        return;
+      }
+
+      if (perActionSummary.requestableCount > 0) {
+        setStatusText(probeOutcome.bannerText, probeOutcome.bannerLevel);
+        return;
+      }
+
+      setStatusText(
+        'Shelfmark session detected, but these results still need Open in Shelfmark because the current policy or metadata does not allow direct book-level requests here.',
+        'alert-warning'
+      );
     } catch (error) {
       probeOutcome = flow.resolveProbeState({
         baseUrl: baseUrl,
