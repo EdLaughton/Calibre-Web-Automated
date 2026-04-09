@@ -620,7 +620,10 @@ def build_shelfmark_result_view(
         title=title,
         subtitle=_normalize_text(book.get("subtitle")),
         authors=authors,
-        cover_url=_normalize_shelfmark_cover_url(shelfmark_browser_base_url, book.get("cover_url")),
+        cover_url=_normalize_shelfmark_cover_url(
+            shelfmark_browser_base_url,
+            _resolve_shelfmark_cover_value(book),
+        ),
         description=_normalize_text(book.get("description")),
         publish_year=_normalize_int(book.get("publish_year")),
         source_url=_normalize_text(book.get("source_url")),
@@ -1059,6 +1062,14 @@ def _resolve_shelfmark_authors(book: Mapping[str, Any]) -> list[str]:
     return []
 
 
+def _resolve_shelfmark_cover_value(book: Mapping[str, Any]) -> Any:
+    for key in ("cover_url", "preview"):
+        value = _normalize_text(book.get(key))
+        if value:
+            return value
+    return None
+
+
 def _normalize_shelfmark_cover_url(base_url: str, value: Any) -> str | None:
     normalized = _normalize_text(value)
     if not normalized:
@@ -1072,7 +1083,19 @@ def _normalize_shelfmark_cover_url(base_url: str, value: Any) -> str | None:
         base_parts = urlsplit(base_url)
         if not base_parts.scheme or not base_parts.netloc:
             return normalized
-        return urlunsplit((base_parts.scheme, base_parts.netloc, normalized, "", ""))
+        normalized_path = parsed.path
+        base_prefix = (base_parts.path or "").rstrip("/")
+        if base_prefix and normalized_path.startswith("/api/covers/"):
+            normalized_path = f"{base_prefix}{normalized_path}"
+        return urlunsplit(
+            (
+                base_parts.scheme,
+                base_parts.netloc,
+                normalized_path,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
 
     return _join_base_url(base_url, normalized)
 

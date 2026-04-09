@@ -298,7 +298,7 @@ def test_build_result_view_links_existing_library_book(shelfmark_module):
     assert result.action.mode == "view_library"
 
 
-def test_build_result_view_normalizes_root_relative_shelfmark_cover_url(shelfmark_module):
+def test_build_result_view_normalizes_root_relative_shelfmark_cover_url_against_browser_base_path(shelfmark_module):
     result = shelfmark_module.build_shelfmark_result_view(
         {
             "provider": "hardcover",
@@ -314,7 +314,7 @@ def test_build_result_view_normalizes_root_relative_shelfmark_cover_url(shelfmar
     )
 
     assert result.cover_url == (
-        "https://library.example.com/api/covers/hardcover_222"
+        "https://library.example.com/shelfmark/api/covers/hardcover_222"
         "?url=https%3A%2F%2Fcovers.example.com%2F222.jpg"
     )
 
@@ -337,6 +337,27 @@ def test_build_result_view_preserves_shelfmark_base_path_cover_proxy(shelfmark_m
     assert result.cover_url == (
         "https://library.example.com/shelfmark/api/covers/hardcover_222"
         "?url=https%3A%2F%2Fcovers.example.com%2F222.jpg"
+    )
+
+
+def test_build_result_view_uses_preview_fallback_for_cover_when_cover_url_is_missing(shelfmark_module):
+    result = shelfmark_module.build_shelfmark_result_view(
+        {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "External Candidate",
+            "authors": ["Author Two"],
+            "preview": "/api/covers/hardcover_222?url=aHR0cHM6Ly9jb3ZlcnMuZXhhbXBsZS5jb20vMjIyLmpwZw==",
+            "identifiers": {"hardcover-id": "222"},
+        },
+        library_match=None,
+        detail_url="/external/222",
+        shelfmark_browser_base_url="https://library.example.com/shelfmark",
+    )
+
+    assert result.cover_url == (
+        "https://library.example.com/shelfmark/api/covers/hardcover_222"
+        "?url=aHR0cHM6Ly9jb3ZlcnMuZXhhbXBsZS5jb20vMjIyLmpwZw=="
     )
 
 
