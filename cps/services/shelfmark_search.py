@@ -22,6 +22,14 @@ DEFAULT_SHELFMARK_TIMEOUT_SECONDS = 15
 DEFAULT_SHELFMARK_LIMIT = 12
 DEFAULT_SHELFMARK_SORT = "relevance"
 DEFAULT_SHELFMARK_PAGE = 1
+SHELFMARK_PAGE_SIZE_OPTIONS = (12, 24, 50, 100)
+SHELFMARK_SORT_OPTIONS = (
+    ("relevance", "Most relevant"),
+    ("popularity", "Most popular"),
+    ("rating", "Highest rated"),
+    ("newest", "Newest"),
+    ("oldest", "Oldest"),
+)
 SHELFMARK_METADATA_PROVIDER = "hardcover"
 SHELFMARK_CONTENT_TYPE = "ebook"
 SHELFMARK_REQUEST_MODE = "request_book"
@@ -148,6 +156,9 @@ class ShelfmarkSearchSection:
     query: str
     page: int = DEFAULT_SHELFMARK_PAGE
     page_size: int = DEFAULT_SHELFMARK_LIMIT
+    selected_sort: str = DEFAULT_SHELFMARK_SORT
+    sort_options: tuple[dict[str, str], ...] = field(default_factory=tuple)
+    page_size_options: tuple[int, ...] = SHELFMARK_PAGE_SIZE_OPTIONS
     total_pages: int = 0
     visible_start: int = 0
     visible_end: int = 0
@@ -156,6 +167,10 @@ class ShelfmarkSearchSection:
     next_page: int | None = None
     has_more: bool = False
     total_available: int = 0
+    page_result_count: int = 0
+    filter_requestable: bool = False
+    filter_has_cover: bool = False
+    filters_active: bool = False
     open_search_url: str | None = None
     query_label: str | None = None
     context_hint: str | None = None
@@ -172,6 +187,9 @@ class ShelfmarkSearchSection:
             "query": self.query,
             "page": self.page,
             "page_size": self.page_size,
+            "selected_sort": self.selected_sort,
+            "sort_options": [dict(option) for option in self.sort_options],
+            "page_size_options": list(self.page_size_options),
             "total_pages": self.total_pages,
             "visible_start": self.visible_start,
             "visible_end": self.visible_end,
@@ -180,6 +198,10 @@ class ShelfmarkSearchSection:
             "next_page": self.next_page,
             "has_more": self.has_more,
             "total_available": self.total_available,
+            "page_result_count": self.page_result_count,
+            "filter_requestable": self.filter_requestable,
+            "filter_has_cover": self.filter_has_cover,
+            "filters_active": self.filters_active,
             "open_search_url": self.open_search_url,
             "query_label": self.query_label,
             "context_hint": self.context_hint,
@@ -332,10 +354,13 @@ def build_shelfmark_search_url(
     query: str,
     content_type: str = SHELFMARK_CONTENT_TYPE,
     page: int = DEFAULT_SHELFMARK_PAGE,
+    page_size: int = DEFAULT_SHELFMARK_LIMIT,
+    sort: str = DEFAULT_SHELFMARK_SORT,
 ) -> str:
     params = {
         "content_type": content_type,
-        "sort": DEFAULT_SHELFMARK_SORT,
+        "sort": sort or DEFAULT_SHELFMARK_SORT,
+        "limit": str(_normalize_page_size(page_size)),
         "page": str(page),
         "query": query,
     }
@@ -402,6 +427,35 @@ def build_shelfmark_advanced_query(term: Mapping[str, Any]) -> tuple[str | None,
         return None, tuple()
 
     return " ".join(fragments), tuple(labels)
+
+
+def get_shelfmark_sort_options() -> tuple[dict[str, str], ...]:
+    return tuple(
+        {
+            "value": value,
+            "label": _(label),
+        }
+        for value, label in SHELFMARK_SORT_OPTIONS
+    )
+
+
+def _normalize_page_size(value: Any) -> int:
+    normalized = _normalize_int(value) or DEFAULT_SHELFMARK_LIMIT
+    if normalized in SHELFMARK_PAGE_SIZE_OPTIONS:
+        return normalized
+    return DEFAULT_SHELFMARK_LIMIT
+
+
+def _normalize_sort(value: Any) -> str:
+    normalized = (_normalize_text(value) or DEFAULT_SHELFMARK_SORT).lower()
+    if normalized in {item[0] for item in SHELFMARK_SORT_OPTIONS}:
+        return normalized
+    return DEFAULT_SHELFMARK_SORT
+
+
+def _normalize_flag(value: Any) -> bool:
+    normalized = (_normalize_text(value) or "").lower()
+    return normalized in {"1", "true", "yes", "on"}
 
 
 def parse_shelfmark_probe_state(
@@ -708,17 +762,102 @@ def group_shelfmark_results(results: Sequence[ShelfmarkResultView]) -> tuple[She
     return tuple(grouped)
 
 
+def _needs_cover_enrichment(book: Mapping[str, Any]) -> bool:
+    return bool(
+        not _resolve_shelfmark_cover_value(book)
+        and _normalize_text(book.get("provider"))
+        and _normalize_text(book.get("provider_id"))
+    )
+
+
+def _merge_cover_details(
+    search_book: Mapping[str, Any],
+    detail_book: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    merged = dict(search_book)
+    if not detail_book:
+        return merged
+
+    if not _resolve_shelfmark_cover_value(merged):
+        for key in ("cover_url", "preview"):
+            value = _normalize_text(detail_book.get(key))
+            if value:
+                merged[key] = value
+                break
+    return merged
+
+
+def _enrich_books_with_detail_covers(
+    client: "ShelfmarkClient",
+    books: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    detail_cache: dict[tuple[str, str], Mapping[str, Any] | None] = {}
+    enriched: list[dict[str, Any]] = []
+
+    for book in books:
+        normalized_book = dict(book)
+        if not _needs_cover_enrichment(normalized_book):
+            enriched.append(normalized_book)
+            continue
+
+        provider = _normalize_text(normalized_book.get("provider")) or SHELFMARK_METADATA_PROVIDER
+        provider_id = _normalize_text(normalized_book.get("provider_id")) or ""
+        cache_key = (provider, provider_id)
+        if cache_key not in detail_cache:
+            try:
+                detail_cache[cache_key] = client.fetch_book(provider, provider_id)
+            except ShelfmarkIntegrationError as exc:
+                log.debug(
+                    "Shelfmark cover enrichment skipped for %s/%s: %s",
+                    provider,
+                    provider_id,
+                    exc,
+                )
+                detail_cache[cache_key] = None
+        enriched.append(_merge_cover_details(normalized_book, detail_cache[cache_key]))
+
+    return tuple(enriched)
+
+
+def _filter_visible_results(
+    results: Sequence[ShelfmarkResultView],
+    *,
+    requestable_only: bool = False,
+    has_cover_only: bool = False,
+) -> tuple[ShelfmarkResultView, ...]:
+    filtered = tuple(results)
+    if requestable_only:
+        filtered = tuple(
+            result
+            for result in filtered
+            if not result.already_in_library and result.hardcover_id and result.request_payload
+        )
+    if has_cover_only:
+        filtered = tuple(result for result in filtered if result.cover_url)
+    return filtered
+
+
 def search_shelfmark_results(
     query: str | None,
     *,
     detail_url_builder: Callable[[Mapping[str, Any]], str | None],
     page: int = DEFAULT_SHELFMARK_PAGE,
+    page_size: int = DEFAULT_SHELFMARK_LIMIT,
+    sort: str = DEFAULT_SHELFMARK_SORT,
+    filter_requestable: bool = False,
+    filter_has_cover: bool = False,
     query_label: str | None = None,
     context_hint: str | None = None,
     empty_message: str | None = None,
 ) -> ShelfmarkSearchSection:
     normalized_query = _normalize_text(query)
     requested_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(page) or DEFAULT_SHELFMARK_PAGE)
+    requested_page_size = _normalize_page_size(page_size)
+    selected_sort = _normalize_sort(sort)
+    requestable_only = bool(filter_requestable)
+    has_cover_only = bool(filter_has_cover)
+    filters_active = requestable_only or has_cover_only
+    sort_options = get_shelfmark_sort_options()
     config_data = get_shelfmark_client_config()
     if not config_data.enabled:
         return ShelfmarkSearchSection(enabled=False, available=False, query=normalized_query or "")
@@ -729,7 +868,10 @@ def search_shelfmark_results(
             available=True,
             query="",
             page=requested_page,
-            page_size=DEFAULT_SHELFMARK_LIMIT,
+            page_size=requested_page_size,
+            selected_sort=selected_sort,
+            sort_options=sort_options,
+            page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
             total_pages=0,
             visible_start=0,
             visible_end=0,
@@ -738,11 +880,17 @@ def search_shelfmark_results(
             next_page=None,
             has_more=False,
             total_available=0,
+            page_result_count=0,
+            filter_requestable=requestable_only,
+            filter_has_cover=has_cover_only,
+            filters_active=filters_active,
             open_search_url=(
                 build_shelfmark_search_url(
                     config_data.browser_base_url,
                     query="",
                     page=requested_page,
+                    page_size=requested_page_size,
+                    sort=selected_sort,
                 )
                 if config_data.browser_base_url
                 else None
@@ -758,11 +906,16 @@ def search_shelfmark_results(
 
     client = ShelfmarkClient(config_data)
     try:
-        search_response = client.search_books(normalized_query, page=requested_page)
-        books = search_response.books
+        search_response = client.search_books(
+            normalized_query,
+            limit=requested_page_size,
+            page=requested_page,
+            sort=selected_sort,
+        )
+        books = _enrich_books_with_detail_covers(client, search_response.books)
         hardcover_ids = [value for value in (_extract_hardcover_id(book) for book in books) if value]
         library_matches = lookup_visible_library_matches(hardcover_ids)
-        results = tuple(
+        page_results = tuple(
             build_shelfmark_result_view(
                 book,
                 library_match=library_matches.get(_extract_hardcover_id(book) or ""),
@@ -771,6 +924,11 @@ def search_shelfmark_results(
             )
             for book in books
         )
+        results = _filter_visible_results(
+            page_results,
+            requestable_only=requestable_only,
+            has_cover_only=has_cover_only,
+        )
         summary = summarize_shelfmark_results(
             results,
             total_available=search_response.total_found,
@@ -778,18 +936,21 @@ def search_shelfmark_results(
         )
         current_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(search_response.page) or requested_page)
         total_pages = (
-            max(1, math.ceil(summary.total_available / DEFAULT_SHELFMARK_LIMIT))
+            max(1, math.ceil(summary.total_available / requested_page_size))
             if summary.total_available
             else 0
         )
-        visible_start = ((current_page - 1) * DEFAULT_SHELFMARK_LIMIT) + 1 if results else 0
-        visible_end = visible_start + len(results) - 1 if results else 0
+        visible_start = ((current_page - 1) * requested_page_size) + 1 if page_results else 0
+        visible_end = visible_start + len(page_results) - 1 if page_results else 0
         return ShelfmarkSearchSection(
             enabled=True,
             available=True,
             query=normalized_query,
             page=current_page,
-            page_size=DEFAULT_SHELFMARK_LIMIT,
+            page_size=requested_page_size,
+            selected_sort=selected_sort,
+            sort_options=sort_options,
+            page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
             total_pages=total_pages,
             visible_start=visible_start,
             visible_end=visible_end,
@@ -798,10 +959,16 @@ def search_shelfmark_results(
             next_page=current_page + 1 if search_response.has_more else None,
             has_more=search_response.has_more,
             total_available=summary.total_available,
+            page_result_count=len(page_results),
+            filter_requestable=requestable_only,
+            filter_has_cover=has_cover_only,
+            filters_active=filters_active,
             open_search_url=build_shelfmark_search_url(
                 config_data.browser_base_url,
                 query=normalized_query,
                 page=current_page,
+                page_size=requested_page_size,
+                sort=selected_sort,
             ),
             query_label=query_label,
             context_hint=context_hint,
@@ -860,19 +1027,22 @@ class ShelfmarkClient:
         *,
         limit: int = DEFAULT_SHELFMARK_LIMIT,
         page: int = DEFAULT_SHELFMARK_PAGE,
+        sort: str = DEFAULT_SHELFMARK_SORT,
         provider: str = SHELFMARK_METADATA_PROVIDER,
         content_type: str = SHELFMARK_CONTENT_TYPE,
     ) -> ShelfmarkSearchResponse:
         self._ensure_authenticated()
+        normalized_limit = _normalize_page_size(limit)
         current_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(page) or DEFAULT_SHELFMARK_PAGE)
+        selected_sort = _normalize_sort(sort)
         response = self._perform_request(
             "get",
             _join_base_url(self.config.base_url, "/api/metadata/search"),
             _("Shelfmark search failed."),
             params={
                 "query": query,
-                "limit": limit,
-                "sort": DEFAULT_SHELFMARK_SORT,
+                "limit": normalized_limit,
+                "sort": selected_sort,
                 "page": current_page,
                 "provider": provider,
                 "content_type": content_type,

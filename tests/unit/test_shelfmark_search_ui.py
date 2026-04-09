@@ -279,6 +279,13 @@ def _base_context():
             "query": "Dune",
             "page": 1,
             "page_size": 12,
+            "selected_sort": "relevance",
+            "sort_options": [
+                {"value": "relevance", "label": "Most relevant"},
+                {"value": "popularity", "label": "Most popular"},
+                {"value": "rating", "label": "Highest rated"},
+            ],
+            "page_size_options": [12, 24, 50, 100],
             "total_pages": 75,
             "visible_start": 1,
             "visible_end": 3,
@@ -287,9 +294,14 @@ def _base_context():
             "next_page": 2,
             "has_more": True,
             "total_available": 895,
-            "open_search_url": "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&page=1&query=Dune",
+            "page_result_count": 3,
+            "filter_requestable": False,
+            "filter_has_cover": False,
+            "filters_active": False,
+            "open_search_url": "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&limit=12&page=1&query=Dune",
             "previous_page_url": None,
             "next_page_url": "/search/stored/?query=Dune&shelfmark_page=2",
+            "clear_filters_url": "/search/stored/?query=Dune&shelfmark_page=1",
             "query_label": "External lookup query",
             "context_hint": "Duplicate awareness remains exact hardcover-id matching only.",
             "message": None,
@@ -358,11 +370,17 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "Showing 3 of 895" in html
     assert "Showing 1-3 of 895" in html
     assert "Page 1 of 75" in html
+    assert "Jump to page" in html
+    assert 'name="shelfmark_page_size"' in html
+    assert 'name="shelfmark_sort"' in html
+    assert "Request-capable" in html
+    assert "Has cover" in html
     assert 'href="/search/stored/?query=Dune&amp;shelfmark_page=2"' in html
     assert "CWA is previewing the first Shelfmark page here." not in html
     assert "Checking your browser for direct Shelfmark request availability." not in html
     assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
-    assert 'href="https://library.example.com/shelfmark/?content_type=ebook&amp;sort=relevance&amp;page=1&amp;query=Dune"' in html
+    assert html.index("Open search in Shelfmark") < html.index("External Candidate")
+    assert 'href="https://library.example.com/shelfmark/?content_type=ebook&amp;sort=relevance&amp;limit=12&amp;page=1&amp;query=Dune"' in html
     assert "shelfmark_request_flow.js" in html
     assert "shelfmark_external_search.js" in html
     assert "shelfmark-section-pill" not in html
@@ -443,8 +461,10 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert 'class="shelfmark-detail-layout"' in html
     assert 'class="shelfmark-detail-cover-card"' in html
     assert 'class="shelfmark-detail-card shelfmark-detail-card--hero shelfmark-detail-card--success"' in html
+    assert 'class="shelfmark-section-line shelfmark-section-line--detail"' in html
     assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
     assert html.count("Open in Shelfmark") == 1
+    assert 'class="btn btn-default btn-sm shelfmark-detail-page__back-action"' in html
     assert 'target="_blank"' in html
 
 
@@ -478,4 +498,34 @@ def test_search_template_renders_intentional_zero_results_state():
     assert "No matches" in html
     assert "External lookup query" in html
     assert "<code>Dune</code>" in html
-    assert "Open this search in Shelfmark" in html
+    assert "Open search in Shelfmark" in html
+
+
+def test_search_template_renders_filter_toolbar_and_page_jump_state():
+    app = _create_app()
+    context = _base_context()
+    context["shelfmark_section"] = {
+        **context["shelfmark_section"],
+        "page": 2,
+        "page_size": 24,
+        "selected_sort": "rating",
+        "filter_requestable": True,
+        "filter_has_cover": True,
+        "filters_active": True,
+        "page_result_count": 12,
+        "results": context["shelfmark_section"]["results"][:1],
+        "clear_filters_url": "/search/stored/?query=Dune&shelfmark_page=1",
+    }
+
+    with app.test_request_context(
+        "/search/stored/?query=Dune&shelfmark_page=2&shelfmark_page_size=24&shelfmark_sort=rating&shelfmark_filter_requestable=1&shelfmark_filter_has_cover=1"
+    ):
+        g.shelves_access = []
+        g.config_authors_max = 0
+        html = render_template("search.html", **context)
+
+    assert 'value="rating" selected' in html
+    assert 'value="24" selected' in html
+    assert html.count('checked') >= 2
+    assert "Clear filters" in html
+    assert "Jump to page" in html
