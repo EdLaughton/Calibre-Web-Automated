@@ -147,6 +147,8 @@ This tells CWA to avoid enabling WAL on the Calibre `metadata.db` and the `app.d
 | [KOReader Syncing (KOSync) 📖⚡](#koreader-syncing-kosync-) | [Enhanced OAuth 2.0/OIDC Authentication 🔐](#enhanced-oauth-20oidc-authentication-) | [EPUB Fixer 2.0 📧✅](#epub-fixer-20-) |
 | [Automatic Hardcover ID Fetch 💜🤖](#automatic-hardcover-id-fetch-) | [Server Stats Tracking Page 📍](#server-stats-tracking-page-) | [Enhanced Send-to-eReader Modal ✉️](#enhanced-send-to-ereader-modal-) |
 
+- The top-left library search now offers structured local autocomplete for books, authors, and series, with exact Calibre book titles shown as the primary suggestion label.
+
 #### **Automatic Ingest Service** ✨
 - CWA currently supports automatic ingest of 27 different popular ebook formats
 - Users can configure the services behavior to ignore and/or have certain formats automatically converted to other formats in the Admin Panel

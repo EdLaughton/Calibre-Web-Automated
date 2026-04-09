@@ -6,13 +6,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import importlib
 from pathlib import Path
+import sys
 
 from flask import Blueprint, Flask, g, render_template
 from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
 
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "cps" / "templates"
+
+
+def _ensure_real_flask_package():
+    flask_module = sys.modules.get("flask")
+    if flask_module is not None and hasattr(flask_module, "__path__"):
+        return
+
+    sys.modules.pop("flask", None)
+    importlib.import_module("flask")
+    importlib.import_module("flask.testing")
 
 
 @dataclass
@@ -69,6 +81,7 @@ class DummyCurrentUser:
 
 
 def _create_app():
+    _ensure_real_flask_package()
     app = Flask(__name__, template_folder=str(TEMPLATES_DIR))
     app.config["SECRET_KEY"] = "test-secret"
     app.jinja_loader = ChoiceLoader(
