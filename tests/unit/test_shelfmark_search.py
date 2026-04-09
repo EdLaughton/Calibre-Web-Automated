@@ -192,6 +192,7 @@ def test_select_action_falls_back_when_request_payload_is_incomplete(shelfmark_m
         library_book_url=None,
         hardcover_id="123",
         request_payload=None,
+        missing_request_requirements=("author",),
         probe_state=shelfmark_module.ShelfmarkProbeState(
             authenticated=True,
             auth_required=True,
@@ -202,7 +203,7 @@ def test_select_action_falls_back_when_request_payload_is_incomplete(shelfmark_m
     )
 
     assert action.mode == "open"
-    assert "prepare a direct request" in action.hint
+    assert "at least one author" in action.hint
 
 
 def test_select_action_uses_request_when_probe_allows_it(shelfmark_module):
@@ -262,7 +263,10 @@ def test_build_open_url_uses_title_author_query_not_hardcover_id_syntax(shelfmar
         hardcover_id="948974",
     )
 
-    assert url == "https://shelfmark.example.com/?content_type=ebook&query=The+Churn&author=James+S.+A.+Corey"
+    assert url == (
+        "https://shelfmark.example.com/?content_type=ebook&sort=relevance"
+        "&query=The+Churn+James+S.+A.+Corey&title=The+Churn&author=James+S.+A.+Corey"
+    )
     assert "hardcover-id%3A948974" not in url
 
 
@@ -293,6 +297,27 @@ def test_build_result_view_links_existing_library_book(shelfmark_module):
     assert result.action.mode == "view_library"
 
 
+def test_build_result_view_normalizes_relative_shelfmark_cover_url(shelfmark_module):
+    result = shelfmark_module.build_shelfmark_result_view(
+        {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "External Candidate",
+            "authors": ["Author Two"],
+            "cover_url": "/api/covers/hardcover_222?url=https%3A%2F%2Fcovers.example.com%2F222.jpg",
+            "identifiers": {"hardcover-id": "222"},
+        },
+        library_match=None,
+        detail_url="/external/222",
+        shelfmark_base_url="https://library.example.com/shelfmark",
+    )
+
+    assert result.cover_url == (
+        "https://library.example.com/shelfmark/api/covers/hardcover_222"
+        "?url=https%3A%2F%2Fcovers.example.com%2F222.jpg"
+    )
+
+
 def test_build_request_payload_uses_metadata_book_shape_with_explicit_wildcard_source(shelfmark_module):
     payload = shelfmark_module.build_shelfmark_request_payload(
         {
@@ -313,6 +338,22 @@ def test_build_request_payload_uses_metadata_book_shape_with_explicit_wildcard_s
     assert payload["context"]["source"] == "*"
     assert payload["context"]["content_type"] == "ebook"
     assert payload["context"]["request_level"] == "book"
+
+
+def test_build_request_payload_uses_search_field_fallbacks_when_authors_array_is_missing(shelfmark_module):
+    payload = shelfmark_module.build_shelfmark_request_payload(
+        {
+            "provider": "hardcover",
+            "provider_id": "444",
+            "search_title": "Fallback Title",
+            "search_author": "Fallback Author",
+        }
+    )
+
+    assert payload is not None
+    assert payload["book_data"]["provider_id"] == "444"
+    assert payload["book_data"]["title"] == "Fallback Title"
+    assert payload["book_data"]["author"] == "Fallback Author"
 
 
 def test_search_results_normalize_external_and_duplicate_sections(shelfmark_module):
@@ -409,7 +450,10 @@ def test_grouping_omits_zero_count_unavailable_bucket(shelfmark_module):
             library_book_url="/book/1",
             detail_url="/external/1",
             shelfmark_base_url="https://shelfmark.example.com",
-            shelfmark_open_url="https://shelfmark.example.com/?content_type=ebook&query=Already+Present&author=Author+One",
+            shelfmark_open_url=(
+                "https://shelfmark.example.com/?content_type=ebook&sort=relevance"
+                "&query=Already+Present+Author+One&title=Already+Present&author=Author+One"
+            ),
             request_payload=None,
             library_state=shelfmark_module.build_shelfmark_library_state(
                 library_match=shelfmark_module.ShelfmarkLibraryMatch("1", 1, "Existing"),
@@ -441,7 +485,10 @@ def test_grouping_omits_zero_count_unavailable_bucket(shelfmark_module):
             library_book_url=None,
             detail_url="/external/2",
             shelfmark_base_url="https://shelfmark.example.com",
-            shelfmark_open_url="https://shelfmark.example.com/?content_type=ebook&query=External+Candidate&author=Author+Two",
+            shelfmark_open_url=(
+                "https://shelfmark.example.com/?content_type=ebook&sort=relevance"
+                "&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two"
+            ),
             request_payload={"book_data": {"provider_id": "2"}},
             library_state=shelfmark_module.build_shelfmark_library_state(
                 library_match=None,
@@ -546,8 +593,11 @@ def test_client_search_books_still_returns_normalized_results(shelfmark_module):
                 ]
             }
 
+    calls = []
+
     class FakeSession:
         def get(self, *args, **kwargs):
+            calls.append({"args": args, "kwargs": kwargs})
             return FakeResponse()
 
     client = shelfmark_module.ShelfmarkClient(config_data, session=FakeSession())
@@ -561,6 +611,65 @@ def test_client_search_books_still_returns_normalized_results(shelfmark_module):
             "authors": ["Frank Herbert"],
         }
     ]
+    assert calls[0]["kwargs"]["params"] == {
+        "query": "dune",
+        "limit": shelfmark_module.DEFAULT_SHELFMARK_LIMIT,
+        "sort": shelfmark_module.DEFAULT_SHELFMARK_SORT,
+        "page": shelfmark_module.DEFAULT_SHELFMARK_PAGE,
+        "provider": shelfmark_module.SHELFMARK_METADATA_PROVIDER,
+        "content_type": shelfmark_module.SHELFMARK_CONTENT_TYPE,
+    }
+
+
+def test_client_search_books_surfaces_auth_required_guidance_without_search_account(shelfmark_module):
+    config_data = shelfmark_module.ShelfmarkClientConfig(
+        enabled=True,
+        base_url="https://shelfmark.example.com",
+        username=None,
+        password=None,
+    )
+
+    class FakeResponse:
+        ok = False
+        status_code = 401
+
+        @staticmethod
+        def json():
+            return {"error": "Unauthorized"}
+
+    class FakeSession:
+        def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    client = shelfmark_module.ShelfmarkClient(config_data, session=FakeSession())
+
+    with pytest.raises(shelfmark_module.ShelfmarkIntegrationError, match="Configure Shelfmark Search Username and Password"):
+        client.search_books("black house")
+
+
+def test_client_search_books_rejects_unexpected_payload_shape(shelfmark_module):
+    config_data = shelfmark_module.ShelfmarkClientConfig(
+        enabled=True,
+        base_url="https://shelfmark.example.com",
+        username=None,
+        password=None,
+    )
+
+    class FakeResponse:
+        ok = True
+
+        @staticmethod
+        def json():
+            return {"provider": "hardcover", "query": "dune"}
+
+    class FakeSession:
+        def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    client = shelfmark_module.ShelfmarkClient(config_data, session=FakeSession())
+
+    with pytest.raises(shelfmark_module.ShelfmarkIntegrationError, match="Expected a 'books' list"):
+        client.search_books("dune")
 
 
 def test_search_results_unavailable_without_guessing(shelfmark_module):

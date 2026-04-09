@@ -3,6 +3,10 @@
 
   var flow = window.CwaShelfmarkRequestFlow;
   var DEFAULT_TIMEOUT_MS = 10000;
+  var STATUS_SETTLE_DELAY_MS = typeof window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS === 'number'
+    ? window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS
+    : 2600;
+  var statusTimers = new WeakMap();
 
   if (!flow) {
     return;
@@ -23,12 +27,51 @@
     return (value || '').replace(/\/+$/, '');
   }
 
-  function setStatusText(text, level) {
+  function clearStatusTimer(node) {
+    var timerId = statusTimers.get(node);
+    if (timerId) {
+      clearTimeout(timerId);
+      statusTimers.delete(node);
+    }
+  }
+
+  function scheduleStatusSettle(node, delayMs) {
+    clearStatusTimer(node);
+    if (delayMs <= 0) {
+      node.classList.add('is-settled');
+      return;
+    }
+    statusTimers.set(node, setTimeout(function () {
+      node.classList.add('is-settled');
+      statusTimers.delete(node);
+    }, delayMs));
+  }
+
+  function setStatusText(text, level, options) {
+    var settings = options || {};
+    var alertLevel = level || 'alert-info';
+    var persist = Object.prototype.hasOwnProperty.call(settings, 'persist')
+      ? Boolean(settings.persist)
+      : (alertLevel === 'alert-warning' || alertLevel === 'alert-danger');
+    var settleDelayMs = typeof settings.settleDelayMs === 'number'
+      ? settings.settleDelayMs
+      : STATUS_SETTLE_DELAY_MS;
     var nodes = document.querySelectorAll('.js-shelfmark-request-status');
     nodes.forEach(function (node) {
+      clearStatusTimer(node);
+      if (!text) {
+        node.classList.add('is-hidden');
+        node.setAttribute('aria-hidden', 'true');
+        return;
+      }
+      node.classList.remove('is-hidden', 'is-settled');
+      node.removeAttribute('aria-hidden');
       node.textContent = text;
       node.classList.remove('alert-info', 'alert-success', 'alert-warning', 'alert-danger');
-      node.classList.add(level || 'alert-info');
+      node.classList.add(alertLevel);
+      if (!persist) {
+        scheduleStatusSettle(node, settleDelayMs);
+      }
     });
   }
 
@@ -52,6 +95,8 @@
     var labelNode = node.querySelector('.js-shelfmark-action-label');
 
     node.dataset.mode = next.mode;
+    node.setAttribute('target', '_blank');
+    node.setAttribute('rel', 'noopener noreferrer');
     applyButtonClass(node, next.buttonClass);
 
     if (iconNode) {
@@ -214,7 +259,7 @@
       return;
     }
 
-    setStatusText('Checking your Shelfmark session for direct request availability…', 'alert-info');
+    setStatusText('Checking your Shelfmark session for direct request availability…', 'alert-info', { persist: true });
 
     try {
       var authPayload = await fetchJson(stripTrailingSlash(baseUrl) + '/api/auth/check', {}, DEFAULT_TIMEOUT_MS);
@@ -244,7 +289,7 @@
 
       if (!perActionSummary.payloadCount) {
         setStatusText(
-          'Shelfmark session detected. These results can be opened directly in Shelfmark, but none of them expose enough exact metadata for a direct request here.',
+          'Shelfmark session detected. These results still open in Shelfmark because the search response did not include the exact book metadata CWA needs for a direct request here.',
           'alert-info'
         );
         return;
@@ -252,7 +297,7 @@
 
       if (perActionSummary.requestableCount > 0 && perActionSummary.blockedCount > 0) {
         setStatusText(
-          'Shelfmark session detected. Request buttons are enabled for requestable rows, and other rows still open in Shelfmark when policy or metadata requires it.',
+          'Direct Shelfmark requests are ready for supported rows. Other rows still open in Shelfmark when policy or metadata requires it.',
           'alert-success'
         );
         return;
@@ -285,7 +330,7 @@
 
       event.preventDefault();
       setPending(node, true);
-      setStatusText('Creating request in Shelfmark…', 'alert-info');
+      setStatusText('Creating request in Shelfmark…', 'alert-info', { persist: true });
 
       try {
         await fetchJson(stripTrailingSlash(node.dataset.baseUrl) + '/api/requests', {
