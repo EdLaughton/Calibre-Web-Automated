@@ -50,6 +50,12 @@ body.modal-open #remove-from-shelves + .tags {
     position: relative;
 }
 
+.cwa-navbar-search.is-open .form-control,
+.cwa-navbar-search.is-loading .form-control {
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
 .cwa-navbar-search-group {
     width: 100%;
 }
@@ -65,6 +71,28 @@ body.modal-open #remove-from-shelves + .tags {
     background: #ffffff;
     box-shadow: 0 18px 34px rgba(0, 0, 0, 0.12);
     overflow: hidden;
+}
+
+.cwa-autocomplete-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    color: #52606d;
+    line-height: 1.35;
+}
+
+.cwa-autocomplete-message .cwa-autocomplete-primary {
+    font-weight: 600;
+}
+
+.cwa-autocomplete-message .cwa-autocomplete-secondary {
+    margin-top: 3px;
+    white-space: normal;
+}
+
+.cwa-autocomplete-message-loading .cwa-autocomplete-icon {
+    animation: cwa-autocomplete-spin 1s linear infinite;
 }
 
 .cwa-autocomplete-divider {
@@ -131,6 +159,21 @@ body.modal-open #remove-from-shelves + .tags {
     font-weight: 600;
 }
 
+.cwa-autocomplete-badge-book {
+    background: #e8f1fb;
+    color: #2f5f8b;
+}
+
+.cwa-autocomplete-badge-author {
+    background: #edf7ee;
+    color: #34684a;
+}
+
+.cwa-autocomplete-badge-series {
+    background: #f5eefc;
+    color: #6a4691;
+}
+
 .cwa-autocomplete-show-all .cwa-autocomplete-primary {
     font-weight: 500;
 }
@@ -169,4 +212,29 @@ body.blur .cwa-autocomplete-icon {
 body.blur .cwa-autocomplete-badge {
     background: rgba(255, 255, 255, 0.10);
     color: #f5f7fb;
+}
+
+body.blur .cwa-autocomplete-badge-book {
+    background: rgba(115, 169, 255, 0.22);
+}
+
+body.blur .cwa-autocomplete-badge-author {
+    background: rgba(123, 210, 155, 0.22);
+}
+
+body.blur .cwa-autocomplete-badge-series {
+    background: rgba(188, 143, 255, 0.22);
+}
+
+body.blur .cwa-autocomplete-message {
+    color: #d7dfec;
+}
+
+@keyframes cwa-autocomplete-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }

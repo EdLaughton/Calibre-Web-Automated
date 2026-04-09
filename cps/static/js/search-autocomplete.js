@@ -57,7 +57,7 @@
             + '<span class="cwa-autocomplete-primary">' + highlightMatch(item.primary_text, query) + "</span>"
             + secondary
             + "</span>"
-            + '<span class="label label-default cwa-autocomplete-badge">' + escapeHtml(item.label) + "</span>";
+            + '<span class="label label-default cwa-autocomplete-badge cwa-autocomplete-badge-' + escapeHtml(item.type) + '">' + escapeHtml(item.label) + "</span>";
     }
 
     function buildShowAllMarkup(item) {
@@ -65,6 +65,18 @@
             + '<span class="glyphicon glyphicon-search cwa-autocomplete-icon" aria-hidden="true"></span>'
             + '<span class="cwa-autocomplete-copy">'
             + '<span class="cwa-autocomplete-primary">' + escapeHtml(item.label) + "</span>"
+            + "</span>";
+    }
+
+    function buildMessageMarkup(icon, primaryText, secondaryText) {
+        var secondary = secondaryText
+            ? '<span class="cwa-autocomplete-secondary">' + escapeHtml(secondaryText) + "</span>"
+            : "";
+        return ''
+            + '<span class="glyphicon glyphicon-' + escapeHtml(icon) + ' cwa-autocomplete-icon" aria-hidden="true"></span>'
+            + '<span class="cwa-autocomplete-copy">'
+            + '<span class="cwa-autocomplete-primary">' + escapeHtml(primaryText) + "</span>"
+            + secondary
             + "</span>";
     }
 
@@ -103,12 +115,23 @@
             controller: null
         };
 
+        function setMenuVisible(isVisible) {
+            menu.hidden = !isVisible;
+            form.classList.toggle("is-open", Boolean(isVisible));
+            input.setAttribute("aria-expanded", isVisible ? "true" : "false");
+        }
+
         function closeMenu() {
+            state.requestId += 1;
+            if (state.controller && typeof state.controller.abort === "function") {
+                state.controller.abort();
+            }
+            state.controller = null;
             state.activeIndex = -1;
             state.items = [];
             menu.innerHTML = "";
-            menu.hidden = true;
-            input.setAttribute("aria-expanded", "false");
+            form.classList.remove("is-loading");
+            setMenuVisible(false);
             input.removeAttribute("aria-activedescendant");
         }
 
@@ -131,15 +154,64 @@
             window.location.assign(href);
         }
 
-        function renderPayload(payload) {
+        function renderMessageState(primaryText, secondaryText, options) {
+            options = options || {};
             menu.innerHTML = "";
             state.items = [];
             state.activeIndex = -1;
+            input.removeAttribute("aria-activedescendant");
 
-            (payload.suggestions || []).forEach(function (item, index) {
+            var message = document.createElement("div");
+            message.className = "cwa-autocomplete-message";
+            if (options.modifierClass) {
+                message.className += " " + options.modifierClass;
+            }
+            message.setAttribute("role", "status");
+            message.innerHTML = buildMessageMarkup(options.icon || "search", primaryText, secondaryText);
+            menu.appendChild(message);
+
+            if (options.showAll) {
+                var divider = document.createElement("div");
+                divider.className = "cwa-autocomplete-divider";
+                menu.appendChild(divider);
+
+                var showAll = document.createElement("button");
+                showAll.type = "button";
+                showAll.className = "cwa-autocomplete-item cwa-autocomplete-show-all";
+                showAll.id = "cwa-autocomplete-item-show-all";
+                showAll.setAttribute("role", "option");
+                showAll.setAttribute("aria-selected", "false");
+                showAll.innerHTML = buildShowAllMarkup(options.showAll);
+                showAll.addEventListener("mouseenter", function () {
+                    setActiveIndex(state.items.indexOf(entryShowAll));
+                });
+                showAll.addEventListener("click", function () {
+                    navigateTo(options.showAll.href);
+                });
+
+                var entryShowAll = {
+                    href: options.showAll.href,
+                    element: showAll
+                };
+                state.items.push(entryShowAll);
+                menu.appendChild(showAll);
+            }
+
+            setMenuVisible(true);
+        }
+
+        function renderPayload(payload) {
+            form.classList.remove("is-loading");
+            menu.innerHTML = "";
+            state.items = [];
+            state.activeIndex = -1;
+            var suggestions = payload.suggestions || [];
+            var hasSuggestions = Boolean(suggestions.length);
+
+            suggestions.forEach(function (item, index) {
                 var button = document.createElement("button");
                 button.type = "button";
-                button.className = "cwa-autocomplete-item";
+                button.className = "cwa-autocomplete-item cwa-autocomplete-item-" + item.type;
                 button.id = "cwa-autocomplete-item-" + index;
                 button.setAttribute("role", "option");
                 button.setAttribute("aria-selected", "false");
@@ -158,6 +230,19 @@
                 state.items.push(entry);
                 menu.appendChild(button);
             });
+
+            if (!hasSuggestions) {
+                renderMessageState(
+                    'No local matches for "' + (payload.query || "") + '"',
+                    "Try the full search results page for broader matches.",
+                    {
+                        icon: "search",
+                        modifierClass: "cwa-autocomplete-message-empty",
+                        showAll: payload.show_all || null
+                    }
+                );
+                return;
+            }
 
             if (payload.show_all) {
                 var divider = state.items.length ? document.createElement("div") : null;
@@ -187,13 +272,19 @@
                 menu.appendChild(showAll);
             }
 
-            if (!state.items.length) {
-                closeMenu();
-                return;
-            }
+            setMenuVisible(true);
+        }
 
-            menu.hidden = false;
-            input.setAttribute("aria-expanded", "true");
+        function renderLoadingState(query) {
+            form.classList.add("is-loading");
+            renderMessageState(
+                "Searching books, authors, and series...",
+                'Looking for "' + query + '" in your library.',
+                {
+                    icon: "refresh",
+                    modifierClass: "cwa-autocomplete-message-loading"
+                }
+            );
         }
 
         function fetchSuggestions(query) {
@@ -205,6 +296,7 @@
 
             state.requestId += 1;
             var requestId = state.requestId;
+            renderLoadingState(trimmed);
             if (state.controller && typeof state.controller.abort === "function") {
                 state.controller.abort();
             }
@@ -221,6 +313,7 @@
                     if (error && error.name === "AbortError") {
                         return;
                     }
+                    form.classList.remove("is-loading");
                     closeMenu();
                 });
         }
@@ -276,7 +369,7 @@
             closeMenu();
         });
 
-        return {
+        var api = {
             close: closeMenu,
             renderPayload: renderPayload,
             fetchSuggestions: fetchSuggestions,
@@ -284,23 +377,42 @@
                 return state;
             }
         };
+
+        form.__cwaAutocompleteInstance = api;
+        return api;
     }
 
-    function initNavbarAutocomplete() {
-        if (typeof document === "undefined") {
+    function initNavbarAutocomplete(doc) {
+        var targetDocument = doc || (typeof document !== "undefined" ? document : null);
+        if (!targetDocument) {
             return null;
         }
-        var form = document.querySelector(".cwa-navbar-search");
+        var form = targetDocument.querySelector(".cwa-navbar-search");
         if (!form) {
             return null;
+        }
+        if (form.__cwaAutocompleteInstance) {
+            return form.__cwaAutocompleteInstance;
         }
         return createNavbarAutocomplete(form);
     }
 
+    function bootNavbarAutocomplete(doc) {
+        var targetDocument = doc || (typeof document !== "undefined" ? document : null);
+        if (!targetDocument) {
+            return null;
+        }
+        if (targetDocument.readyState === "loading") {
+            targetDocument.addEventListener("DOMContentLoaded", function handleReady() {
+                initNavbarAutocomplete(targetDocument);
+            });
+            return "deferred";
+        }
+        return initNavbarAutocomplete(targetDocument);
+    }
+
     if (typeof document !== "undefined") {
-        document.addEventListener("DOMContentLoaded", function () {
-            initNavbarAutocomplete();
-        });
+        bootNavbarAutocomplete(document);
     }
 
     return {
@@ -308,6 +420,7 @@
         highlightMatch: highlightMatch,
         getNextActiveIndex: getNextActiveIndex,
         createNavbarAutocomplete: createNavbarAutocomplete,
-        initNavbarAutocomplete: initNavbarAutocomplete
+        initNavbarAutocomplete: initNavbarAutocomplete,
+        bootNavbarAutocomplete: bootNavbarAutocomplete
     };
 }));
