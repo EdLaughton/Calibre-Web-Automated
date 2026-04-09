@@ -49,7 +49,7 @@
 
   {% if local_count > 0 %}
     <div class="shelfmark-section-heading shelfmark-section-heading--local">
-      <div>
+      <div class="shelfmark-section-heading__main">
         <h3 class="shelfmark-section-heading__title">
           <span class="glyphicon glyphicon-book" aria-hidden="true"></span>
           {{ _('Library Results') }}
@@ -58,7 +58,13 @@
           {{ _('These are books already present in your Calibre library.') }}
         </p>
       </div>
-      <span class="shelfmark-section-pill shelfmark-section-pill--local">{{ local_count }}</span>
+      <div class="shelfmark-section-heading__meta">
+        {% if local_count == 1 %}
+          {{ _('1 book') }}
+        {% else %}
+          {{ _('%(count)s books', count=local_count) }}
+        {% endif %}
+      </div>
     </div>
     <div class="row display-flex">
       {% for entry in entries %}
@@ -134,11 +140,11 @@
   {% endif %}
 
   {% if shelfmark and shelfmark.enabled %}
-    <hr>
+    <hr class="shelfmark-search-divider">
     <div class="shelfmark-external-shell">
       <div class="page-header shelfmark-external-header">
         <div class="shelfmark-section-heading shelfmark-section-heading--external">
-          <div>
+          <div class="shelfmark-section-heading__main">
             <h3 class="shelfmark-section-heading__title">
               <span class="glyphicon glyphicon-globe" aria-hidden="true"></span>
               {{ _('Shelfmark External Results') }}
@@ -147,33 +153,43 @@
               {{ _('External search is separate from your local library results and duplicate awareness stays exact.') }}
             </p>
           </div>
-          <span class="shelfmark-section-pill shelfmark-section-pill--external">{{ external_count }}</span>
+          <div class="shelfmark-section-heading__meta">
+            {% if external_count == 0 %}
+              {{ _('No matches') }}
+            {% elif external_count == 1 %}
+              {{ _('1 match') }}
+            {% else %}
+              {{ _('%(count)s matches', count=external_count) }}
+            {% endif %}
+          </div>
         </div>
         {% if shelfmark.query %}
-          <p class="text-muted shelfmark-external-header__query">
+          <p class="shelfmark-external-header__query">
             <strong>{{ shelfmark.query_label or _('External lookup query') }}:</strong>
             <code>{{ shelfmark.query }}</code>
           </p>
         {% endif %}
         {% if shelfmark.context_hint %}
-          <p class="help-block shelfmark-external-header__hint">{{ shelfmark.context_hint }}</p>
+          <p class="shelfmark-external-header__hint">{{ shelfmark.context_hint }}</p>
         {% endif %}
       </div>
 
       {% if shelfmark.available and external_count > 0 %}
-        <div class="alert alert-info shelfmark-status-banner js-shelfmark-request-status" data-base-url="{{ shelfmark.results[0].shelfmark_base_url }}">
-          {{ _('Request actions are verified in your browser against Shelfmark. If direct browser requests are not viable here, Open in Shelfmark remains the safe fallback.') }}
+        <div class="alert alert-info shelfmark-status-banner js-shelfmark-request-status" data-base-url="{{ shelfmark.results[0].shelfmark_base_url }}" role="status" aria-live="polite">
+          {{ _('Checking your browser for direct Shelfmark request availability.') }}
         </div>
         {% for group in shelfmark.groups %}
           <div class="panel shelfmark-group-panel {{ group.panel_class }}">
             <div class="panel-heading shelfmark-group-panel__heading">
-              <div class="shelfmark-group-panel__title">
-                <span class="{{ group.icon_class }}" aria-hidden="true"></span>
-                <strong>{{ group.title }}</strong>
+              <div class="shelfmark-group-panel__heading-main">
+                <div class="shelfmark-group-panel__title">
+                  <span class="{{ group.icon_class }}" aria-hidden="true"></span>
+                  <strong>{{ group.title }}</strong>
+                </div>
+                <span class="label {{ group.badge_class }} shelfmark-group-panel__count">{{ group.count }}</span>
               </div>
-              <span class="label {{ group.badge_class }} shelfmark-group-panel__count">{{ group.count }}</span>
               {% if group.hint %}
-                <div class="small text-muted shelfmark-group-panel__hint">{{ group.hint }}</div>
+                <div class="shelfmark-group-panel__hint">{{ group.hint }}</div>
               {% endif %}
             </div>
             <div class="list-group shelfmark-group-panel__list">
@@ -219,15 +235,15 @@
                     {% endif %}
                     </div>
                   </div>
-                  {% if result.authors %}
-                    <p class="shelfmark-result-card__authors"><strong>{{ _('Author') }}:</strong> {{ result.authors|join(', ') }}</p>
-                  {% endif %}
                   {% if result.library_book_url %}
                     <div class="shelfmark-result-card__existing">
                       <span class="glyphicon glyphicon-link" aria-hidden="true"></span>
                       <strong>{{ _('Existing CWA book') }}:</strong>
                       <a href="{{ result.library_book_url }}">{{ result.library_book_title or _('Open existing book') }}</a>
                     </div>
+                  {% endif %}
+                  {% if result.authors %}
+                    <p class="shelfmark-result-card__authors"><strong>{{ _('Author') }}:</strong> {{ result.authors|join(', ') }}</p>
                   {% endif %}
                   {% if result.description %}
                     <p class="text-muted shelfmark-result-card__description">
@@ -244,6 +260,8 @@
                       <a
                         class="btn btn-sm {{ result.action.button_class }} shelfmark-result-card__primary-action js-shelfmark-action"
                         href="{{ result.shelfmark_open_url }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         data-base-url="{{ result.shelfmark_base_url }}"
                         data-open-url="{{ result.shelfmark_open_url }}"
                         data-request-payload='{{ result.request_payload|tojson if result.request_payload else "" }}'
@@ -285,8 +303,22 @@
           {{ shelfmark.message }}
         </div>
       {% elif shelfmark.available %}
-        <div class="alert alert-info">
-          {{ _('No Shelfmark external results were returned for this search.') }}
+        <div class="shelfmark-empty-state">
+          <div class="shelfmark-empty-state__icon">
+            <span class="glyphicon glyphicon-search" aria-hidden="true"></span>
+          </div>
+          <div class="shelfmark-empty-state__body">
+            <h4 class="shelfmark-empty-state__title">{{ _('No Shelfmark external results found') }}</h4>
+            <p class="shelfmark-empty-state__message">
+              {{ _('Shelfmark search completed for this query but did not return any external matches.') }}
+            </p>
+            {% if shelfmark.query %}
+              <p class="shelfmark-empty-state__query">
+                <strong>{{ shelfmark.query_label or _('External lookup query') }}:</strong>
+                <code>{{ shelfmark.query }}</code>
+              </p>
+            {% endif %}
+          </div>
         </div>
       {% else %}
         <div class="alert alert-warning">

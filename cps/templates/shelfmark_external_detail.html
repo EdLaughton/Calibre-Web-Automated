@@ -88,8 +88,8 @@
               </div>
             {% endif %}
 
-            <div class="alert alert-info shelfmark-status-banner js-shelfmark-request-status" data-base-url="{{ result.shelfmark_base_url }}">
-              {{ _("Request actions are verified in your browser against Shelfmark. Until that check completes, or if direct browser requests are not viable here, the safe fallback is to open Shelfmark directly.") }}
+            <div class="alert alert-info shelfmark-status-banner js-shelfmark-request-status" data-base-url="{{ result.shelfmark_base_url }}" role="status" aria-live="polite">
+              {{ _("Checking your browser for direct Shelfmark request availability.") }}
             </div>
 
             <div class="btn-toolbar shelfmark-detail-hero__actions" role="toolbar">
@@ -102,6 +102,8 @@
                 <a
                   class="btn {{ result.action.button_class }} shelfmark-detail-hero__primary-action js-shelfmark-action"
                   href="{{ result.shelfmark_open_url }}"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   data-base-url="{{ result.shelfmark_base_url }}"
                   data-open-url="{{ result.shelfmark_open_url }}"
                   data-request-payload='{{ result.request_payload|tojson if result.request_payload else "" }}'

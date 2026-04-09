@@ -6,13 +6,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import importlib
 from pathlib import Path
+import sys
 
 from flask import Blueprint, Flask, g, render_template
 from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
 
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "cps" / "templates"
+
+
+def _ensure_real_flask_package():
+    flask_module = sys.modules.get("flask")
+    if flask_module is not None and hasattr(flask_module, "__path__"):
+        return
+
+    sys.modules.pop("flask", None)
+    importlib.import_module("flask")
+    importlib.import_module("flask.testing")
 
 
 @dataclass
@@ -69,6 +81,7 @@ class DummyCurrentUser:
 
 
 def _create_app():
+    _ensure_real_flask_package()
     app = Flask(__name__, template_folder=str(TEMPLATES_DIR))
     app.config["SECRET_KEY"] = "test-secret"
     app.jinja_loader = ChoiceLoader(
@@ -140,7 +153,10 @@ def _base_context():
         "library_book_url": "/book/7",
         "detail_url": "/search/external/shelfmark/hardcover/999?query=dune",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
-        "shelfmark_open_url": "https://library.example.com/shelfmark/?content_type=ebook&query=Already+Present&author=Author+One",
+        "shelfmark_open_url": (
+            "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance"
+            "&query=Already+Present+Author+One&title=Already+Present&author=Author+One"
+        ),
         "request_payload": {
             "book_data": {"provider_id": "999", "title": "Already Present"},
             "context": {"source": "*", "content_type": "ebook", "request_level": "book"},
@@ -180,7 +196,10 @@ def _base_context():
         "library_book_url": None,
         "detail_url": "/search/external/shelfmark/hardcover/222?query=dune",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
-        "shelfmark_open_url": "https://library.example.com/shelfmark/?content_type=ebook&query=External+Candidate&author=Author+Two",
+        "shelfmark_open_url": (
+            "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance"
+            "&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two"
+        ),
         "request_payload": {
             "book_data": {"provider_id": "222", "title": "External Candidate"},
             "context": {"source": "*", "content_type": "ebook", "request_level": "book"},
@@ -220,7 +239,10 @@ def _base_context():
         "library_book_url": None,
         "detail_url": "/search/external/shelfmark/other/333?query=dune",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
-        "shelfmark_open_url": "https://library.example.com/shelfmark/?content_type=ebook&query=No+Hardcover+ID&author=Author+Three",
+        "shelfmark_open_url": (
+            "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance"
+            "&query=No+Hardcover+ID+Author+Three&title=No+Hardcover+ID&author=Author+Three"
+        ),
         "request_payload": None,
         "library_state": {
             "key": "library_match_unavailable",
@@ -313,6 +335,9 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "Shelfmark External Results" in html
     assert html.index("Library Results") < html.index("Shelfmark External Results")
     assert 'class="shelfmark-external-shell"' in html
+    assert "1 book" in html
+    assert "3 matches" in html
+    assert "shelfmark-section-pill" not in html
     assert "Already in Your Library" in html
     assert "External Candidates" in html
     assert "External Results Without Exact Hardcover ID" in html
@@ -323,6 +348,8 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "Exact hardcover-id match in metadata.db." not in html
     assert "Duplicate checking is unavailable for these results because Shelfmark did not return an exact Hardcover ID." in html
     assert 'class="btn btn-sm btn-primary shelfmark-result-card__primary-action js-shelfmark-action"' in html
+    assert 'target="_blank"' in html
+    assert 'rel="noopener noreferrer"' in html
     assert "js-shelfmark-action-icon" in html
     assert "js-shelfmark-action-label" in html
     assert "shelfmark-result-card__secondary-action" in html
@@ -357,3 +384,32 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert 'class="discover shelfmark-search-page shelfmark-detail-page"' in html
     assert 'class="shelfmark-detail-page__shell"' in html
     assert html.count("Open in Shelfmark") == 1
+    assert 'target="_blank"' in html
+
+
+def test_search_template_renders_intentional_zero_results_state():
+    app = _create_app()
+    context = _base_context()
+    context["shelfmark_section"] = {
+        **context["shelfmark_section"],
+        "summary": {
+            "total_results": 0,
+            "already_in_library": 0,
+            "external_candidates": 0,
+            "library_match_unavailable": 0,
+        },
+        "results": [],
+        "groups": [],
+    }
+
+    with app.test_request_context("/search?query=Black+House"):
+        g.shelves_access = []
+        g.config_authors_max = 0
+        html = render_template("search.html", **context)
+
+    assert "Shelfmark External Results" in html
+    assert "No Shelfmark external results found" in html
+    assert "Shelfmark search completed for this query but did not return any external matches." in html
+    assert "No matches" in html
+    assert "External lookup query" in html
+    assert "<code>Dune</code>" in html

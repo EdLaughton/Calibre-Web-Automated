@@ -19,6 +19,8 @@ log = logger.create()
 
 DEFAULT_SHELFMARK_TIMEOUT_SECONDS = 15
 DEFAULT_SHELFMARK_LIMIT = 12
+DEFAULT_SHELFMARK_SORT = "relevance"
+DEFAULT_SHELFMARK_PAGE = 1
 SHELFMARK_METADATA_PROVIDER = "hardcover"
 SHELFMARK_CONTENT_TYPE = "ebook"
 SHELFMARK_REQUEST_MODE = "request_book"
@@ -270,21 +272,28 @@ def build_shelfmark_open_url(
     hardcover_id: str | None,
     content_type: str = SHELFMARK_CONTENT_TYPE,
 ) -> str:
-    # Shelfmark's browser-facing URL search supports normal text filters such as
-    # query/title/author, not provider-ID deep links via "hardcover-id:<id>".
-    search_query = title or (authors[0] if authors else "") or (hardcover_id or "")
-    params: dict[str, str] = {"content_type": content_type}
+    # Shelfmark does not currently expose a stable URL-addressable metadata-book
+    # detail route. Use the most specific browser search URL it supports today.
+    primary_author = _normalize_text(authors[0]) if authors else None
+    query_terms = [value for value in (title, primary_author, hardcover_id) if value]
+    search_query = " ".join(query_terms[:2]) or (hardcover_id or "")
+    params: dict[str, str] = {
+        "content_type": content_type,
+        "sort": DEFAULT_SHELFMARK_SORT,
+    }
     if search_query:
         params["query"] = search_query
-    if authors:
-        params["author"] = authors[0]
+    if title:
+        params["title"] = title
+    if primary_author:
+        params["author"] = primary_author
     return _with_query(_join_base_url(base_url, "/"), params)
 
 
 def build_shelfmark_request_payload(book: Mapping[str, Any]) -> dict[str, Any] | None:
     hardcover_id = _extract_hardcover_id(book)
-    title = _normalize_text(book.get("title"))
-    authors = _normalize_authors(book.get("authors"))
+    title = _resolve_shelfmark_title(book)
+    authors = _resolve_shelfmark_authors(book)
     if not hardcover_id or not title or not authors:
         return None
 
@@ -369,6 +378,7 @@ def select_shelfmark_action(
     library_book_url: str | None,
     hardcover_id: str | None,
     request_payload: Mapping[str, Any] | None,
+    missing_request_requirements: Sequence[str] = (),
     probe_state: ShelfmarkProbeState | None,
 ) -> ShelfmarkActionState:
     if already_in_library and library_book_url:
@@ -390,10 +400,12 @@ def select_shelfmark_action(
         )
 
     if request_payload is None:
+        requirement_hint = _describe_missing_request_requirements(missing_request_requirements)
         return ShelfmarkActionState(
             mode="open",
             label=_("Open in Shelfmark"),
-            hint=_("Shelfmark did not return enough exact metadata to prepare a direct request."),
+            hint=requirement_hint
+            or _("Shelfmark did not return enough exact metadata to prepare a direct request."),
             button_class="btn-default",
             icon_class="glyphicon glyphicon-new-window",
         )
@@ -528,8 +540,8 @@ def build_shelfmark_result_view(
     shelfmark_base_url: str,
     probe_state: ShelfmarkProbeState | None = None,
 ) -> ShelfmarkResultView:
-    title = _normalize_text(book.get("title")) or _("Unknown title")
-    authors = tuple(_normalize_authors(book.get("authors")))
+    title = _resolve_shelfmark_title(book) or _("Unknown title")
+    authors = tuple(_resolve_shelfmark_authors(book))
     hardcover_id = _extract_hardcover_id(book)
     library_book_url = (
         url_for("web.show_book", book_id=library_match.book_id)
@@ -537,6 +549,7 @@ def build_shelfmark_result_view(
         else None
     )
     request_payload = build_shelfmark_request_payload(book)
+    missing_request_requirements = _missing_request_requirements(book)
     library_state = build_shelfmark_library_state(
         library_match=library_match,
         hardcover_id=hardcover_id,
@@ -546,6 +559,7 @@ def build_shelfmark_result_view(
         library_book_url=library_book_url,
         hardcover_id=hardcover_id,
         request_payload=request_payload,
+        missing_request_requirements=missing_request_requirements,
         probe_state=probe_state,
     )
     return ShelfmarkResultView(
@@ -554,7 +568,7 @@ def build_shelfmark_result_view(
         title=title,
         subtitle=_normalize_text(book.get("subtitle")),
         authors=authors,
-        cover_url=_normalize_text(book.get("cover_url")),
+        cover_url=_normalize_shelfmark_cover_url(shelfmark_base_url, book.get("cover_url")),
         description=_normalize_text(book.get("description")),
         publish_year=_normalize_int(book.get("publish_year")),
         source_url=_normalize_text(book.get("source_url")),
@@ -745,14 +759,24 @@ class ShelfmarkClient:
             params={
                 "query": query,
                 "limit": limit,
+                "sort": DEFAULT_SHELFMARK_SORT,
+                "page": DEFAULT_SHELFMARK_PAGE,
                 "provider": provider,
                 "content_type": content_type,
             },
         )
-        payload = self._parse_json_response(response, _("Shelfmark search failed."))
+        payload = self._parse_json_response(
+            response,
+            _("Shelfmark search failed."),
+            unauthorized_message=self._search_auth_failure_message(),
+            forbidden_message=self._search_forbidden_message(),
+            invalid_payload_message=_("Shelfmark returned an unexpected metadata search response."),
+        )
         books = payload.get("books")
         if not isinstance(books, list):
-            return []
+            raise ShelfmarkIntegrationError(
+                _("Shelfmark returned an unexpected metadata search response. Expected a 'books' list.")
+            )
         return [book for book in books if isinstance(book, dict)]
 
     def fetch_book(self, provider: str, provider_id: str) -> dict[str, Any]:
@@ -820,15 +844,48 @@ class ShelfmarkClient:
         except RequestException as exc:
             raise ShelfmarkIntegrationError(default_message) from exc
 
+    def _search_auth_failure_message(self) -> str:
+        if not self.config.username and not self.config.password:
+            return _(
+                "Shelfmark metadata search requires authentication. Configure Shelfmark Search Username and Password in CWA admin. "
+                "Your browser's Shelfmark login is only used for browser-side request actions, not for server-side external search."
+            )
+        return _(
+            "Shelfmark rejected the configured search account. Verify Shelfmark Search Username and Password and confirm that account can use metadata search."
+        )
+
     @staticmethod
-    def _parse_json_response(response: Any, default_message: str) -> Mapping[str, Any]:
+    def _search_forbidden_message() -> str:
+        return _(
+            "Shelfmark denied the configured search account access to metadata search. Verify the account and any reverse-proxy or auth restrictions on Shelfmark."
+        )
+
+    @staticmethod
+    def _parse_json_response(
+        response: Any,
+        default_message: str,
+        *,
+        unauthorized_message: str | None = None,
+        forbidden_message: str | None = None,
+        invalid_payload_message: str | None = None,
+    ) -> Mapping[str, Any]:
         try:
             payload = response.json()
         except ValueError as exc:
-            raise ShelfmarkIntegrationError(default_message) from exc
+            raise ShelfmarkIntegrationError(invalid_payload_message or default_message) from exc
+
+        status_code = getattr(response, "status_code", getattr(response, "status", None))
 
         if response.ok:
-            return payload if isinstance(payload, Mapping) else {}
+            if isinstance(payload, Mapping):
+                return payload
+            raise ShelfmarkIntegrationError(invalid_payload_message or default_message)
+
+        if status_code == 401 and unauthorized_message:
+            raise ShelfmarkIntegrationError(unauthorized_message)
+
+        if status_code == 403 and forbidden_message:
+            raise ShelfmarkIntegrationError(forbidden_message)
 
         message = default_message
         if isinstance(payload, Mapping):
@@ -856,7 +913,10 @@ def _normalize_int(value: Any) -> int | None:
 
 
 def _normalize_authors(value: Any) -> list[str]:
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+    if isinstance(value, (str, bytes)):
+        normalized = _normalize_text(value)
+        return [normalized] if normalized else []
+    if not isinstance(value, Sequence):
         return []
     authors: list[str] = []
     for author in value:
@@ -864,6 +924,35 @@ def _normalize_authors(value: Any) -> list[str]:
         if normalized:
             authors.append(normalized)
     return authors
+
+
+def _resolve_shelfmark_title(book: Mapping[str, Any]) -> str | None:
+    return _normalize_text(book.get("title")) or _normalize_text(book.get("search_title"))
+
+
+def _resolve_shelfmark_authors(book: Mapping[str, Any]) -> list[str]:
+    authors = _normalize_authors(book.get("authors"))
+    if authors:
+        return authors
+
+    for key in ("author", "search_author"):
+        authors = _normalize_authors(book.get(key))
+        if authors:
+            return authors
+
+    return []
+
+
+def _normalize_shelfmark_cover_url(base_url: str, value: Any) -> str | None:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+
+    parsed = urlsplit(normalized)
+    if parsed.scheme or parsed.netloc:
+        return normalized
+
+    return _join_base_url(base_url, normalized)
 
 
 def _normalize_display_fields(value: Any) -> tuple[dict[str, Any], ...]:
@@ -888,10 +977,54 @@ def _normalize_display_fields(value: Any) -> tuple[dict[str, Any], ...]:
 
 
 def _extract_hardcover_id(book: Mapping[str, Any]) -> str | None:
+    identifiers = book.get("identifiers")
+    if isinstance(identifiers, Mapping):
+        for key in ("hardcover-id", "hardcover_id"):
+            normalized_identifier = _normalize_text(identifiers.get(key))
+            if normalized_identifier:
+                return normalized_identifier
+
     provider = _normalize_text(book.get("provider"))
     if provider != SHELFMARK_METADATA_PROVIDER:
         return None
     return _normalize_text(book.get("provider_id"))
+
+
+def _missing_request_requirements(book: Mapping[str, Any]) -> tuple[str, ...]:
+    missing: list[str] = []
+    if not _extract_hardcover_id(book):
+        missing.append("hardcover_id")
+    if not _resolve_shelfmark_title(book):
+        missing.append("title")
+    if not _resolve_shelfmark_authors(book):
+        missing.append("author")
+    return tuple(missing)
+
+
+def _describe_missing_request_requirements(requirements: Sequence[str]) -> str | None:
+    labels = {
+        "hardcover_id": _("exact Hardcover ID"),
+        "title": _("book title"),
+        "author": _("at least one author"),
+    }
+    normalized = [labels[item] for item in requirements if item in labels]
+    if not normalized:
+        return None
+    if len(normalized) == 1:
+        requirements_text = normalized[0]
+    elif len(normalized) == 2:
+        requirements_text = _("%(first)s and %(second)s", first=normalized[0], second=normalized[1])
+    else:
+        requirements_text = _(
+            "%(first)s, %(second)s, and %(third)s",
+            first=normalized[0],
+            second=normalized[1],
+            third=normalized[2],
+        )
+    return _(
+        "CWA needs the %(requirements)s from Shelfmark before it can prepare a direct request here.",
+        requirements=requirements_text,
+    )
 
 
 def _join_base_url(base_url: str, path: str) -> str:

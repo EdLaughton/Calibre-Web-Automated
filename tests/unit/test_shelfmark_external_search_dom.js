@@ -150,11 +150,13 @@ function createResultNode(options) {
     dataset: {
       baseUrl: options.baseUrl,
       openUrl: options.openUrl,
-      requestPayload: options.requestPayload ? JSON.stringify(options.requestPayload) : '',
+    requestPayload: options.requestPayload ? JSON.stringify(options.requestPayload) : '',
       mode: options.mode
     },
     attributes: {
-      href: options.openUrl
+      href: options.openUrl,
+      target: '_blank',
+      rel: 'noopener noreferrer'
     }
   }));
   action.appendChild(new FakeElement('span', {
@@ -214,6 +216,7 @@ async function runScenario(options) {
 
   global.window = {
     location: { origin: options.currentOrigin },
+    CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS: 0,
     CwaShelfmarkRequestFlow: require(flowModulePath)
   };
   global.document = dom.document;
@@ -253,7 +256,7 @@ async function runScenario(options) {
   const sameOrigin = await runScenario({
     currentOrigin: 'https://library.example.com',
     baseUrl: 'https://library.example.com/shelfmark',
-    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&query=External+Candidate&author=Author+Two',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two',
     requestPayload: {
       book_data: { provider_id: '222', title: 'External Candidate' },
       context: { source: '*', content_type: 'ebook', request_level: 'book' }
@@ -271,7 +274,9 @@ async function runScenario(options) {
     sameOrigin.dom.action.querySelector('.js-shelfmark-action-label').textContent,
     'Request in Shelfmark'
   );
-  assert.match(sameOrigin.dom.status.textContent, /Shelfmark session detected/i);
+  assert.match(sameOrigin.dom.status.textContent, /Direct Shelfmark requests are ready|Shelfmark session detected/i);
+  assert.equal(sameOrigin.dom.status.classList.contains('is-settled'), true);
+  assert.equal(sameOrigin.dom.action.getAttribute('target'), '_blank');
 
   await sameOrigin.clickPrimaryAction();
 
@@ -284,11 +289,13 @@ async function runScenario(options) {
     'Requested in Shelfmark'
   );
   assert.match(sameOrigin.dom.status.textContent, /Request created in Shelfmark/i);
+  assert.equal(sameOrigin.dom.status.classList.contains('is-settled'), true);
+  assert.equal(sameOrigin.dom.action.getAttribute('target'), '_blank');
 
   const crossOrigin = await runScenario({
     currentOrigin: 'https://library.example.com',
     baseUrl: 'https://shelfmark.example.com',
-    openUrl: 'https://shelfmark.example.com/?content_type=ebook&query=External+Candidate&author=Author+Two',
+    openUrl: 'https://shelfmark.example.com/?content_type=ebook&sort=relevance&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two',
     requestPayload: {
       book_data: { provider_id: '222', title: 'External Candidate' },
       context: { source: '*', content_type: 'ebook', request_level: 'book' }
@@ -303,11 +310,12 @@ async function runScenario(options) {
     'Open in Shelfmark'
   );
   assert.match(crossOrigin.dom.status.textContent, /same-origin|reverse-proxied/i);
+  assert.equal(crossOrigin.dom.status.classList.contains('is-settled'), false);
 
   const releasePolicyFallback = await runScenario({
     currentOrigin: 'https://library.example.com',
     baseUrl: 'https://library.example.com/shelfmark',
-    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&query=External+Candidate&author=Author+Two',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two',
     requestPayload: {
       book_data: { provider_id: '222', title: 'External Candidate' },
       context: { source: 'direct_download', content_type: 'ebook', request_level: 'book' }
