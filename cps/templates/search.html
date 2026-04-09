@@ -49,17 +49,17 @@
   {% endif %}
 
   {% if local_count > 0 %}
-    <div class="shelfmark-section-heading shelfmark-section-heading--local">
-      <div class="shelfmark-section-heading__main">
-        <h3 class="shelfmark-section-heading__title">
+    <div class="shelfmark-section-line shelfmark-section-line--local">
+      <div class="shelfmark-section-line__lead">
+        <h3 class="shelfmark-section-line__title">
           <span class="glyphicon glyphicon-book" aria-hidden="true"></span>
           {{ _('Library Results') }}
         </h3>
-        <p class="shelfmark-section-heading__subtitle">
+        <p class="shelfmark-section-line__subtitle">
           {{ _('These are books already present in your Calibre library.') }}
         </p>
       </div>
-      <div class="shelfmark-section-heading__meta">
+      <div class="shelfmark-section-line__meta">
         {% if local_count == 1 %}
           {{ _('1 book') }}
         {% else %}
@@ -143,18 +143,18 @@
   {% if shelfmark and shelfmark.enabled %}
     <hr class="shelfmark-search-divider">
     <div class="shelfmark-external-shell">
-      <div class="page-header shelfmark-external-header">
-        <div class="shelfmark-section-heading shelfmark-section-heading--external">
-          <div class="shelfmark-section-heading__main">
-            <h3 class="shelfmark-section-heading__title">
+      <div class="shelfmark-external-header">
+        <div class="shelfmark-section-line shelfmark-section-line--external">
+          <div class="shelfmark-section-line__lead">
+            <h3 class="shelfmark-section-line__title">
               <span class="glyphicon glyphicon-globe" aria-hidden="true"></span>
-              {{ _('Shelfmark External Results') }}
+              {{ _('Shelfmark Results') }}
             </h3>
-            <p class="shelfmark-section-heading__subtitle">
-              {{ _('External search is separate from your local library results and duplicate awareness stays exact.') }}
+            <p class="shelfmark-section-line__subtitle">
+              {{ _('Additional matches from Shelfmark.') }}
             </p>
           </div>
-          <div class="shelfmark-section-heading__meta">
+          <div class="shelfmark-section-line__meta">
             {% if external_count == 0 and shelfmark.total_available > 0 %}
               {{ _('0 of %(count)s shown', count=shelfmark.total_available) }}
             {% elif shelfmark.total_available > external_count %}
@@ -174,30 +174,13 @@
             <code>{{ shelfmark.query }}</code>
           </p>
         {% endif %}
-        {% if shelfmark.context_hint %}
-          <p class="shelfmark-external-header__hint">{{ shelfmark.context_hint }}</p>
-        {% endif %}
       </div>
 
       {% if shelfmark.available and external_count > 0 %}
         <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ shelfmark.results[0].shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
-        {% for group in shelfmark.groups %}
-          <div class="panel shelfmark-group-panel {{ group.panel_class }}">
-            <div class="panel-heading shelfmark-group-panel__heading">
-              <div class="shelfmark-group-panel__heading-main">
-                <div class="shelfmark-group-panel__title">
-                  <span class="{{ group.icon_class }}" aria-hidden="true"></span>
-                  <strong>{{ group.title }}</strong>
-                </div>
-                <span class="label {{ group.badge_class }} shelfmark-group-panel__count">{{ group.count }}</span>
-              </div>
-              {% if group.hint %}
-                <div class="shelfmark-group-panel__hint">{{ group.hint }}</div>
-              {% endif %}
-            </div>
-            <div class="list-group shelfmark-group-panel__list">
-              {% for result in group.results %}
-              <div class="list-group-item shelfmark-result-card shelfmark-result-card--{{ result.library_state.row_class }}">
+        <div class="shelfmark-results-list" role="list">
+          {% for result in shelfmark.results %}
+              <article class="shelfmark-result-card shelfmark-result-card--{{ result.library_state.row_class }}" role="listitem">
                 <div class="media shelfmark-result-card__media">
                 <div class="media-left shelfmark-result-card__cover">
                   {% if result.cover_url %}
@@ -296,11 +279,9 @@
                   <p class="help-block js-shelfmark-action-hint shelfmark-result-card__action-hint">{{ result.action.hint }}</p>
                 </div>
               </div>
-          </div>
-              {% endfor %}
-            </div>
-          </div>
-        {% endfor %}
+              </article>
+          {% endfor %}
+        </div>
         {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.open_search_url %}
           <div class="shelfmark-pagination-footer">
             <div class="shelfmark-pagination-footer__summary">

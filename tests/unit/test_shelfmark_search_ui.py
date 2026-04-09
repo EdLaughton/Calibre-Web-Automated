@@ -347,9 +347,13 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
         html = render_template("search.html", **_base_context())
 
     assert "Library Results" in html
-    assert "Shelfmark External Results" in html
-    assert html.index("Library Results") < html.index("Shelfmark External Results")
+    assert "These are books already present in your Calibre library." in html
+    assert "Shelfmark Results" in html
+    assert "Additional matches from Shelfmark." in html
+    assert html.index("Library Results") < html.index("Shelfmark Results")
     assert 'class="shelfmark-external-shell"' in html
+    assert 'class="shelfmark-section-line shelfmark-section-line--local"' in html
+    assert 'class="shelfmark-section-line shelfmark-section-line--external"' in html
     assert "1 book" in html
     assert "Showing 3 of 895" in html
     assert "Showing 1-3 of 895" in html
@@ -362,15 +366,20 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "shelfmark_request_flow.js" in html
     assert "shelfmark_external_search.js" in html
     assert "shelfmark-section-pill" not in html
-    assert "Already in Your Library" in html
-    assert "External Candidates" in html
-    assert "External Results Without Exact Hardcover ID" in html
+    assert "External Candidates" not in html
+    assert "Already in Your Library" not in html
+    assert "External Results Without Exact Hardcover ID" not in html
+    assert "Duplicate awareness remains exact hardcover-id matching only." not in html
+    assert "duplicate awareness stays exact" not in html
+    assert "shelfmark-group-panel" not in html
+    assert 'class="shelfmark-results-list"' in html
     assert "Open existing CWA book" in html
     assert 'href="/book/7"' in html
     assert "Duplicate state unavailable" not in html
     assert "No exact hardcover-id match was found in metadata.db." not in html
     assert "Exact hardcover-id match in metadata.db." not in html
-    assert "Duplicate checking is unavailable for these results because Shelfmark did not return an exact Hardcover ID." in html
+    assert "Duplicate checking is unavailable for these results because Shelfmark did not return an exact Hardcover ID." not in html
+    assert "This result has no exact Hardcover ID, so CWA cannot prepare a direct Shelfmark request." in html
     assert 'class="btn btn-sm btn-primary shelfmark-result-card__primary-action js-shelfmark-action"' in html
     assert 'target="_blank"' in html
     assert 'rel="noopener noreferrer"' in html
@@ -392,6 +401,20 @@ def test_search_template_renders_external_cover_image_when_available():
         html = render_template("search.html", **_base_context())
 
     assert 'src="https://covers.example.com/999.jpg"' in html
+
+
+def test_search_template_omits_group_wrapper_chrome_for_external_results():
+    app = _create_app()
+    with app.test_request_context("/search?query=Dune"):
+        g.shelves_access = []
+        g.config_authors_max = 0
+        html = render_template("search.html", **_base_context())
+
+    assert "External Candidates" not in html
+    assert "Already in Your Library" not in html
+    assert "External Results Without Exact Hardcover ID" not in html
+    assert "panel-heading shelfmark-group-panel__heading" not in html
+    assert html.count('role="listitem"') == 3
 
 
 def test_detail_template_renders_existing_book_jump_and_action_markup():
@@ -449,7 +472,7 @@ def test_search_template_renders_intentional_zero_results_state():
         g.config_authors_max = 0
         html = render_template("search.html", **context)
 
-    assert "Shelfmark External Results" in html
+    assert "Shelfmark Results" in html
     assert "No Shelfmark external results found" in html
     assert "Shelfmark search completed for this query but did not return any external matches." in html
     assert "No matches" in html
