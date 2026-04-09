@@ -252,6 +252,7 @@
       <div class="form-group">
         <label for="config_shelfmark_url">{{_('Shelfmark Base URL')}}</label>
         <input type="text" class="form-control" id="config_shelfmark_url" name="config_shelfmark_url" value="{% if config.config_shelfmark_url != None %}{{ config.config_shelfmark_url }}{% endif %}" autocomplete="off" placeholder="https://shelfmark.example.com">
+        <div class="help-block">{{_('CWA uses this exact URL as the trust boundary for server-side Shelfmark metadata requests. Local/private Shelfmark hosts are supported here without relaxing request validation globally, but requests remain scoped to this exact host and port.')}}</div>
       </div>
       <div class="form-group">
         <label for="config_shelfmark_username">{{_('Shelfmark Search Username')}}</label>

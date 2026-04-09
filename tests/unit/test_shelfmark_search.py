@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import importlib.util
+import socket
 import sys
 import types
 from pathlib import Path
@@ -49,11 +50,37 @@ def shelfmark_module(monkeypatch):
     cps_module.logger = types.SimpleNamespace(create=lambda: logger_instance)
 
     cw_advocate_module = types.ModuleType("cps.cw_advocate")
+    cw_advocate_exceptions_module = types.ModuleType("cps.cw_advocate.exceptions")
+
+    class DummyAddrValidator:
+        def __init__(self, ip_whitelist=None, port_whitelist=None, **kwargs):
+            self.ip_whitelist = ip_whitelist or set()
+            self.port_whitelist = port_whitelist or set()
+
+        def is_ip_allowed(self, value, _local_addresses=None):
+            if value in {"192.168.0.87", "2001:db8::1"}:
+                return True
+            return False
+
+        def is_addrinfo_allowed(self, addrinfo, _local_addresses=None):
+            sockaddr = addrinfo[4]
+            if len(sockaddr) == 2:
+                ip_value, port = sockaddr
+            else:
+                ip_value, port = sockaddr[0], sockaddr[1]
+            return self.is_ip_allowed(ip_value, _local_addresses=_local_addresses) and port in self.port_whitelist
 
     class DummySession:
-        pass
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
 
     cw_advocate_module.Session = DummySession
+    cw_advocate_module.AddrValidator = DummyAddrValidator
+
+    class DummyUnacceptableAddressException(Exception):
+        pass
+
+    cw_advocate_exceptions_module.UnacceptableAddressException = DummyUnacceptableAddressException
 
     flask_module = types.ModuleType("flask")
     flask_module.url_for = lambda *args, **kwargs: "/book/1"
@@ -68,6 +95,7 @@ def shelfmark_module(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "cps", cps_module)
     monkeypatch.setitem(sys.modules, "cps.cw_advocate", cw_advocate_module)
+    monkeypatch.setitem(sys.modules, "cps.cw_advocate.exceptions", cw_advocate_exceptions_module)
     monkeypatch.setitem(sys.modules, "flask", flask_module)
     monkeypatch.setitem(sys.modules, "flask_babel", flask_babel_module)
     monkeypatch.setitem(sys.modules, "sqlalchemy", sqlalchemy_module)
@@ -318,6 +346,107 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
     assert [result.title for result in section.groups[0].results] == ["Already Present"]
     assert [result.title for result in section.groups[1].results] == ["External Candidate"]
     assert [result.title for result in section.groups[2].results] == ["No Hardcover ID"]
+
+
+def test_build_validator_trusts_exact_private_shelfmark_base_url(shelfmark_module):
+    config_data = shelfmark_module.ShelfmarkClientConfig(
+        enabled=True,
+        base_url="http://192.168.0.87:8084",
+        username=None,
+        password=None,
+    )
+
+    validator = shelfmark_module.build_shelfmark_validator(config_data)
+
+    assert validator is not None
+    assert validator.is_ip_allowed("192.168.0.87", _local_addresses=[]) is True
+    assert validator.is_ip_allowed("192.168.0.88", _local_addresses=[]) is False
+    assert validator.is_addrinfo_allowed(
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.0.87", 8084)),
+        _local_addresses=[],
+    ) is True
+    assert validator.is_addrinfo_allowed(
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.0.87", 8080)),
+        _local_addresses=[],
+    ) is False
+
+
+def test_create_session_scopes_validator_to_configured_base_url(shelfmark_module):
+    calls = []
+
+    class CapturingSession:
+        def __init__(self, *args, **kwargs):
+            calls.append(kwargs)
+
+    config_data = shelfmark_module.ShelfmarkClientConfig(
+        enabled=True,
+        base_url="http://192.168.0.87:8084",
+        username=None,
+        password=None,
+    )
+
+    shelfmark_module.create_shelfmark_session(config_data, session_factory=CapturingSession)
+
+    assert "validator" in calls[0]
+
+
+def test_client_reports_blocked_untrusted_private_address_cleanly(shelfmark_module):
+    config_data = shelfmark_module.ShelfmarkClientConfig(
+        enabled=True,
+        base_url="http://192.168.0.87:8084",
+        username=None,
+        password=None,
+    )
+
+    class BlockingSession:
+        def get(self, *args, **kwargs):
+            raise shelfmark_module.UnacceptableAddressException("blocked")
+
+    client = shelfmark_module.ShelfmarkClient(config_data, session=BlockingSession())
+
+    with pytest.raises(shelfmark_module.ShelfmarkIntegrationError, match="server-side request validation blocked this address"):
+        client.search_books("dune")
+
+
+def test_client_search_books_still_returns_normalized_results(shelfmark_module):
+    config_data = shelfmark_module.ShelfmarkClientConfig(
+        enabled=True,
+        base_url="https://shelfmark.example.com",
+        username=None,
+        password=None,
+    )
+
+    class FakeResponse:
+        ok = True
+
+        @staticmethod
+        def json():
+            return {
+                "books": [
+                    {
+                        "provider": "hardcover",
+                        "provider_id": "123",
+                        "title": "Dune",
+                        "authors": ["Frank Herbert"],
+                    }
+                ]
+            }
+
+    class FakeSession:
+        def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    client = shelfmark_module.ShelfmarkClient(config_data, session=FakeSession())
+    books = client.search_books("dune")
+
+    assert books == [
+        {
+            "provider": "hardcover",
+            "provider_id": "123",
+            "title": "Dune",
+            "authors": ["Frank Herbert"],
+        }
+    ]
 
 
 def test_search_results_unavailable_without_guessing(shelfmark_module):

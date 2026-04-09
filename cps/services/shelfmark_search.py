@@ -1,14 +1,19 @@
 from __future__ import annotations
 from dataclasses import asdict, dataclass, field
+import ipaddress
+import socket
 from typing import Any, Callable, Iterable, Mapping, Sequence
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
+from requests import RequestException
 from flask import url_for
 from flask_babel import gettext as _
 from sqlalchemy.sql.expression import func
 
 from cps import calibre_db, config, db, logger
+from cps.cw_advocate import AddrValidator
 from cps.cw_advocate import Session as SafeSession
+from cps.cw_advocate.exceptions import UnacceptableAddressException
 
 log = logger.create()
 
@@ -180,6 +185,82 @@ def get_shelfmark_client_config() -> ShelfmarkClientConfig:
         username=username,
         password=password,
     )
+
+
+def _base_url_host_port(base_url: str) -> tuple[str, int]:
+    parsed = urlsplit(base_url)
+    host = parsed.hostname
+    if not parsed.scheme or not host:
+        raise ShelfmarkIntegrationError(
+            _("Configure Shelfmark Base URL as a full http:// or https:// URL.")
+        )
+    if parsed.port is not None:
+        return host, parsed.port
+    return host, 443 if parsed.scheme.lower() == "https" else 80
+
+
+def _ip_network_for_address(value: str) -> ipaddress._BaseNetwork:
+    address = ipaddress.ip_address(value)
+    suffix = 32 if address.version == 4 else 128
+    return ipaddress.ip_network(f"{address.exploded}/{suffix}", strict=False)
+
+
+def _resolve_trusted_ip_networks(
+    host: str,
+    port: int,
+    *,
+    resolver: Callable[..., Sequence[Any]] | None = None,
+) -> set[ipaddress._BaseNetwork]:
+    try:
+        return {_ip_network_for_address(host)}
+    except ValueError:
+        pass
+
+    lookup = resolver or socket.getaddrinfo
+    try:
+        records = lookup(host, port, 0, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ShelfmarkIntegrationError(
+            _("Shelfmark Base URL could not be resolved for trusted server-side access.")
+        ) from exc
+
+    trusted_networks: set[ipaddress._BaseNetwork] = set()
+    for record in records:
+        try:
+            socket_address = record[4]
+            raw_ip = str(socket_address[0]).split("%", 1)[0]
+            trusted_networks.add(_ip_network_for_address(raw_ip))
+        except (IndexError, TypeError, ValueError):
+            continue
+
+    if not trusted_networks:
+        raise ShelfmarkIntegrationError(
+            _("Shelfmark Base URL could not be resolved for trusted server-side access.")
+        )
+    return trusted_networks
+
+
+def build_shelfmark_validator(
+    config_data: ShelfmarkClientConfig,
+    *,
+    resolver: Callable[..., Sequence[Any]] | None = None,
+) -> AddrValidator:
+    host, port = _base_url_host_port(config_data.base_url)
+    trusted_networks = _resolve_trusted_ip_networks(host, port, resolver=resolver)
+    return AddrValidator(
+        ip_whitelist=trusted_networks,
+        port_whitelist={port},
+    )
+
+
+def create_shelfmark_session(
+    config_data: ShelfmarkClientConfig,
+    *,
+    session_factory: Callable[..., SafeSession] = SafeSession,
+    resolver: Callable[..., Sequence[Any]] | None = None,
+):
+    validator = build_shelfmark_validator(config_data, resolver=resolver)
+    return session_factory(validator=validator)
 
 
 def build_shelfmark_open_url(
@@ -647,7 +728,7 @@ def fetch_shelfmark_detail(
 class ShelfmarkClient:
     def __init__(self, config_data: ShelfmarkClientConfig, session: SafeSession | None = None):
         self.config = config_data
-        self.session = session or SafeSession()
+        self.session = session or create_shelfmark_session(config_data)
         self._authenticated = False
 
     def search_books(
@@ -659,15 +740,16 @@ class ShelfmarkClient:
         content_type: str = SHELFMARK_CONTENT_TYPE,
     ) -> list[dict[str, Any]]:
         self._ensure_authenticated()
-        response = self.session.get(
+        response = self._perform_request(
+            "get",
             _join_base_url(self.config.base_url, "/api/metadata/search"),
+            _("Shelfmark search failed."),
             params={
                 "query": query,
                 "limit": limit,
                 "provider": provider,
                 "content_type": content_type,
             },
-            timeout=self.config.timeout_seconds,
         )
         payload = self._parse_json_response(response, _("Shelfmark search failed."))
         books = payload.get("books")
@@ -677,12 +759,13 @@ class ShelfmarkClient:
 
     def fetch_book(self, provider: str, provider_id: str) -> dict[str, Any]:
         self._ensure_authenticated()
-        response = self.session.get(
+        response = self._perform_request(
+            "get",
             _join_base_url(
                 self.config.base_url,
                 f"/api/metadata/book/{provider}/{provider_id}",
             ),
-            timeout=self.config.timeout_seconds,
+            _("Shelfmark book details are unavailable."),
         )
         payload = self._parse_json_response(response, _("Shelfmark book details are unavailable."))
         if not isinstance(payload, dict):
@@ -704,14 +787,15 @@ class ShelfmarkClient:
                 _("Configure both a Shelfmark search username and password before enabling integrated external search.")
             )
 
-        response = self.session.post(
+        response = self._perform_request(
+            "post",
             _join_base_url(self.config.base_url, "/api/auth/login"),
+            _("Shelfmark login failed for the configured search account."),
             json={
                 "username": username,
                 "password": password,
                 "remember_me": False,
             },
-            timeout=self.config.timeout_seconds,
         )
         payload = self._parse_json_response(response, _("Shelfmark login failed for the configured search account."))
         if not isinstance(payload, dict) or not payload.get("success"):
@@ -719,6 +803,24 @@ class ShelfmarkClient:
                 _("Shelfmark login failed for the configured search account.")
             )
         self._authenticated = True
+
+    def _perform_request(self, method: str, url: str, default_message: str, **kwargs: Any):
+        try:
+            return getattr(self.session, method)(
+                url,
+                timeout=self.config.timeout_seconds,
+                **kwargs,
+            )
+        except UnacceptableAddressException as exc:
+            raise ShelfmarkIntegrationError(
+                _(
+                    "Shelfmark server-side request validation blocked this address. "
+                    "Check that Shelfmark Base URL points directly to your Shelfmark instance "
+                    "and is not redirecting to a different host or port."
+                )
+            ) from exc
+        except RequestException as exc:
+            raise ShelfmarkIntegrationError(default_message) from exc
 
     @staticmethod
     def _parse_json_response(response: Any, default_message: str) -> Mapping[str, Any]:

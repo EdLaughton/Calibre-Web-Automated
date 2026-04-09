@@ -289,6 +289,7 @@ Built-in KOReader progress sync with automatic book identification:
 - Admin configuration:
   - enable `Shelfmark External Search`
   - set `Shelfmark Base URL`
+  - the configured `Shelfmark Base URL` is also the exact trust boundary for server-side Shelfmark metadata requests, including local/private Shelfmark hosts
   - optionally set a dedicated Shelfmark search username/password if Shelfmark metadata search requires authentication
 
 #### **Library Auto-Detect** 📚🕵️
