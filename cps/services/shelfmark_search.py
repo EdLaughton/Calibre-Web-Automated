@@ -57,12 +57,11 @@ class ShelfmarkActionState:
 @dataclass(frozen=True)
 class ShelfmarkLibraryState:
     key: str
-    label: str
-    hint: str
+    label: str | None
+    hint: str | None
     row_class: str
-    badge_class: str
+    badge_class: str | None
     panel_class: str
-    summary_class: str
     icon_class: str
 
 
@@ -271,12 +270,13 @@ def build_shelfmark_open_url(
     hardcover_id: str | None,
     content_type: str = SHELFMARK_CONTENT_TYPE,
 ) -> str:
-    search_query = f"hardcover-id:{hardcover_id}" if hardcover_id else title
-    params: dict[str, str] = {
-        "query": search_query,
-        "content_type": content_type,
-    }
-    if not hardcover_id and authors:
+    # Shelfmark's browser-facing URL search supports normal text filters such as
+    # query/title/author, not provider-ID deep links via "hardcover-id:<id>".
+    search_query = title or (authors[0] if authors else "") or (hardcover_id or "")
+    params: dict[str, str] = {"content_type": content_type}
+    if search_query:
+        params["query"] = search_query
+    if authors:
         params["author"] = authors[0]
     return _with_query(_join_base_url(base_url, "/"), params)
 
@@ -374,7 +374,7 @@ def select_shelfmark_action(
         return ShelfmarkActionState(
             mode="view_library",
             label=_("Open existing CWA book"),
-            hint=_("Exact hardcover-id already exists in your library."),
+            hint=_("Exact Hardcover ID already exists in your library."),
             button_class="btn-success",
             icon_class="glyphicon glyphicon-book",
         )
@@ -383,7 +383,7 @@ def select_shelfmark_action(
         return ShelfmarkActionState(
             mode="open",
             label=_("Open in Shelfmark"),
-            hint=_("Direct request actions are unavailable because this result has no exact hardcover-id metadata."),
+            hint=_("This result has no exact Hardcover ID, so CWA cannot prepare a direct Shelfmark request."),
             button_class="btn-default",
             icon_class="glyphicon glyphicon-new-window",
         )
@@ -392,7 +392,7 @@ def select_shelfmark_action(
         return ShelfmarkActionState(
             mode="open",
             label=_("Open in Shelfmark"),
-            hint=_("Direct request actions are unavailable because Shelfmark did not return enough exact metadata to build a safe book request."),
+            hint=_("Shelfmark did not return enough exact metadata to prepare a direct request."),
             button_class="btn-default",
             icon_class="glyphicon glyphicon-new-window",
         )
@@ -442,35 +442,32 @@ def build_shelfmark_library_state(
     if library_match is not None:
         return ShelfmarkLibraryState(
             key="already_in_library",
-            label=_("Already in library"),
-            hint=_("Exact hardcover-id match in metadata.db."),
+            label=_("In library"),
+            hint=None,
             row_class="success",
             badge_class="label-success",
             panel_class="panel-success",
-            summary_class="shelfmark-summary-card--success",
             icon_class="glyphicon glyphicon-ok-circle",
         )
 
     if hardcover_id:
         return ShelfmarkLibraryState(
             key="external_candidate",
-            label=_("External candidate"),
-            hint=_("No exact hardcover-id match was found in metadata.db."),
+            label=None,
+            hint=None,
             row_class="info",
-            badge_class="label-info",
+            badge_class=None,
             panel_class="panel-info",
-            summary_class="shelfmark-summary-card--info",
             icon_class="glyphicon glyphicon-cloud-download",
         )
 
     return ShelfmarkLibraryState(
         key="library_match_unavailable",
-        label=_("Library match unavailable"),
-        hint=_("No exact hardcover-id is available from this external result, so CWA does not guess duplicates."),
+        label=_("No Hardcover ID"),
+        hint=_("Duplicate check is unavailable because Shelfmark did not return an exact Hardcover ID."),
         row_class="warning",
         badge_class="label-warning",
         panel_class="panel-warning",
-        summary_class="shelfmark-summary-card--warning",
         icon_class="glyphicon glyphicon-question-sign",
     )
 
@@ -601,17 +598,17 @@ def group_shelfmark_results(results: Sequence[ShelfmarkResultView]) -> tuple[She
         (
             "already_in_library",
             _("Already in Your Library"),
-            _("These external hits already exist in metadata.db via an exact hardcover-id match."),
+            None,
         ),
         (
             "external_candidate",
             _("External Candidates"),
-            _("These results have an exact hardcover-id, but no matching library record yet."),
+            None,
         ),
         (
             "library_match_unavailable",
             _("External Results Without Exact Hardcover ID"),
-            _("CWA does not guess duplicate status for these results because Shelfmark did not return an exact hardcover-id."),
+            _("Duplicate checking is unavailable for these results because Shelfmark did not return an exact Hardcover ID."),
         ),
     )
 

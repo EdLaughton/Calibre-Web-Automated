@@ -140,22 +140,21 @@ def _base_context():
         "library_book_url": "/book/7",
         "detail_url": "/search/external/shelfmark/hardcover/999?query=dune",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
-        "shelfmark_open_url": "https://library.example.com/shelfmark/?query=hardcover-id:999",
+        "shelfmark_open_url": "https://library.example.com/shelfmark/?content_type=ebook&query=Already+Present&author=Author+One",
         "request_payload": {"book_data": {"provider_id": "999"}},
         "library_state": {
             "key": "already_in_library",
-            "label": "Already in library",
-            "hint": "Exact hardcover-id match in metadata.db.",
+            "label": "In library",
+            "hint": None,
             "row_class": "success",
             "badge_class": "label-success",
             "panel_class": "panel-success",
-            "summary_class": "shelfmark-summary-card--success",
             "icon_class": "glyphicon glyphicon-ok-circle",
         },
         "action": {
             "mode": "view_library",
             "label": "Open existing CWA book",
-            "hint": "Exact hardcover-id already exists in your library.",
+            "hint": "Exact Hardcover ID already exists in your library.",
             "button_class": "btn-success",
             "icon_class": "glyphicon glyphicon-book",
         },
@@ -178,22 +177,21 @@ def _base_context():
         "library_book_url": None,
         "detail_url": "/search/external/shelfmark/hardcover/222?query=dune",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
-        "shelfmark_open_url": "https://library.example.com/shelfmark/?query=hardcover-id:222",
+        "shelfmark_open_url": "https://library.example.com/shelfmark/?content_type=ebook&query=External+Candidate&author=Author+Two",
         "request_payload": {"book_data": {"provider_id": "222", "title": "External Candidate"}},
         "library_state": {
             "key": "external_candidate",
-            "label": "External candidate",
-            "hint": "No exact hardcover-id match was found in metadata.db.",
+            "label": None,
+            "hint": None,
             "row_class": "info",
-            "badge_class": "label-info",
+            "badge_class": None,
             "panel_class": "panel-info",
-            "summary_class": "shelfmark-summary-card--info",
             "icon_class": "glyphicon glyphicon-cloud-download",
         },
         "action": {
             "mode": "request",
             "label": "Request in Shelfmark",
-            "hint": "This browser already has a valid Shelfmark session and the current Shelfmark policy allows direct book-level requests.",
+            "hint": "This browser already has a Shelfmark session and the current policy allows book-level requests.",
             "button_class": "btn-primary",
             "icon_class": "glyphicon glyphicon-send",
         },
@@ -216,22 +214,21 @@ def _base_context():
         "library_book_url": None,
         "detail_url": "/search/external/shelfmark/other/333?query=dune",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
-        "shelfmark_open_url": "https://library.example.com/shelfmark/?query=No+Hardcover+ID",
+        "shelfmark_open_url": "https://library.example.com/shelfmark/?content_type=ebook&query=No+Hardcover+ID&author=Author+Three",
         "request_payload": None,
         "library_state": {
             "key": "library_match_unavailable",
-            "label": "Library match unavailable",
-            "hint": "No exact hardcover-id is available from this external result, so CWA does not guess duplicates.",
+            "label": "No Hardcover ID",
+            "hint": "Duplicate check is unavailable because Shelfmark did not return an exact Hardcover ID.",
             "row_class": "warning",
             "badge_class": "label-warning",
             "panel_class": "panel-warning",
-            "summary_class": "shelfmark-summary-card--warning",
             "icon_class": "glyphicon glyphicon-question-sign",
         },
         "action": {
             "mode": "open",
             "label": "Open in Shelfmark",
-            "hint": "Direct request actions are unavailable because this result has no exact hardcover-id metadata.",
+            "hint": "This result has no exact Hardcover ID, so CWA cannot prepare a direct Shelfmark request.",
             "button_class": "btn-default",
             "icon_class": "glyphicon glyphicon-new-window",
         },
@@ -287,7 +284,7 @@ def _base_context():
                 {
                     "key": "library_match_unavailable",
                     "title": "External Results Without Exact Hardcover ID",
-                    "hint": "CWA does not guess duplicate status for these results because Shelfmark did not return an exact hardcover-id.",
+                    "hint": "Duplicate checking is unavailable for these results because Shelfmark did not return an exact Hardcover ID.",
                     "panel_class": "panel-warning",
                     "badge_class": "label-warning",
                     "icon_class": "glyphicon glyphicon-question-sign",
@@ -309,15 +306,25 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "Library Results" in html
     assert "Shelfmark External Results" in html
     assert html.index("Library Results") < html.index("Shelfmark External Results")
+    assert 'class="shelfmark-external-shell"' in html
     assert "Already in Your Library" in html
     assert "External Candidates" in html
     assert "External Results Without Exact Hardcover ID" in html
     assert "Open existing CWA book" in html
     assert 'href="/book/7"' in html
-    assert "No exact hardcover-id is available from this external result" in html
+    assert "Duplicate state unavailable" not in html
+    assert "No exact hardcover-id match was found in metadata.db." not in html
+    assert "Exact hardcover-id match in metadata.db." not in html
+    assert "Duplicate checking is unavailable for these results because Shelfmark did not return an exact Hardcover ID." in html
     assert 'class="btn btn-sm btn-primary shelfmark-result-card__primary-action js-shelfmark-action"' in html
     assert "js-shelfmark-action-icon" in html
     assert "js-shelfmark-action-label" in html
+    assert "shelfmark-result-card__secondary-action" in html
+    assert "No cover" in html
+    candidate_chunk = html[html.index("External Candidate"):html.index("No Hardcover ID")]
+    duplicate_chunk = html[html.index("Already Present"):html.index("External Candidate")]
+    assert candidate_chunk.count("Open in Shelfmark") == 0
+    assert duplicate_chunk.count("Open in Shelfmark") == 1
 
 
 def test_detail_template_renders_existing_book_jump_and_action_markup():
@@ -340,5 +347,7 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert "Already in library via exact Hardcover ID match" in html
     assert "Existing CWA book" in html
     assert 'href="/book/7"' in html
-    assert "Action state" in html
     assert "Open existing CWA book" in html
+    assert 'class="discover shelfmark-search-page shelfmark-detail-page"' in html
+    assert 'class="shelfmark-detail-page__shell"' in html
+    assert html.count("Open in Shelfmark") == 1

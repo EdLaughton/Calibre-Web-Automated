@@ -136,6 +136,7 @@ def test_select_action_uses_view_library_for_exact_duplicate(shelfmark_module):
     assert action.label == "Open existing CWA book"
     assert action.button_class == "btn-success"
     assert action.icon_class == "glyphicon glyphicon-book"
+    assert action.hint == "Exact Hardcover ID already exists in your library."
 
 
 def test_build_advanced_query_uses_title_author_and_publisher_only(shelfmark_module):
@@ -182,7 +183,7 @@ def test_select_action_falls_back_without_hardcover_id(shelfmark_module):
     )
 
     assert action.mode == "open"
-    assert "hardcover-id" in action.hint
+    assert "no exact Hardcover ID" in action.hint
 
 
 def test_select_action_falls_back_when_request_payload_is_incomplete(shelfmark_module):
@@ -201,7 +202,7 @@ def test_select_action_falls_back_when_request_payload_is_incomplete(shelfmark_m
     )
 
     assert action.mode == "open"
-    assert "enough exact metadata" in action.hint
+    assert "prepare a direct request" in action.hint
 
 
 def test_select_action_uses_request_when_probe_allows_it(shelfmark_module):
@@ -241,10 +242,28 @@ def test_build_library_state_exposes_stable_visual_metadata(shelfmark_module):
 
     assert exact_match.panel_class == "panel-success"
     assert exact_match.icon_class == "glyphicon glyphicon-ok-circle"
+    assert exact_match.label == "In library"
+    assert exact_match.hint is None
     assert external_candidate.panel_class == "panel-info"
     assert external_candidate.icon_class == "glyphicon glyphicon-cloud-download"
+    assert external_candidate.label is None
+    assert external_candidate.hint is None
     assert unavailable.panel_class == "panel-warning"
     assert unavailable.icon_class == "glyphicon glyphicon-question-sign"
+    assert unavailable.label == "No Hardcover ID"
+    assert "Duplicate check is unavailable" in unavailable.hint
+
+
+def test_build_open_url_uses_title_author_query_not_hardcover_id_syntax(shelfmark_module):
+    url = shelfmark_module.build_shelfmark_open_url(
+        "https://shelfmark.example.com",
+        title="The Churn",
+        authors=("James S. A. Corey",),
+        hardcover_id="948974",
+    )
+
+    assert url == "https://shelfmark.example.com/?content_type=ebook&query=The+Churn&author=James+S.+A.+Corey"
+    assert "hardcover-id%3A948974" not in url
 
 
 def test_build_result_view_links_existing_library_book(shelfmark_module):
@@ -346,6 +365,79 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
     assert [result.title for result in section.groups[0].results] == ["Already Present"]
     assert [result.title for result in section.groups[1].results] == ["External Candidate"]
     assert [result.title for result in section.groups[2].results] == ["No Hardcover ID"]
+
+
+def test_grouping_omits_zero_count_unavailable_bucket(shelfmark_module):
+    results = (
+        shelfmark_module.ShelfmarkResultView(
+            provider="hardcover",
+            provider_id="1",
+            title="Already Present",
+            subtitle=None,
+            authors=("Author One",),
+            cover_url=None,
+            description=None,
+            publish_year=None,
+            source_url=None,
+            display_fields=(),
+            hardcover_id="1",
+            already_in_library=True,
+            library_book_id=1,
+            library_book_title="Existing",
+            library_book_url="/book/1",
+            detail_url="/external/1",
+            shelfmark_base_url="https://shelfmark.example.com",
+            shelfmark_open_url="https://shelfmark.example.com/?content_type=ebook&query=Already+Present&author=Author+One",
+            request_payload=None,
+            library_state=shelfmark_module.build_shelfmark_library_state(
+                library_match=shelfmark_module.ShelfmarkLibraryMatch("1", 1, "Existing"),
+                hardcover_id="1",
+            ),
+            action=shelfmark_module.ShelfmarkActionState(
+                mode="view_library",
+                label="Open existing CWA book",
+                hint="Exact Hardcover ID already exists in your library.",
+                button_class="btn-success",
+                icon_class="glyphicon glyphicon-book",
+            ),
+        ),
+        shelfmark_module.ShelfmarkResultView(
+            provider="hardcover",
+            provider_id="2",
+            title="External Candidate",
+            subtitle=None,
+            authors=("Author Two",),
+            cover_url=None,
+            description=None,
+            publish_year=None,
+            source_url=None,
+            display_fields=(),
+            hardcover_id="2",
+            already_in_library=False,
+            library_book_id=None,
+            library_book_title=None,
+            library_book_url=None,
+            detail_url="/external/2",
+            shelfmark_base_url="https://shelfmark.example.com",
+            shelfmark_open_url="https://shelfmark.example.com/?content_type=ebook&query=External+Candidate&author=Author+Two",
+            request_payload={"book_data": {"provider_id": "2"}},
+            library_state=shelfmark_module.build_shelfmark_library_state(
+                library_match=None,
+                hardcover_id="2",
+            ),
+            action=shelfmark_module.ShelfmarkActionState(
+                mode="request",
+                label="Request in Shelfmark",
+                hint="This browser already has a Shelfmark session and the current policy allows book-level requests.",
+                button_class="btn-primary",
+                icon_class="glyphicon glyphicon-send",
+            ),
+        ),
+    )
+
+    groups = shelfmark_module.group_shelfmark_results(results)
+
+    assert [group.key for group in groups] == ["already_in_library", "external_candidate"]
 
 
 def test_build_validator_trusts_exact_private_shelfmark_base_url(shelfmark_module):
