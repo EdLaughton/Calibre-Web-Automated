@@ -470,13 +470,19 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
     assert section.total_available == 895
     assert section.has_more is True
     assert section.page_size == shelfmark_module.DEFAULT_SHELFMARK_LIMIT
+    assert section.selected_sort == shelfmark_module.DEFAULT_SHELFMARK_SORT
+    assert section.page_result_count == 3
+    assert section.filters_active is False
     assert section.total_pages == 75
     assert section.visible_start == 1
     assert section.visible_end == 3
     assert section.has_previous is False
     assert section.previous_page is None
     assert section.next_page == 2
-    assert section.open_search_url == "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&page=1&query=dune"
+    assert section.open_search_url == (
+        "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance"
+        "&limit=12&page=1&query=dune"
+    )
     assert [group.key for group in section.groups] == [
         "already_in_library",
         "external_candidate",
@@ -490,6 +496,143 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
     assert [result.title for result in section.groups[0].results] == ["Already Present"]
     assert [result.title for result in section.groups[1].results] == ["External Candidate"]
     assert [result.title for result in section.groups[2].results] == ["No Hardcover ID"]
+
+
+def test_search_results_enrich_missing_cover_from_detail_payload(shelfmark_module):
+    fake_client = mock.Mock()
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=(
+            {
+                "provider": "hardcover",
+                "provider_id": "1058398",
+                "title": "Hell",
+                "authors": ["C. Hallman", "J.L. Beck"],
+                "identifiers": {"hardcover-id": "1058398"},
+            },
+        ),
+        page=1,
+        total_found=1,
+        has_more=False,
+    )
+    fake_client.fetch_book.return_value = {
+        "provider": "hardcover",
+        "provider_id": "1058398",
+        "title": "Hell",
+        "authors": ["C. Hallman", "J.L. Beck"],
+        "cover_url": "/api/covers/hardcover_1058398?url=aHR0cHM6Ly9jb3ZlcnMuZXhhbXBsZS5jb20vaGVsbC5qcGc=",
+        "identifiers": {"hardcover-id": "1058398"},
+    }
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ):
+        section = shelfmark_module.search_shelfmark_results(
+            "hell",
+            detail_url_builder=lambda _: "/external/hell",
+            page=1,
+        )
+
+    assert fake_client.fetch_book.call_count == 1
+    assert section.page_result_count == 1
+    assert section.results[0].cover_url == (
+        "https://library.example.com/shelfmark/api/covers/hardcover_1058398"
+        "?url=aHR0cHM6Ly9jb3ZlcnMuZXhhbXBsZS5jb20vaGVsbC5qcGc="
+    )
+
+
+def test_search_results_apply_sort_page_size_and_visible_filters(shelfmark_module):
+    fake_client = mock.Mock()
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=(
+            {
+                "provider": "hardcover",
+                "provider_id": "222",
+                "title": "Request Ready",
+                "authors": ["Author Two"],
+                "cover_url": "/api/covers/hardcover_222?url=aHR0cHM6Ly9jb3ZlcnMuZXhhbXBsZS5jb20vMjIyLmpwZw==",
+                "identifiers": {"hardcover-id": "222"},
+            },
+            {
+                "provider": "hardcover",
+                "provider_id": "333",
+                "title": "No Cover",
+                "authors": ["Author Three"],
+                "identifiers": {"hardcover-id": "333"},
+            },
+        ),
+        page=4,
+        total_found=3221,
+        has_more=True,
+    )
+    fake_client.fetch_book.return_value = {
+        "provider": "hardcover",
+        "provider_id": "333",
+        "title": "No Cover",
+        "authors": ["Author Three"],
+        "identifiers": {"hardcover-id": "333"},
+    }
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ):
+        section = shelfmark_module.search_shelfmark_results(
+            "hell",
+            detail_url_builder=lambda _: "/external/hell",
+            page=4,
+            page_size=50,
+            sort="rating",
+            filter_requestable=True,
+            filter_has_cover=True,
+        )
+
+    fake_client.search_books.assert_called_once_with("hell", limit=50, page=4, sort="rating")
+    assert section.page == 4
+    assert section.page_size == 50
+    assert section.selected_sort == "rating"
+    assert section.filter_requestable is True
+    assert section.filter_has_cover is True
+    assert section.filters_active is True
+    assert section.page_result_count == 2
+    assert [result.title for result in section.results] == ["Request Ready"]
+    assert section.total_pages == 65
+    assert section.visible_start == 151
+    assert section.visible_end == 152
+    assert section.open_search_url == (
+        "https://library.example.com/shelfmark/?content_type=ebook&sort=rating"
+        "&limit=50&page=4&query=hell"
+    )
 
 
 def test_grouping_omits_zero_count_unavailable_bucket(shelfmark_module):

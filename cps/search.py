@@ -561,6 +561,22 @@ def _requested_shelfmark_page():
     return page if page > 0 else 1
 
 
+def _requested_shelfmark_page_size():
+    try:
+        page_size = int(request.args.get("shelfmark_page_size", "12"))
+    except (TypeError, ValueError):
+        return 12
+    return page_size if page_size > 0 else 12
+
+
+def _requested_shelfmark_sort():
+    return (request.args.get("shelfmark_sort", "relevance") or "relevance").strip().lower()
+
+
+def _requested_shelfmark_flag(name):
+    return (request.args.get(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _current_request_url_with(**updates):
     params = request.args.to_dict(flat=True)
     params.update({key: str(value) for key, value in updates.items() if value not in (None, "")})
@@ -574,6 +590,10 @@ def _build_shelfmark_section(query, **kwargs):
     section = search_shelfmark_results(
         query,
         page=_requested_shelfmark_page(),
+        page_size=_requested_shelfmark_page_size(),
+        sort=_requested_shelfmark_sort(),
+        filter_requestable=_requested_shelfmark_flag("shelfmark_filter_requestable"),
+        filter_has_cover=_requested_shelfmark_flag("shelfmark_filter_has_cover"),
         **kwargs,
     ).to_template_dict()
     if not section.get("enabled"):
@@ -590,6 +610,11 @@ def _build_shelfmark_section(query, **kwargs):
         _current_request_url_with(shelfmark_page=next_page)
         if next_page
         else None
+    )
+    section["clear_filters_url"] = _current_request_url_with(
+        shelfmark_page=1,
+        shelfmark_filter_requestable=None,
+        shelfmark_filter_has_cover=None,
     )
     return section
 
