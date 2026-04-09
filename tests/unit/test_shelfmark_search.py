@@ -298,7 +298,7 @@ def test_build_result_view_links_existing_library_book(shelfmark_module):
     assert result.action.mode == "view_library"
 
 
-def test_build_result_view_normalizes_relative_shelfmark_cover_url(shelfmark_module):
+def test_build_result_view_normalizes_root_relative_shelfmark_cover_url(shelfmark_module):
     result = shelfmark_module.build_shelfmark_result_view(
         {
             "provider": "hardcover",
@@ -306,6 +306,27 @@ def test_build_result_view_normalizes_relative_shelfmark_cover_url(shelfmark_mod
             "title": "External Candidate",
             "authors": ["Author Two"],
             "cover_url": "/api/covers/hardcover_222?url=https%3A%2F%2Fcovers.example.com%2F222.jpg",
+            "identifiers": {"hardcover-id": "222"},
+        },
+        library_match=None,
+        detail_url="/external/222",
+        shelfmark_browser_base_url="https://library.example.com/shelfmark",
+    )
+
+    assert result.cover_url == (
+        "https://library.example.com/api/covers/hardcover_222"
+        "?url=https%3A%2F%2Fcovers.example.com%2F222.jpg"
+    )
+
+
+def test_build_result_view_preserves_shelfmark_base_path_cover_proxy(shelfmark_module):
+    result = shelfmark_module.build_shelfmark_result_view(
+        {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "External Candidate",
+            "authors": ["Author Two"],
+            "cover_url": "/shelfmark/api/covers/hardcover_222?url=https%3A%2F%2Fcovers.example.com%2F222.jpg",
             "identifiers": {"hardcover-id": "222"},
         },
         library_match=None,
@@ -411,6 +432,7 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
         section = shelfmark_module.search_shelfmark_results(
             "dune",
             detail_url_builder=lambda _: "/external/dune",
+            page=1,
         )
 
     assert section.enabled is True
@@ -426,6 +448,13 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
     assert section.summary.library_match_unavailable == 1
     assert section.total_available == 895
     assert section.has_more is True
+    assert section.page_size == shelfmark_module.DEFAULT_SHELFMARK_LIMIT
+    assert section.total_pages == 75
+    assert section.visible_start == 1
+    assert section.visible_end == 3
+    assert section.has_previous is False
+    assert section.previous_page is None
+    assert section.next_page == 2
     assert section.open_search_url == "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&page=1&query=dune"
     assert [group.key for group in section.groups] == [
         "already_in_library",
@@ -653,6 +682,41 @@ def test_client_search_books_still_returns_normalized_results(shelfmark_module):
         "provider": shelfmark_module.SHELFMARK_METADATA_PROVIDER,
         "content_type": shelfmark_module.SHELFMARK_CONTENT_TYPE,
     }
+
+
+def test_client_search_books_respects_requested_page(shelfmark_module):
+    config_data = shelfmark_module.ShelfmarkClientConfig(
+        enabled=True,
+        base_url="https://shelfmark.example.com",
+        browser_base_url="https://library.example.com/shelfmark",
+        username=None,
+        password=None,
+    )
+
+    class FakeResponse:
+        ok = True
+
+        @staticmethod
+        def json():
+            return {
+                "books": [],
+                "page": 3,
+                "total_found": 42,
+                "has_more": True,
+            }
+
+    calls = []
+
+    class FakeSession:
+        def get(self, *args, **kwargs):
+            calls.append({"args": args, "kwargs": kwargs})
+            return FakeResponse()
+
+    client = shelfmark_module.ShelfmarkClient(config_data, session=FakeSession())
+    response = client.search_books("dune", page=3)
+
+    assert response.page == 3
+    assert calls[0]["kwargs"]["params"]["page"] == 3
 
 
 def test_client_search_books_surfaces_auth_required_guidance_without_search_account(shelfmark_module):

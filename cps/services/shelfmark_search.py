@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import ipaddress
+import math
 import socket
 from typing import Any, Callable, Iterable, Mapping, Sequence
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
@@ -146,6 +147,13 @@ class ShelfmarkSearchSection:
     available: bool
     query: str
     page: int = DEFAULT_SHELFMARK_PAGE
+    page_size: int = DEFAULT_SHELFMARK_LIMIT
+    total_pages: int = 0
+    visible_start: int = 0
+    visible_end: int = 0
+    has_previous: bool = False
+    previous_page: int | None = None
+    next_page: int | None = None
     has_more: bool = False
     total_available: int = 0
     open_search_url: str | None = None
@@ -163,6 +171,13 @@ class ShelfmarkSearchSection:
             "available": self.available,
             "query": self.query,
             "page": self.page,
+            "page_size": self.page_size,
+            "total_pages": self.total_pages,
+            "visible_start": self.visible_start,
+            "visible_end": self.visible_end,
+            "has_previous": self.has_previous,
+            "previous_page": self.previous_page,
+            "next_page": self.next_page,
             "has_more": self.has_more,
             "total_available": self.total_available,
             "open_search_url": self.open_search_url,
@@ -694,11 +709,13 @@ def search_shelfmark_results(
     query: str | None,
     *,
     detail_url_builder: Callable[[Mapping[str, Any]], str | None],
+    page: int = DEFAULT_SHELFMARK_PAGE,
     query_label: str | None = None,
     context_hint: str | None = None,
     empty_message: str | None = None,
 ) -> ShelfmarkSearchSection:
     normalized_query = _normalize_text(query)
+    requested_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(page) or DEFAULT_SHELFMARK_PAGE)
     config_data = get_shelfmark_client_config()
     if not config_data.enabled:
         return ShelfmarkSearchSection(enabled=False, available=False, query=normalized_query or "")
@@ -708,10 +725,25 @@ def search_shelfmark_results(
             enabled=True,
             available=True,
             query="",
-            page=DEFAULT_SHELFMARK_PAGE,
+            page=requested_page,
+            page_size=DEFAULT_SHELFMARK_LIMIT,
+            total_pages=0,
+            visible_start=0,
+            visible_end=0,
+            has_previous=False,
+            previous_page=None,
+            next_page=None,
             has_more=False,
             total_available=0,
-            open_search_url=build_shelfmark_search_url(config_data.browser_base_url, query="") if config_data.browser_base_url else None,
+            open_search_url=(
+                build_shelfmark_search_url(
+                    config_data.browser_base_url,
+                    query="",
+                    page=requested_page,
+                )
+                if config_data.browser_base_url
+                else None
+            ),
             query_label=query_label,
             context_hint=context_hint,
             message=empty_message,
@@ -723,7 +755,7 @@ def search_shelfmark_results(
 
     client = ShelfmarkClient(config_data)
     try:
-        search_response = client.search_books(normalized_query)
+        search_response = client.search_books(normalized_query, page=requested_page)
         books = search_response.books
         hardcover_ids = [value for value in (_extract_hardcover_id(book) for book in books) if value]
         library_matches = lookup_visible_library_matches(hardcover_ids)
@@ -741,17 +773,32 @@ def search_shelfmark_results(
             total_available=search_response.total_found,
             has_more=search_response.has_more,
         )
+        current_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(search_response.page) or requested_page)
+        total_pages = (
+            max(1, math.ceil(summary.total_available / DEFAULT_SHELFMARK_LIMIT))
+            if summary.total_available
+            else 0
+        )
+        visible_start = ((current_page - 1) * DEFAULT_SHELFMARK_LIMIT) + 1 if results else 0
+        visible_end = visible_start + len(results) - 1 if results else 0
         return ShelfmarkSearchSection(
             enabled=True,
             available=True,
             query=normalized_query,
-            page=search_response.page,
+            page=current_page,
+            page_size=DEFAULT_SHELFMARK_LIMIT,
+            total_pages=total_pages,
+            visible_start=visible_start,
+            visible_end=visible_end,
+            has_previous=current_page > DEFAULT_SHELFMARK_PAGE,
+            previous_page=current_page - 1 if current_page > DEFAULT_SHELFMARK_PAGE else None,
+            next_page=current_page + 1 if search_response.has_more else None,
             has_more=search_response.has_more,
             total_available=summary.total_available,
             open_search_url=build_shelfmark_search_url(
                 config_data.browser_base_url,
                 query=normalized_query,
-                page=search_response.page,
+                page=current_page,
             ),
             query_label=query_label,
             context_hint=context_hint,
@@ -809,10 +856,12 @@ class ShelfmarkClient:
         query: str,
         *,
         limit: int = DEFAULT_SHELFMARK_LIMIT,
+        page: int = DEFAULT_SHELFMARK_PAGE,
         provider: str = SHELFMARK_METADATA_PROVIDER,
         content_type: str = SHELFMARK_CONTENT_TYPE,
     ) -> ShelfmarkSearchResponse:
         self._ensure_authenticated()
+        current_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(page) or DEFAULT_SHELFMARK_PAGE)
         response = self._perform_request(
             "get",
             _join_base_url(self.config.base_url, "/api/metadata/search"),
@@ -821,7 +870,7 @@ class ShelfmarkClient:
                 "query": query,
                 "limit": limit,
                 "sort": DEFAULT_SHELFMARK_SORT,
-                "page": DEFAULT_SHELFMARK_PAGE,
+                "page": current_page,
                 "provider": provider,
                 "content_type": content_type,
             },
@@ -1018,6 +1067,12 @@ def _normalize_shelfmark_cover_url(base_url: str, value: Any) -> str | None:
     parsed = urlsplit(normalized)
     if parsed.scheme or parsed.netloc:
         return normalized
+
+    if normalized.startswith("/"):
+        base_parts = urlsplit(base_url)
+        if not base_parts.scheme or not base_parts.netloc:
+            return normalized
+        return urlunsplit((base_parts.scheme, base_parts.netloc, normalized, "", ""))
 
     return _join_base_url(base_url, normalized)
 
