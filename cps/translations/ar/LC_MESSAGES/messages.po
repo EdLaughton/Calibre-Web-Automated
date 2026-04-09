@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version:  Calibre-Web Automated\n"
 "Report-Msgid-Bugs-To: https://github.com/crocodilestick/Calibre-Web-"
 "Automated\n"
-"POT-Creation-Date: 2026-03-11 17:35+0000\n"
+"POT-Creation-Date: 2026-04-09 03:34+0000\n"
 "PO-Revision-Date: 2025-06-07 14:44+0300\n"
 "Last-Translator: UsamaFoad <usamafoad@gmail.com>\n"
 "Language-Team: \n"
@@ -121,7 +121,7 @@ msgstr "الاعدادات الأساسية"
 msgid "UI Configuration"
 msgstr "إعدادات واجهة المستخدم"
 
-#: cps/admin.py:620 cps/admin.py:1302 cps/db.py:967 cps/search.py:153
+#: cps/admin.py:620 cps/admin.py:1302 cps/db.py:967 cps/search.py:159
 #: cps/web.py:832
 #, python-format
 msgid "Custom Column No.%(column)d does not exist in calibre database"
@@ -155,7 +155,7 @@ msgstr "إظهار الكل"
 msgid "Malformed request"
 msgstr "طلب مشوه"
 
-#: cps/admin.py:785 cps/admin.py:2786
+#: cps/admin.py:785 cps/admin.py:2795
 msgid "Guest Name can't be changed"
 msgstr "لا يمكن تغيير اسم الضيف"
 
@@ -163,7 +163,7 @@ msgstr "لا يمكن تغيير اسم الضيف"
 msgid "Guest can't have this role"
 msgstr "لا يمكن للضيف الحصول على هذا الدور"
 
-#: cps/admin.py:811 cps/admin.py:2611
+#: cps/admin.py:811 cps/admin.py:2620
 msgid "No admin user remaining, can't remove admin role"
 msgstr "لم يتبق مستخدم مسؤول، ولا يمكن إزالة دور المسؤول"
 
@@ -207,7 +207,7 @@ msgstr "عمود قراءة خاطئ"
 msgid "Invalid Restricted Column"
 msgstr "عمود مقيد خاطئ"
 
-#: cps/admin.py:914 cps/admin.py:2459
+#: cps/admin.py:914 cps/admin.py:2468
 #, fuzzy
 msgid "Calibre-Web Automated configuration updated"
 msgstr "تم تحديث تكوين Calibre-Web"
@@ -385,8 +385,8 @@ msgstr "تعديل إعدادات خادم البريد الإلكتروني"
 msgid "Success! Gmail Account Verified."
 msgstr "تم التحقق بنجاح! تم التحقق من حساب Gmail."
 
-#: cps/admin.py:1743 cps/admin.py:1746 cps/admin.py:2232 cps/admin.py:2443
-#: cps/admin.py:2558 cps/admin.py:2829 cps/editbooks.py:1042
+#: cps/admin.py:1743 cps/admin.py:1746 cps/admin.py:2232 cps/admin.py:2452
+#: cps/admin.py:2567 cps/admin.py:2838 cps/editbooks.py:1042
 #: cps/editbooks.py:1808 cps/shelf.py:93 cps/shelf.py:167 cps/shelf.py:228
 #: cps/shelf.py:278 cps/shelf.py:315 cps/shelf.py:389 cps/shelf.py:511
 #: cps/tasks/convert.py:145 cps/web.py:2678
@@ -431,7 +431,7 @@ msgstr "مدة غير صالحة للمهمة المحددة"
 msgid "Scheduled tasks settings updated"
 msgstr "تم تحديث إعدادات المهام المجدولة"
 
-#: cps/admin.py:1820 cps/admin.py:1964 cps/admin.py:2825 cps/web.py:2109
+#: cps/admin.py:1820 cps/admin.py:1964 cps/admin.py:2834 cps/web.py:2109
 msgid "Oops! An unknown error occurred. Please try again later."
 msgstr "عفواً! حدث خطأ غير معروف. يُرجى المحاولة لاحقًا."
 
@@ -439,12 +439,13 @@ msgstr "عفواً! حدث خطأ غير معروف. يُرجى المحاولة
 msgid "Settings DB is not Writeable"
 msgstr "قاعدة بيانات الإعدادات غير قابلة للكتابة"
 
-#: cps/admin.py:1843 cps/opds.py:199 cps/web.py:2604 cps/web.py:2729
+#: cps/admin.py:1843 cps/opds.py:199 cps/services/shelfmark_search.py:324
+#: cps/web.py:2604 cps/web.py:2729
 #, fuzzy
 msgid "title"
 msgstr "العنوان"
 
-#: cps/admin.py:1949 cps/admin.py:2817
+#: cps/admin.py:1949 cps/admin.py:2826
 #, python-format
 msgid "Edit User %(nick)s"
 msgstr "تعديل المستخدم %(nick)s"
@@ -567,197 +568,202 @@ msgstr "موقع الملف الرئيسي غير صالح، يرجى إدخال
 msgid "Certfile Location is not Valid, Please Enter Correct Path"
 msgstr "موقع ملف الشهادة غير صالح، يرجى إدخال المسار الصحيح"
 
-#: cps/admin.py:2365
+#: cps/admin.py:2363
+msgid ""
+"Shelfmark Base URL is required when integrated Shelfmark search is enabled"
+msgstr ""
+
+#: cps/admin.py:2374
 msgid ""
 "Auto-create users cannot be enabled without enabling reverse proxy "
 "authentication"
 msgstr ""
 
-#: cps/admin.py:2368
+#: cps/admin.py:2377
 msgid "Auto-create users requires a valid reverse proxy header name"
 msgstr ""
 
-#: cps/admin.py:2387 cps/admin.py:2394
+#: cps/admin.py:2396 cps/admin.py:2403
 msgid ""
 "Invalid OAuth Redirect Host format. Please include the full URL with "
 "protocol (e.g., https://your-domain.com)"
 msgstr ""
 
-#: cps/admin.py:2391
+#: cps/admin.py:2400
 msgid ""
 "OAuth Redirect Host should not include a path. Use only the base URL (e.g., "
 "https://your-domain.com)"
 msgstr ""
 
-#: cps/admin.py:2426
+#: cps/admin.py:2435
 msgid "Password length has to be between 1 and 40"
 msgstr "يجب أن يكون طول كلمة المرور بين 1 و 40"
 
-#: cps/admin.py:2486
+#: cps/admin.py:2495
 msgid "Database Settings updated"
 msgstr "تم تحديث إعدادات قاعدة البيانات"
 
-#: cps/admin.py:2494
+#: cps/admin.py:2503
 msgid "Database Configuration"
 msgstr "تكوين قاعدة البيانات"
 
-#: cps/admin.py:2514 cps/web.py:2078
+#: cps/admin.py:2523 cps/web.py:2078
 msgid "Oops! Please complete all fields."
 msgstr "عفواً! الرجاء تعبئة جميع الحقول."
 
-#: cps/admin.py:2523
+#: cps/admin.py:2532
 msgid "E-mail is not from valid domain"
 msgstr "البريد الإلكتروني ليس من نطاق صالح"
 
-#: cps/admin.py:2531
+#: cps/admin.py:2540
 msgid "Add new user"
 msgstr "إضافة مستخدم جديد"
 
-#: cps/admin.py:2548
+#: cps/admin.py:2557
 #, python-format
 msgid "User '%(user)s' created"
 msgstr "تم إنشاء المستخدم '%(user)s'"
 
-#: cps/admin.py:2554
+#: cps/admin.py:2563
 msgid "Oops! An account already exists for this Email. or name."
 msgstr "عفواً! يوجد حساب بالفعل لهذا البريد الإلكتروني أو الاسم."
 
-#: cps/admin.py:2584
+#: cps/admin.py:2593
 #, python-format
 msgid "User '%(nick)s' deleted"
 msgstr "تم حذف المستخدم '%(nick)s'"
 
-#: cps/admin.py:2587
+#: cps/admin.py:2596
 msgid "Can't delete Guest User"
 msgstr "لا يمكن حذف المستخدم الضيف"
 
-#: cps/admin.py:2590
+#: cps/admin.py:2599
 msgid "No admin user remaining, can't delete user"
 msgstr "لم يتبق مستخدم مسؤول، لا يمكن حذف المستخدم"
 
-#: cps/admin.py:2780 cps/web.py:2413
+#: cps/admin.py:2789 cps/web.py:2413
 msgid "Email can't be empty and has to be a valid Email"
 msgstr ""
 "لا يمكن أن يكون البريد الإلكتروني فارغًا ويجب أن يكون بريدًا إلكترونيًا صالحًا"
 
-#: cps/admin.py:2821
+#: cps/admin.py:2830
 #, python-format
 msgid "User '%(nick)s' updated"
 msgstr "تم تحديث المستخدم '%(nick)s'"
 
-#: cps/admin.py:2886
+#: cps/admin.py:2895
 #, python-format
 msgid ""
 "Connection successful! OIDC discovery endpoint is accessible.%(endpoints)s"
 msgstr ""
 
-#: cps/admin.py:2891
+#: cps/admin.py:2900
 msgid ""
 "Connection failed: OIDC discovery endpoint not found (404). Check if the "
 "base URL is correct."
 msgstr ""
 
-#: cps/admin.py:2893 cps/admin.py:2950
+#: cps/admin.py:2902 cps/admin.py:2959
 #, python-format
 msgid "Connection failed: Server returned status code %(code)s"
 msgstr ""
 
-#: cps/admin.py:2895
+#: cps/admin.py:2904
 msgid ""
 "Connection failed: Could not connect to server. Check the URL and network "
 "connectivity."
 msgstr ""
 
-#: cps/admin.py:2897
+#: cps/admin.py:2906
 msgid ""
 "Connection failed: Request timed out. The server may be slow or unreachable."
 msgstr ""
 
-#: cps/admin.py:2899
+#: cps/admin.py:2908
 msgid ""
 "Connection failed: Server returned invalid JSON. This may not be an OIDC "
 "endpoint."
 msgstr ""
 
-#: cps/admin.py:2902
+#: cps/admin.py:2911
 #, fuzzy, python-format
 msgid "Connection failed: %(error)s"
 msgstr "خطأ في الاتصال"
 
-#: cps/admin.py:2928
+#: cps/admin.py:2937
 #, python-format
 msgid ""
 "Metadata is missing required OIDC fields: %(fields)s. This may not be a "
 "valid OIDC metadata endpoint."
 msgstr ""
 
-#: cps/admin.py:2939
+#: cps/admin.py:2948
 #, python-format
 msgid "Metadata URL is valid! Found %(count)s OAuth endpoints."
 msgstr ""
 
-#: cps/admin.py:2941
+#: cps/admin.py:2950
 #, fuzzy
 msgid " User info endpoint is available."
 msgstr "لا توجد معلومات إصدار متاحة"
 
-#: cps/admin.py:2943
+#: cps/admin.py:2952
 msgid ""
 " Note: User info endpoint not found - this may cause authentication issues."
 msgstr ""
 
-#: cps/admin.py:2948
+#: cps/admin.py:2957
 msgid "Metadata URL not found (404). Please check the URL is correct."
 msgstr ""
 
-#: cps/admin.py:2952
+#: cps/admin.py:2961
 msgid ""
 "Connection failed: Could not connect to metadata URL. Check the URL and "
 "network connectivity."
 msgstr ""
 
-#: cps/admin.py:2954
+#: cps/admin.py:2963
 msgid "Connection failed: Request timed out."
 msgstr ""
 
-#: cps/admin.py:2956
+#: cps/admin.py:2965
 msgid "Connection failed: Invalid JSON in response."
 msgstr ""
 
-#: cps/admin.py:2959
+#: cps/admin.py:2968
 #, fuzzy
 msgid "An unknown error occurred."
 msgstr "حدث خطأ غير معروف. يرجى المحاولة مرة أخرى لاحقًا."
 
-#: cps/admin.py:2971
+#: cps/admin.py:2980
 #, fuzzy
 msgid "Restore already in progress."
 msgstr "خطأ في الاتصال"
 
-#: cps/admin.py:2975
+#: cps/admin.py:2984
 msgid "Restore failed: Calibre library path is not configured."
 msgstr ""
 
-#: cps/admin.py:2980
+#: cps/admin.py:2989
 #, python-format
 msgid "Restore failed: metadata.db not found at %(path)s"
 msgstr ""
 
-#: cps/admin.py:2985
+#: cps/admin.py:2994
 #, python-format
 msgid "Restore failed: app.db not found at %(path)s"
 msgstr ""
 
-#: cps/admin.py:3057 cps/admin.py:3097
+#: cps/admin.py:3066 cps/admin.py:3106
 #, fuzzy, python-format
 msgid "Restore failed: %(err)s"
 msgstr "خطأ في الاتصال"
 
-#: cps/admin.py:3074
+#: cps/admin.py:3083
 msgid "Restore completed but app.db cleanup failed. See logs for details."
 msgstr ""
 
-#: cps/admin.py:3093
+#: cps/admin.py:3102
 #, python-format
 msgid ""
 "Restore complete. Backups and restore log saved to %(dir)s. All book-linked "
@@ -1101,7 +1107,7 @@ msgstr "تم حذف {} مستخدم(ين) بنجاح"
 msgid "CWA Profile Picture Management (WIP)"
 msgstr ""
 
-#: cps/db.py:1240 cps/templates/config_edit.html:294
+#: cps/db.py:1240 cps/templates/config_edit.html:316
 #: cps/templates/config_view_edit.html:79
 #: cps/templates/config_view_edit.html:90 cps/templates/email_edit.html:41
 #: cps/web.py:645 cps/web.py:679 cps/web.py:724 cps/web.py:764 cps/web.py:793
@@ -1870,43 +1876,75 @@ msgid ""
 "temporarily disabled while we develop a new frontend for v5.0.0."
 msgstr ""
 
-#: cps/search.py:53 cps/search.py:440 cps/templates/book_edit.html:275
+#: cps/search.py:59 cps/search.py:475 cps/templates/book_edit.html:275
 #: cps/templates/cwa_epub_fixer.html:25 cps/templates/feed.xml:34
 #: cps/templates/index.xml:12 cps/templates/layout.html:114
 #: cps/templates/layout.html:117 cps/templates/search_form.html:247
 msgid "Search"
 msgstr "بحث"
 
-#: cps/search.py:204
+#: cps/search.py:210
 msgid "Published after "
 msgstr "نشر بعد "
 
-#: cps/search.py:211
+#: cps/search.py:217
 msgid "Published before "
 msgstr "نشر قبل "
 
-#: cps/search.py:233
+#: cps/search.py:239
 #, python-format
 msgid "Rating <= %(rating)s"
 msgstr "التقييم <= %(rating)s"
 
-#: cps/search.py:235
+#: cps/search.py:241
 #, python-format
 msgid "Rating >= %(rating)s"
 msgstr "التقييم >= %(rating)s"
 
-#: cps/search.py:237
+#: cps/search.py:243
 #, python-format
 msgid "Read Status = '%(status)s'"
 msgstr "حالة القراءة = '%(status)s'"
 
-#: cps/search.py:354
+#: cps/search.py:360
 msgid "Error on search for custom columns, please restart Calibre-Web"
 msgstr "خطأ في البحث عن الأعمدة المخصصة، يرجى إعادة تشغيل Calibre-Web"
 
-#: cps/search.py:384 cps/search.py:416 cps/templates/layout.html:125
+#: cps/search.py:393
+#, fuzzy
+msgid "Advanced external query"
+msgstr "بحث متقدم"
+
+#: cps/search.py:395
+#, python-format
+msgid "Built from %(fields)s only. Other advanced filters stay local to CWA."
+msgstr ""
+
+#: cps/search.py:397
+msgid ""
+"Advanced external search only uses title, author, and publisher fields when "
+"present."
+msgstr ""
+
+#: cps/search.py:399
+msgid ""
+"Add a title, author, or publisher filter to include Shelfmark external "
+"results in advanced search."
+msgstr ""
+
+#: cps/search.py:408 cps/search.py:440 cps/templates/layout.html:125
 msgid "Advanced Search"
 msgstr "بحث متقدم"
+
+#: cps/search.py:460 cps/templates/search.html:156
+#, fuzzy
+msgid "External lookup query"
+msgstr "المنفذ الخارجي"
+
+#: cps/search.py:501 cps/search.py:511
+#: cps/templates/shelfmark_external_detail.html:10
+msgid "Shelfmark External Result"
+msgstr ""
 
 #: cps/shelf.py:34 cps/shelf.py:128
 msgid "Invalid shelf specified"
@@ -2435,6 +2473,184 @@ msgstr ""
 msgid "Found no valid gmail.json file with OAuth information"
 msgstr "لم يتم العثور على ملف gmail.json صالح بمعلومات OAuth"
 
+#: cps/services/shelfmark_search.py:195
+msgid "Configure Shelfmark Base URL as a full http:// or https:// URL."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:224 cps/services/shelfmark_search.py:238
+msgid ""
+"Shelfmark Base URL could not be resolved for trusted server-side access."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:325
+#, fuzzy
+msgid "author"
+msgstr "المؤلف"
+
+#: cps/services/shelfmark_search.py:326
+#, fuzzy
+msgid "publisher"
+msgstr "الناشر"
+
+#: cps/services/shelfmark_search.py:376
+msgid "Open existing CWA book"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:377
+msgid "Exact hardcover-id already exists in your library."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:385 cps/services/shelfmark_search.py:394
+#: cps/services/shelfmark_search.py:403 cps/services/shelfmark_search.py:410
+#: cps/services/shelfmark_search.py:413 cps/services/shelfmark_search.py:430
+#: cps/templates/search.html:289
+#: cps/templates/shelfmark_external_detail.html:113
+msgid "Open in Shelfmark"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:386
+msgid ""
+"Direct request actions are unavailable because this result has no exact "
+"hardcover-id metadata."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:395
+msgid ""
+"Direct request actions are unavailable because Shelfmark did not return "
+"enough exact metadata to build a safe book request."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:404
+msgid ""
+"Request availability is checked in your browser. Until Shelfmark confirms a "
+"live session and compatible policy, opening Shelfmark remains the safe "
+"fallback."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:410
+msgid "Login required"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:414
+#, python-format
+msgid "Shelfmark session was not found for this browser. %(suffix)s."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:422
+msgid "Request in Shelfmark"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:423
+msgid ""
+"This browser already has a Shelfmark session and the current policy allows "
+"book-level requests."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:431
+msgid ""
+"Shelfmark is signed in, but the current Shelfmark policy does not allow "
+"direct book-level requests for this result."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:445 cps/templates/search.html:169
+#, fuzzy
+msgid "Already in library"
+msgstr "السلاسل في هذه المكتبة"
+
+#: cps/services/shelfmark_search.py:446
+msgid "Exact hardcover-id match in metadata.db."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:457
+#, fuzzy
+msgid "External candidate"
+msgstr "الملفات الثنائية الخارجية"
+
+#: cps/services/shelfmark_search.py:458
+#: cps/templates/shelfmark_external_detail.html:78
+msgid "No exact hardcover-id match was found in metadata.db."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:468
+msgid "Library match unavailable"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:469
+msgid ""
+"No exact hardcover-id is available from this external result, so CWA does "
+"not guess duplicates."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:533
+#, fuzzy
+msgid "Unknown title"
+msgstr "حالة غير معروفة"
+
+#: cps/services/shelfmark_search.py:603
+#, fuzzy
+msgid "Already in Your Library"
+msgstr "السلاسل في هذه المكتبة"
+
+#: cps/services/shelfmark_search.py:604
+msgid ""
+"These external hits already exist in metadata.db via an exact hardcover-id "
+"match."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:608
+#, fuzzy
+msgid "External Candidates"
+msgstr "الملفات الثنائية الخارجية"
+
+#: cps/services/shelfmark_search.py:609
+msgid ""
+"These results have an exact hardcover-id, but no matching library record yet."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:613
+msgid "External Results Without Exact Hardcover ID"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:614
+msgid ""
+"CWA does not guess duplicate status for these results because Shelfmark did "
+"not return an exact hardcover-id."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:711
+msgid "Shelfmark integration is not enabled."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:746 cps/services/shelfmark_search.py:754
+msgid "Shelfmark search failed."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:768 cps/services/shelfmark_search.py:770
+msgid "Shelfmark book details are unavailable."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:772
+msgid "Shelfmark returned an invalid book detail payload."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:787
+msgid ""
+"Configure both a Shelfmark search username and password before enabling "
+"integrated external search."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:793 cps/services/shelfmark_search.py:800
+#: cps/services/shelfmark_search.py:803
+msgid "Shelfmark login failed for the configured search account."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:817
+msgid ""
+"Shelfmark server-side request validation blocked this address. Check that "
+"Shelfmark Base URL points directly to your Shelfmark instance and is not "
+"redirecting to a different host or port."
+msgstr ""
+
 #: cps/tasks/auto_hardcover_id.py:45
 msgid "Auto-fetching Hardcover IDs"
 msgstr ""
@@ -2739,7 +2955,7 @@ msgstr "تسجيل الدخول عن بعد بالرابط السحري"
 msgid "Reverse Proxy Login"
 msgstr "تسجيل الدخول بالوكيل العكسي"
 
-#: cps/templates/admin.html:159 cps/templates/config_edit.html:258
+#: cps/templates/admin.html:159 cps/templates/config_edit.html:280
 msgid "Reverse Proxy Header Name"
 msgstr "اسم رأس الوكيل العكسي"
 
@@ -2865,7 +3081,7 @@ msgstr "معلومات الإصدار"
 msgid "Version"
 msgstr "الإصدار"
 
-#: cps/templates/admin.html:251
+#: cps/templates/admin.html:251 cps/templates/search.html:284
 msgid "Details"
 msgstr "التفاصيل"
 
@@ -2901,7 +3117,7 @@ msgstr "موافق"
 #: cps/templates/book_table.html:231 cps/templates/book_table.html:251
 #: cps/templates/book_table.html:271 cps/templates/book_table.html:329
 #: cps/templates/book_table.html:365 cps/templates/config_db.html:111
-#: cps/templates/config_edit.html:620 cps/templates/config_view_edit.html:215
+#: cps/templates/config_edit.html:642 cps/templates/config_view_edit.html:215
 #: cps/templates/cwa_convert_library.html:23
 #: cps/templates/cwa_epub_fixer.html:40 cps/templates/detail.html:938
 #: cps/templates/duplicates.html:540 cps/templates/duplicates.html:567
@@ -2930,38 +3146,38 @@ msgid "In Library"
 msgstr "في المكتبة"
 
 #: cps/templates/author.html:27 cps/templates/index.html:173
-#: cps/templates/search.html:31 cps/templates/shelf.html:20
+#: cps/templates/search.html:38 cps/templates/shelf.html:20
 msgid "Sort according to book date, newest first"
 msgstr "الفرز حسب تاريخ الكتاب، الأحدث أولاً"
 
 #: cps/templates/author.html:28 cps/templates/index.html:174
-#: cps/templates/search.html:32 cps/templates/shelf.html:21
+#: cps/templates/search.html:39 cps/templates/shelf.html:21
 msgid "Sort according to book date, oldest first"
 msgstr "الفرز حسب تاريخ الكتاب، الأقدم أولاً"
 
 #: cps/templates/author.html:29 cps/templates/index.html:175
-#: cps/templates/search.html:33 cps/templates/shelf.html:22
+#: cps/templates/search.html:40 cps/templates/shelf.html:22
 msgid "Sort title in alphabetical order"
 msgstr "فرز العنوان ترتيب أبجدي"
 
 #: cps/templates/author.html:30 cps/templates/index.html:176
-#: cps/templates/search.html:34 cps/templates/shelf.html:23
+#: cps/templates/search.html:41 cps/templates/shelf.html:23
 msgid "Sort title in reverse alphabetical order"
 msgstr "فرز العنوان ترتيب أبجدي عكسي"
 
 #: cps/templates/author.html:31 cps/templates/index.html:179
-#: cps/templates/search.html:37 cps/templates/shelf.html:26
+#: cps/templates/search.html:44 cps/templates/shelf.html:26
 msgid "Sort according to publishing date, newest first"
 msgstr "الفرز حسب تاريخ النشر، الأحدث أولاً"
 
 #: cps/templates/author.html:32 cps/templates/index.html:180
-#: cps/templates/search.html:38 cps/templates/shelf.html:27
+#: cps/templates/search.html:45 cps/templates/shelf.html:27
 msgid "Sort according to publishing date, oldest first"
 msgstr "الفرز حسب تاريخ النشر، الأقدم أولاً"
 
 #: cps/templates/author.html:61 cps/templates/author.html:118
 #: cps/templates/index.html:76 cps/templates/index.html:217
-#: cps/templates/search.html:71 cps/templates/shelf.html:62
+#: cps/templates/search.html:92 cps/templates/shelf.html:62
 msgid "reduce"
 msgstr "تقليل"
 
@@ -3029,7 +3245,9 @@ msgid "Upload Format"
 msgstr "تحميل التنسيق"
 
 #: cps/templates/book_edit.html:90 cps/templates/book_edit.html:371
-#: cps/templates/cwa_settings.html:1091 cps/templates/search_form.html:12
+#: cps/templates/cwa_settings.html:1091 cps/templates/search.html:247
+#: cps/templates/search_form.html:12
+#: cps/templates/shelfmark_external_detail.html:62
 msgid "Author"
 msgstr "المؤلف"
 
@@ -3066,6 +3284,7 @@ msgstr "التقييم"
 #: cps/templates/book_edit.html:126 cps/templates/book_edit.html:373
 #: cps/templates/cwa_settings.html:341 cps/templates/cwa_settings.html:343
 #: cps/templates/search_form.html:154
+#: cps/templates/shelfmark_external_detail.html:180
 msgid "Description"
 msgstr "الوصف"
 
@@ -3132,7 +3351,7 @@ msgid "Fetch Metadata"
 msgstr "جلب البيانات الوصفية"
 
 #: cps/templates/book_edit.html:252 cps/templates/config_db.html:110
-#: cps/templates/config_edit.html:619 cps/templates/config_view_edit.html:214
+#: cps/templates/config_edit.html:641 cps/templates/config_view_edit.html:214
 #: cps/templates/email_edit.html:65 cps/templates/schedule_edit.html:45
 #: cps/templates/shelf_edit.html:25 cps/templates/shelf_order.html:41
 #: cps/templates/user_edit.html:553
@@ -3478,11 +3697,11 @@ msgstr "إعادة الاتصال بقاعدة بيانات Calibre"
 msgid "New db location is invalid, please enter valid path"
 msgstr "موقع قاعدة البيانات الجديدة غير صالح، يرجى إدخال مسار صالح"
 
-#: cps/templates/config_edit.html:6 cps/templates/config_edit.html:272
+#: cps/templates/config_edit.html:6 cps/templates/config_edit.html:294
 msgid "Use Standard Authentication"
 msgstr "استخدام المصادقة القياسية"
 
-#: cps/templates/config_edit.html:8 cps/templates/config_edit.html:274
+#: cps/templates/config_edit.html:8 cps/templates/config_edit.html:296
 msgid "Use LDAP Authentication"
 msgstr "استخدام مصادقة LDAP"
 
@@ -3621,349 +3840,397 @@ msgid "Hardcover API Key"
 msgstr ""
 
 #: cps/templates/config_edit.html:248
+msgid "Enable Shelfmark External Search"
+msgstr ""
+
+#: cps/templates/config_edit.html:249
+msgid ""
+"Adds Shelfmark external results alongside library search. Duplicate "
+"awareness is exact metadata.db hardcover-id matching only, and request "
+"attribution stays on the Shelfmark/browser side. Advanced search only sends "
+"title, author, and publisher metadata to Shelfmark; all other advanced "
+"filters stay local to CWA. The UI groups exact duplicates, external "
+"candidates, and results without exact Hardcover IDs separately. Direct "
+"Request in Shelfmark works best when CWA and Shelfmark are served from the "
+"same browser origin via a reverse proxy."
+msgstr ""
+
+#: cps/templates/config_edit.html:253
+msgid "Shelfmark Base URL"
+msgstr ""
+
+#: cps/templates/config_edit.html:255
+msgid ""
+"CWA uses this exact URL as the trust boundary for server-side Shelfmark "
+"metadata requests. Local/private Shelfmark hosts are supported here without "
+"relaxing request validation globally, but requests remain scoped to this "
+"exact host and port."
+msgstr ""
+
+#: cps/templates/config_edit.html:258
+#, fuzzy
+msgid "Shelfmark Search Username"
+msgstr "استخدام البريد الإلكتروني كاسم مستخدم"
+
+#: cps/templates/config_edit.html:260
+msgid ""
+"Optional. Use a dedicated Shelfmark account if integrated external search "
+"needs authentication."
+msgstr ""
+
+#: cps/templates/config_edit.html:263
+#, fuzzy
+msgid "Shelfmark Search Password"
+msgstr "تغيير كلمة المرور"
+
+#: cps/templates/config_edit.html:265
+msgid "Leave blank to keep the current stored password unchanged."
+msgstr ""
+
+#: cps/templates/config_edit.html:270
 msgid "Allow Reverse Proxy Authentication"
 msgstr "السماح بمصادقة الوكيل العكسي"
 
-#: cps/templates/config_edit.html:249
+#: cps/templates/config_edit.html:271
 msgid ""
 "Trusts the \"Remote-User\" header from a reverse proxy for authentication. "
 "This is an authentication method, distinct from the HTTPS security setting "
 "below."
 msgstr ""
 
-#: cps/templates/config_edit.html:253
+#: cps/templates/config_edit.html:275
 msgid "Use via HTTPS"
 msgstr ""
 
-#: cps/templates/config_edit.html:254
+#: cps/templates/config_edit.html:276
 msgid ""
 "Enables secure cookie settings (Secure, SameSite=Lax). Enable this ONLY if "
 "you are accessing the server via HTTPS, otherwise you will be locked out."
 msgstr ""
 
-#: cps/templates/config_edit.html:263
+#: cps/templates/config_edit.html:285
 msgid "Auto-create users from reverse proxy"
 msgstr ""
 
-#: cps/templates/config_edit.html:264
+#: cps/templates/config_edit.html:286
 msgid ""
 "Automatically create user accounts when valid reverse proxy headers are "
 "received. Only enable if your reverse proxy authentication is properly "
 "secured."
 msgstr ""
 
-#: cps/templates/config_edit.html:270
+#: cps/templates/config_edit.html:292
 msgid "Login type"
 msgstr "نوع تسجيل الدخول"
 
-#: cps/templates/config_edit.html:277
+#: cps/templates/config_edit.html:299
 msgid "Use OAuth (requires HTTPS)"
 msgstr ""
 
-#: cps/templates/config_edit.html:284
+#: cps/templates/config_edit.html:306
 msgid "LDAP Server Host Name or IP Address"
 msgstr "اسم مضيف خادم LDAP أو عنوان IP"
 
-#: cps/templates/config_edit.html:288
+#: cps/templates/config_edit.html:310
 msgid "LDAP Server Port"
 msgstr "منفذ خادم LDAP"
 
-#: cps/templates/config_edit.html:292
+#: cps/templates/config_edit.html:314
 msgid "LDAP Encryption"
 msgstr "تشفير LDAP"
 
-#: cps/templates/config_edit.html:295
+#: cps/templates/config_edit.html:317
 msgid "TLS"
 msgstr "TLS"
 
-#: cps/templates/config_edit.html:296
+#: cps/templates/config_edit.html:318
 msgid "SSL"
 msgstr "SSL"
 
-#: cps/templates/config_edit.html:300
+#: cps/templates/config_edit.html:322
 msgid ""
 "LDAP CACertificate Path (Only needed for Client Certificate Authentication)"
 msgstr "مسار شهادة LDAP CA (مطلوب فقط لمصادقة شهادة العميل)"
 
-#: cps/templates/config_edit.html:307
+#: cps/templates/config_edit.html:329
 msgid ""
 "LDAP Certificate Path (Only needed for Client Certificate Authentication)"
 msgstr "مسار شهادة LDAP (مطلوب فقط لمصادقة شهادة العميل)"
 
-#: cps/templates/config_edit.html:314
+#: cps/templates/config_edit.html:336
 msgid "LDAP Keyfile Path (Only needed for Client Certificate Authentication)"
 msgstr "مسار ملف مفتاح LDAP (مطلوب فقط لمصادقة شهادة العميل)"
 
-#: cps/templates/config_edit.html:323
+#: cps/templates/config_edit.html:345
 msgid "LDAP Authentication"
 msgstr "مصادقة LDAP"
 
-#: cps/templates/config_edit.html:325
+#: cps/templates/config_edit.html:347
 msgid "Anonymous"
 msgstr "مجهول"
 
-#: cps/templates/config_edit.html:326
+#: cps/templates/config_edit.html:348
 msgid "Unauthenticated"
 msgstr "غير مصادق عليه"
 
-#: cps/templates/config_edit.html:327
+#: cps/templates/config_edit.html:349
 msgid "Simple"
 msgstr "بسيط"
 
-#: cps/templates/config_edit.html:332
+#: cps/templates/config_edit.html:354
 msgid "LDAP Administrator Username"
 msgstr "اسم مستخدم مسؤول LDAP"
 
-#: cps/templates/config_edit.html:338
+#: cps/templates/config_edit.html:360
 msgid "LDAP Administrator Password"
 msgstr "كلمة مرور مسؤول LDAP"
 
-#: cps/templates/config_edit.html:343
+#: cps/templates/config_edit.html:365
 msgid "LDAP Distinguished Name (DN)"
 msgstr "الاسم المميز لـ LDAP (DN)"
 
-#: cps/templates/config_edit.html:347
+#: cps/templates/config_edit.html:369
 msgid "LDAP User Object Filter"
 msgstr "مرشح كائن مستخدم LDAP"
 
-#: cps/templates/config_edit.html:352
+#: cps/templates/config_edit.html:374
 msgid "LDAP Server is OpenLDAP?"
 msgstr "هل خادم LDAP هو OpenLDAP؟"
 
-#: cps/templates/config_edit.html:356
+#: cps/templates/config_edit.html:378
 msgid "Auto-create users from LDAP"
 msgstr ""
 
-#: cps/templates/config_edit.html:357
+#: cps/templates/config_edit.html:379
 msgid ""
 "Automatically create user accounts when LDAP authentication succeeds for new "
 "users. Recommended for enterprise environments."
 msgstr ""
 
-#: cps/templates/config_edit.html:359
+#: cps/templates/config_edit.html:381
 msgid "Following Settings are Needed For User Import"
 msgstr "الإعدادات التالية مطلوبة لاستيراد المستخدمين"
 
-#: cps/templates/config_edit.html:361
+#: cps/templates/config_edit.html:383
 msgid "LDAP Group Object Filter"
 msgstr "مرشح كائن مجموعة LDAP"
 
-#: cps/templates/config_edit.html:365
+#: cps/templates/config_edit.html:387
 msgid "LDAP Group Name"
 msgstr "اسم مجموعة LDAP"
 
-#: cps/templates/config_edit.html:369
+#: cps/templates/config_edit.html:391
 msgid "LDAP Group Members Field"
 msgstr "حقل أعضاء مجموعة LDAP"
 
-#: cps/templates/config_edit.html:373
+#: cps/templates/config_edit.html:395
 msgid "LDAP Member User Filter Detection"
 msgstr "اكتشاف مرشح مستخدم عضو LDAP"
 
-#: cps/templates/config_edit.html:375
+#: cps/templates/config_edit.html:397
 msgid "Autodetect"
 msgstr "اكتشاف تلقائي"
 
-#: cps/templates/config_edit.html:376
+#: cps/templates/config_edit.html:398
 msgid "Custom Filter"
 msgstr "مرشح مخصص"
 
-#: cps/templates/config_edit.html:381
+#: cps/templates/config_edit.html:403
 msgid "LDAP Member User Filter"
 msgstr "مرشح مستخدم عضو LDAP"
 
-#: cps/templates/config_edit.html:391
+#: cps/templates/config_edit.html:413
 msgid "Important:"
 msgstr ""
 
-#: cps/templates/config_edit.html:391
+#: cps/templates/config_edit.html:413
 msgid ""
 "OAuth authentication requires this server to be accessed via HTTPS. If you "
 "are using HTTP, login will fail."
 msgstr ""
 
-#: cps/templates/config_edit.html:394
+#: cps/templates/config_edit.html:416
 msgid "Generic OAuth Provider"
 msgstr ""
 
-#: cps/templates/config_edit.html:398
+#: cps/templates/config_edit.html:420
 msgid "OAuth Metadata URL (for auto-discovery)"
 msgstr ""
 
-#: cps/templates/config_edit.html:402
+#: cps/templates/config_edit.html:424
 #, fuzzy
 msgid "Test Metadata"
 msgstr "جلب البيانات الوصفية"
 
-#: cps/templates/config_edit.html:405
+#: cps/templates/config_edit.html:427
 msgid "Leave empty to use manual configuration below"
 msgstr ""
 
-#: cps/templates/config_edit.html:411
+#: cps/templates/config_edit.html:433
 msgid "Use Manual Endpoint URLs (override auto-discovery)"
 msgstr ""
 
-#: cps/templates/config_edit.html:412
+#: cps/templates/config_edit.html:434
 msgid ""
 "Check this to manually configure individual OAuth endpoints instead of using "
 "auto-discovery"
 msgstr ""
 
-#: cps/templates/config_edit.html:417
+#: cps/templates/config_edit.html:439
 #, fuzzy
 msgid "Manual Endpoint Configuration"
 msgstr "تحرير تهيئة واجهة المستخدم"
 
-#: cps/templates/config_edit.html:420
+#: cps/templates/config_edit.html:442
 msgid "OAuth Base URL"
 msgstr ""
 
-#: cps/templates/config_edit.html:425
+#: cps/templates/config_edit.html:447
 msgid "Authorization Endpoint"
 msgstr ""
 
-#: cps/templates/config_edit.html:430
+#: cps/templates/config_edit.html:452
 #, fuzzy
 msgid "Token Endpoint"
 msgstr "لم يتم العثور على الرمز"
 
-#: cps/templates/config_edit.html:435
+#: cps/templates/config_edit.html:457
 msgid "UserInfo Endpoint"
 msgstr ""
 
-#: cps/templates/config_edit.html:443
+#: cps/templates/config_edit.html:465
 #, fuzzy
 msgid "Test Connection"
 msgstr "خطأ في الاتصال"
 
-#: cps/templates/config_edit.html:452
+#: cps/templates/config_edit.html:474
 #, fuzzy
 msgid "OAuth Scopes"
 msgstr "إعدادات OAuth"
 
-#: cps/templates/config_edit.html:454
+#: cps/templates/config_edit.html:476
 msgid "Space-separated list of OAuth scopes"
 msgstr ""
 
-#: cps/templates/config_edit.html:459
+#: cps/templates/config_edit.html:481
 msgid "OAuth Redirect Host"
 msgstr ""
 
-#: cps/templates/config_edit.html:462
+#: cps/templates/config_edit.html:484
 msgid ""
 "Set a consistent hostname for OAuth redirects to prevent \"invalid redirect "
 "URI\" errors. Include protocol (https://). Leave empty to use automatic "
 "detection."
 msgstr ""
 
-#: cps/templates/config_edit.html:464
+#: cps/templates/config_edit.html:486
 msgid ""
 "Required if: accessing via multiple hostnames, behind reverse proxy, or "
 "getting \"invalid redirect URI\" errors."
 msgstr ""
 
-#: cps/templates/config_edit.html:469
+#: cps/templates/config_edit.html:491
 #, fuzzy
 msgid "OAuth Client Id"
 msgstr "معرف عميل OAuth لـ %(provider)s"
 
-#: cps/templates/config_edit.html:473
+#: cps/templates/config_edit.html:495
 #, fuzzy
 msgid "OAuth Client Secret"
 msgstr "سر عميل OAuth لـ %(provider)s"
 
-#: cps/templates/config_edit.html:478
+#: cps/templates/config_edit.html:500
 #, fuzzy
 msgid "Field Mapping Configuration"
 msgstr "تهيئة العرض"
 
-#: cps/templates/config_edit.html:480
+#: cps/templates/config_edit.html:502
 #, fuzzy
 msgid "Username Field"
 msgstr "اسم المستخدم"
 
-#: cps/templates/config_edit.html:482
+#: cps/templates/config_edit.html:504
 msgid "JWT field to extract username from"
 msgstr ""
 
-#: cps/templates/config_edit.html:485
+#: cps/templates/config_edit.html:507
 #, fuzzy
 msgid "Email Field"
 msgstr "خدمة البريد الإلكتروني"
 
-#: cps/templates/config_edit.html:487
+#: cps/templates/config_edit.html:509
 msgid "JWT field to extract email from"
 msgstr ""
 
-#: cps/templates/config_edit.html:490
+#: cps/templates/config_edit.html:512
 msgid "OAuth group for Admin"
 msgstr ""
 
-#: cps/templates/config_edit.html:492
+#: cps/templates/config_edit.html:514
 msgid ""
 "Name of the OAuth group that grants admin privileges. Leave empty to disable "
 "group-based admin management, or use the global setting in Security Settings "
 "for more control."
 msgstr ""
 
-#: cps/templates/config_edit.html:495
+#: cps/templates/config_edit.html:517
 msgid "Login Button Text"
 msgstr ""
 
-#: cps/templates/config_edit.html:501
+#: cps/templates/config_edit.html:523
 #, python-format
 msgid "Obtain %(provider)s OAuth Credential"
 msgstr "الحصول على بيانات اعتماد OAuth لـ %(provider)s"
 
-#: cps/templates/config_edit.html:504
+#: cps/templates/config_edit.html:526
 #, python-format
 msgid "%(provider)s OAuth Client Id"
 msgstr "معرف عميل OAuth لـ %(provider)s"
 
-#: cps/templates/config_edit.html:508
+#: cps/templates/config_edit.html:530
 #, python-format
 msgid "%(provider)s OAuth Client Secret"
 msgstr "سر عميل OAuth لـ %(provider)s"
 
-#: cps/templates/config_edit.html:519
+#: cps/templates/config_edit.html:541
 msgid "External binaries"
 msgstr "الملفات الثنائية الخارجية"
 
-#: cps/templates/config_edit.html:520
+#: cps/templates/config_edit.html:542
 msgid "Path to Calibre Binaries"
 msgstr "مسار ملفات Calibre الثنائية"
 
-#: cps/templates/config_edit.html:528
+#: cps/templates/config_edit.html:550
 msgid "Calibre E-Book Converter Settings"
 msgstr "إعدادات محول الكتب الإلكترونية Calibre"
 
-#: cps/templates/config_edit.html:531
+#: cps/templates/config_edit.html:553
 msgid "Path to Kepubify E-Book Converter"
 msgstr "مسار محول الكتب الإلكترونية Kepubify"
 
-#: cps/templates/config_edit.html:539
+#: cps/templates/config_edit.html:561
 msgid "Location of Unrar binary"
 msgstr "موقع ملف Unrar الثنائي"
 
-#: cps/templates/config_edit.html:550
+#: cps/templates/config_edit.html:572
 msgid "Security Settings"
 msgstr "إعدادات الأمان"
 
-#: cps/templates/config_edit.html:553
+#: cps/templates/config_edit.html:575
 msgid "Disable Standard Login (Username/Password)"
 msgstr ""
 
-#: cps/templates/config_edit.html:554
+#: cps/templates/config_edit.html:576
 msgid ""
 "Hides the standard login form. Users must log in via OAuth or LDAP. Ensure "
 "you have a working alternative login method before enabling."
 msgstr ""
 
-#: cps/templates/config_edit.html:558
+#: cps/templates/config_edit.html:580
 msgid "Enable OAuth Group-Based Admin Role Management"
 msgstr ""
 
-#: cps/templates/config_edit.html:559
+#: cps/templates/config_edit.html:581
 msgid ""
 "When enabled, admin privileges are automatically granted or revoked based on "
 "OAuth group membership. Disable this to manually manage admin roles in the "
@@ -3971,59 +4238,59 @@ msgid ""
 "assignments."
 msgstr ""
 
-#: cps/templates/config_edit.html:563
+#: cps/templates/config_edit.html:585
 msgid "Limit failed login attempts"
 msgstr "تحديد محاولات تسجيل الدخول الفاشلة"
 
-#: cps/templates/config_edit.html:567
+#: cps/templates/config_edit.html:589
 msgid "Configure Backend for Limiter"
 msgstr "تهيئة الواجهة الخلفية للمُحدد"
 
-#: cps/templates/config_edit.html:571
+#: cps/templates/config_edit.html:593
 msgid "Options for Limiter Backend"
 msgstr "خيارات الواجهة الخلفية للمُحدد"
 
-#: cps/templates/config_edit.html:577
+#: cps/templates/config_edit.html:599
 msgid "Check if file extensions matches file content on upload"
 msgstr "التحقق مما إذا كانت امتدادات الملفات تتطابق مع محتوى الملف عند التحميل"
 
-#: cps/templates/config_edit.html:580
+#: cps/templates/config_edit.html:602
 msgid "Session protection"
 msgstr "حماية الجلسة"
 
-#: cps/templates/config_edit.html:582
+#: cps/templates/config_edit.html:604
 msgid "Basic"
 msgstr "أساسي"
 
-#: cps/templates/config_edit.html:583
+#: cps/templates/config_edit.html:605
 msgid "Strong"
 msgstr "قوي"
 
-#: cps/templates/config_edit.html:588
+#: cps/templates/config_edit.html:610
 msgid "User Password policy"
 msgstr "سياسة كلمة مرور المستخدم"
 
-#: cps/templates/config_edit.html:592
+#: cps/templates/config_edit.html:614
 msgid "Minimum password length"
 msgstr "الحد الأدنى لطول كلمة المرور"
 
-#: cps/templates/config_edit.html:597
+#: cps/templates/config_edit.html:619
 msgid "Enforce number"
 msgstr "فرض الأرقام"
 
-#: cps/templates/config_edit.html:601
+#: cps/templates/config_edit.html:623
 msgid "Enforce lowercase characters"
 msgstr "فرض الأحرف الصغيرة"
 
-#: cps/templates/config_edit.html:605
+#: cps/templates/config_edit.html:627
 msgid "Enforce uppercase characters"
 msgstr "فرض الأحرف الكبيرة"
 
-#: cps/templates/config_edit.html:609
+#: cps/templates/config_edit.html:631
 msgid "Enforce characters (needed For Chinese/Japanese/Korean Characters)"
 msgstr "فرض الأحرف (مطلوب للأحرف الصينية/اليابانية/الكورية)"
 
-#: cps/templates/config_edit.html:613
+#: cps/templates/config_edit.html:635
 msgid "Enforce special characters"
 msgstr "فرض الأحرف الخاصة"
 
@@ -5268,7 +5535,7 @@ msgstr "استعادة من الأرشيف"
 
 #: cps/templates/detail.html:579 cps/templates/detail.html:773
 #: cps/templates/detail.html:774 cps/templates/detail.html:1288
-#: cps/templates/listenmp3.html:190 cps/templates/search.html:16
+#: cps/templates/listenmp3.html:190 cps/templates/search.html:22
 msgid "Add to shelf"
 msgstr "إضافة إلى الرف"
 
@@ -5277,7 +5544,7 @@ msgstr "إضافة إلى الرف"
 #: cps/templates/feed.xml:83 cps/templates/feed.xml:85
 #: cps/templates/layout.html:302 cps/templates/layout.html:311
 #: cps/templates/listenmp3.html:201 cps/templates/listenmp3.html:218
-#: cps/templates/search.html:22
+#: cps/templates/search.html:28
 msgid "(Public)"
 msgstr "(عام)"
 
@@ -5345,6 +5612,7 @@ msgid "Add tag"
 msgstr ""
 
 #: cps/templates/detail.html:787 cps/templates/listenmp3.html:111
+#: cps/templates/shelfmark_external_detail.html:150
 msgid "Published"
 msgstr "تاريخ النشر"
 
@@ -5881,12 +6149,12 @@ msgstr "الفرز تصاعديًا حسب عدد التنزيلات"
 msgid "Sort descending according to download count"
 msgstr "الفرز تنازليًا حسب عدد التنزيلات"
 
-#: cps/templates/index.html:177 cps/templates/search.html:35
+#: cps/templates/index.html:177 cps/templates/search.html:42
 #: cps/templates/shelf.html:24
 msgid "Sort authors in alphabetical order"
 msgstr "فرز المؤلفين ترتيب أبجدي"
 
-#: cps/templates/index.html:178 cps/templates/search.html:36
+#: cps/templates/index.html:178 cps/templates/search.html:43
 #: cps/templates/shelf.html:25
 msgid "Sort authors in reverse alphabetical order"
 msgstr "فرز المؤلفين ترتيب أبججدي عكسي"
@@ -6432,17 +6700,90 @@ msgstr ""
 msgid "Generate Series Cover Thumbnails"
 msgstr "إنشاء صور مصغرة لأغلفة السلاسل"
 
-#: cps/templates/search.html:6
+#: cps/templates/search.html:12
 msgid "No Results Found"
 msgstr "لم يتم العثور على نتائج"
 
-#: cps/templates/search.html:7
+#: cps/templates/search.html:13
 msgid "Search Term:"
 msgstr "مصطلح البحث:"
 
-#: cps/templates/search.html:9
-msgid "Results for:"
+#: cps/templates/search.html:15
+#, fuzzy
+msgid "Library Results for:"
 msgstr "نتائج لـ:"
+
+#: cps/templates/search.html:55
+#, fuzzy
+msgid "Library Results"
+msgstr "إحصائيات المكتبة"
+
+#: cps/templates/search.html:58
+msgid "These are books already present in your Calibre library."
+msgstr ""
+
+#: cps/templates/search.html:132
+msgid "No library matches were found for this search term."
+msgstr ""
+
+#: cps/templates/search.html:143
+msgid "Shelfmark External Results"
+msgstr ""
+
+#: cps/templates/search.html:146
+msgid ""
+"External search is separate from your local library results and duplicate "
+"awareness stays exact."
+msgstr ""
+
+#: cps/templates/search.html:152
+msgid ""
+"External results come from Shelfmark. Duplicate awareness is exact metadata."
+"db hardcover-id matching only."
+msgstr ""
+
+#: cps/templates/search.html:176
+#, fuzzy
+msgid "External candidates"
+msgstr "الملفات الثنائية الخارجية"
+
+#: cps/templates/search.html:183
+#, fuzzy
+msgid "Duplicate state unavailable"
+msgstr "حذف الكتاب"
+
+#: cps/templates/search.html:192
+msgid ""
+"Request actions are verified in your browser against Shelfmark. If direct "
+"browser requests are not viable here, Open in Shelfmark remains the safe "
+"fallback."
+msgstr ""
+
+#: cps/templates/search.html:242
+#: cps/templates/shelfmark_external_detail.html:58
+#, fuzzy
+msgid "Hardcover ID"
+msgstr "عرض الكتاب عند الحفظ"
+
+#: cps/templates/search.html:253
+#: cps/templates/shelfmark_external_detail.html:137
+msgid "Existing CWA book"
+msgstr ""
+
+#: cps/templates/search.html:254
+#: cps/templates/shelfmark_external_detail.html:70
+#: cps/templates/shelfmark_external_detail.html:138
+#, fuzzy
+msgid "Open existing book"
+msgstr "خطأ في تحرير الكتاب: {}"
+
+#: cps/templates/search.html:306
+msgid "No Shelfmark external results were returned for this search."
+msgstr ""
+
+#: cps/templates/search.html:310
+msgid "Shelfmark external search is currently unavailable."
+msgstr ""
 
 #: cps/templates/search_form.html:21
 msgid "Published Date From"
@@ -6549,6 +6890,94 @@ msgstr "اسحب لإعادة ترتيب الترتيب"
 #: cps/templates/shelf_order.html:33
 msgid "Hidden Book"
 msgstr "كتاب مخفي"
+
+#: cps/templates/shelfmark_external_detail.html:16
+#: cps/templates/shelfmark_external_detail.html:23
+msgid "Back to search results"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:67
+msgid "Already in library via exact Hardcover ID match"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:73
+msgid "Duplicate awareness uses exact metadata.db hardcover-id matching only."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:77
+#, fuzzy
+msgid "External-only result"
+msgstr "المنفذ الخارجي"
+
+#: cps/templates/shelfmark_external_detail.html:79
+msgid ""
+"This result stays external-only until the same exact Hardcover ID exists in "
+"the library."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:83
+msgid ""
+"Already-in-library detection is unavailable because this result has no exact "
+"hardcover-id."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:84
+msgid ""
+"CWA does not guess duplicates from title, author, or filename in this "
+"feature."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:89
+msgid ""
+"Request actions are verified in your browser against Shelfmark. Until that "
+"check completes, or if direct browser requests are not viable here, the safe "
+"fallback is to open Shelfmark directly."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:118
+msgid "Open source page"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:122
+#, fuzzy
+msgid "Action state"
+msgstr "الإجراءات"
+
+#: cps/templates/shelfmark_external_detail.html:132
+#, fuzzy
+msgid "Library status"
+msgstr "إحصائيات المكتبة"
+
+#: cps/templates/shelfmark_external_detail.html:141
+msgid "Duplicate awareness remains metadata.db + exact hardcover-id only."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:147
+#, fuzzy
+msgid "External metadata"
+msgstr "تحرير البيانات الوصفية"
+
+#: cps/templates/shelfmark_external_detail.html:152
+msgid "Provider"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:154
+msgid "Provider ID"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:157
+#, fuzzy
+msgid "Source URL"
+msgstr "المصدر"
+
+#: cps/templates/shelfmark_external_detail.html:166
+#, fuzzy
+msgid "Metadata"
+msgstr "تحرير البيانات الوصفية"
+
+#: cps/templates/shelfmark_external_detail.html:187
+msgid "No Shelfmark result details are available."
+msgstr ""
 
 #: cps/templates/stats.html:7
 msgid "Library Statistics"

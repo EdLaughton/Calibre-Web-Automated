@@ -25,7 +25,7 @@ msgstr ""
 "Project-Id-Version: Calibre-Web Automated\n"
 "Report-Msgid-Bugs-To: https://github.com/crocodilestick/Calibre-Web-"
 "Automated\n"
-"POT-Creation-Date: 2026-03-11 17:35+0000\n"
+"POT-Creation-Date: 2026-04-09 03:34+0000\n"
 "PO-Revision-Date: 2025-11-17 21:51+0100\n"
 "Last-Translator: Tex <tex@grosist.fr>\n"
 "Language-Team: \n"
@@ -148,7 +148,7 @@ msgstr "Configuration principale"
 msgid "UI Configuration"
 msgstr "Configuration de l’interface utilisateur"
 
-#: cps/admin.py:620 cps/admin.py:1302 cps/db.py:967 cps/search.py:153
+#: cps/admin.py:620 cps/admin.py:1302 cps/db.py:967 cps/search.py:159
 #: cps/web.py:832
 #, python-format
 msgid "Custom Column No.%(column)d does not exist in calibre database"
@@ -184,7 +184,7 @@ msgstr "Montrer tout"
 msgid "Malformed request"
 msgstr "Demande malformée"
 
-#: cps/admin.py:785 cps/admin.py:2786
+#: cps/admin.py:785 cps/admin.py:2795
 msgid "Guest Name can't be changed"
 msgstr "Le nom de l’invité ne peut pas être modifié"
 
@@ -192,7 +192,7 @@ msgstr "Le nom de l’invité ne peut pas être modifié"
 msgid "Guest can't have this role"
 msgstr "L’invité ne peut pas avoir ce rôle"
 
-#: cps/admin.py:811 cps/admin.py:2611
+#: cps/admin.py:811 cps/admin.py:2620
 msgid "No admin user remaining, can't remove admin role"
 msgstr "Aucun utilisateur admin restant, impossible de supprimer le rôle admin"
 
@@ -238,7 +238,7 @@ msgstr "Colonne de lecture non valide"
 msgid "Invalid Restricted Column"
 msgstr "Colonne restreinte non valide"
 
-#: cps/admin.py:914 cps/admin.py:2459
+#: cps/admin.py:914 cps/admin.py:2468
 msgid "Calibre-Web Automated configuration updated"
 msgstr "Configuration de Calibre-Web mise à jour"
 
@@ -430,8 +430,8 @@ msgstr "Modifier les paramètres du serveur de courriels"
 msgid "Success! Gmail Account Verified."
 msgstr "Bravo ! Compte Gmail vérifié."
 
-#: cps/admin.py:1743 cps/admin.py:1746 cps/admin.py:2232 cps/admin.py:2443
-#: cps/admin.py:2558 cps/admin.py:2829 cps/editbooks.py:1042
+#: cps/admin.py:1743 cps/admin.py:1746 cps/admin.py:2232 cps/admin.py:2452
+#: cps/admin.py:2567 cps/admin.py:2838 cps/editbooks.py:1042
 #: cps/editbooks.py:1808 cps/shelf.py:93 cps/shelf.py:167 cps/shelf.py:228
 #: cps/shelf.py:278 cps/shelf.py:315 cps/shelf.py:389 cps/shelf.py:511
 #: cps/tasks/convert.py:145 cps/web.py:2678
@@ -476,7 +476,7 @@ msgstr "Durée non valide pour la tâche spécifiée"
 msgid "Scheduled tasks settings updated"
 msgstr "Paramètres des tâches planifiées mis à jour"
 
-#: cps/admin.py:1820 cps/admin.py:1964 cps/admin.py:2825 cps/web.py:2109
+#: cps/admin.py:1820 cps/admin.py:1964 cps/admin.py:2834 cps/web.py:2109
 msgid "Oops! An unknown error occurred. Please try again later."
 msgstr "Une erreur inconnue est survenue. Veuillez réessayer plus tard."
 
@@ -484,12 +484,13 @@ msgstr "Une erreur inconnue est survenue. Veuillez réessayer plus tard."
 msgid "Settings DB is not Writeable"
 msgstr "La base de données des paramètres n'est pas accessible en écriture"
 
-#: cps/admin.py:1843 cps/opds.py:199 cps/web.py:2604 cps/web.py:2729
+#: cps/admin.py:1843 cps/opds.py:199 cps/services/shelfmark_search.py:324
+#: cps/web.py:2604 cps/web.py:2729
 #, fuzzy
 msgid "title"
 msgstr "Titre"
 
-#: cps/admin.py:1949 cps/admin.py:2817
+#: cps/admin.py:1949 cps/admin.py:2826
 #, python-format
 msgid "Edit User %(nick)s"
 msgstr "Éditer l'utilisateur %(nick)s"
@@ -621,7 +622,12 @@ msgstr ""
 "L'emplacement du fichier Certfile est incorrect, veuillez saisir un chemin "
 "valide"
 
-#: cps/admin.py:2365
+#: cps/admin.py:2363
+msgid ""
+"Shelfmark Base URL is required when integrated Shelfmark search is enabled"
+msgstr ""
+
+#: cps/admin.py:2374
 msgid ""
 "Auto-create users cannot be enabled without enabling reverse proxy "
 "authentication"
@@ -629,13 +635,13 @@ msgstr ""
 "La création automatique d'utilisateurs ne peut pas être activée sans activer "
 "l'authentification par reverse proxy"
 
-#: cps/admin.py:2368
+#: cps/admin.py:2377
 msgid "Auto-create users requires a valid reverse proxy header name"
 msgstr ""
 "La création automatique d'utilisateurs nécessite un nom d'en-tête de reverse "
 "proxy valide"
 
-#: cps/admin.py:2387 cps/admin.py:2394
+#: cps/admin.py:2396 cps/admin.py:2403
 msgid ""
 "Invalid OAuth Redirect Host format. Please include the full URL with "
 "protocol (e.g., https://your-domain.com)"
@@ -643,7 +649,7 @@ msgstr ""
 "Format d'hôte de redirection OAuth non valide. Veuillez inclure l'URL "
 "complète avec le protocole (par exemple, https://your-domain.com)."
 
-#: cps/admin.py:2391
+#: cps/admin.py:2400
 msgid ""
 "OAuth Redirect Host should not include a path. Use only the base URL (e.g., "
 "https://your-domain.com)"
@@ -651,64 +657,64 @@ msgstr ""
 "L'hôte de redirection OAuth ne doit pas inclure de chemin d'accès. Utilisez "
 "uniquement l'URL de base (par exemple, https://your-domain.com)."
 
-#: cps/admin.py:2426
+#: cps/admin.py:2435
 msgid "Password length has to be between 1 and 40"
 msgstr ""
 "La longueur du mot de passe doit être comprise entre 1 et 40 caractères"
 
-#: cps/admin.py:2486
+#: cps/admin.py:2495
 msgid "Database Settings updated"
 msgstr "La configuration de la base de données a été mise à jour"
 
-#: cps/admin.py:2494
+#: cps/admin.py:2503
 msgid "Database Configuration"
 msgstr "Configuration de la base de données"
 
-#: cps/admin.py:2514 cps/web.py:2078
+#: cps/admin.py:2523 cps/web.py:2078
 msgid "Oops! Please complete all fields."
 msgstr "Veuillez compléter tous les champs."
 
-#: cps/admin.py:2523
+#: cps/admin.py:2532
 msgid "E-mail is not from valid domain"
 msgstr "Cette adresse de courriel n’appartient pas à un domaine valide"
 
-#: cps/admin.py:2531
+#: cps/admin.py:2540
 msgid "Add new user"
 msgstr "Ajouter un nouvel utilisateur"
 
-#: cps/admin.py:2548
+#: cps/admin.py:2557
 #, python-format
 msgid "User '%(user)s' created"
 msgstr "Utilisateur '%(user)s' créé"
 
-#: cps/admin.py:2554
+#: cps/admin.py:2563
 #, fuzzy
 msgid "Oops! An account already exists for this Email. or name."
 msgstr "Oups ! Un compte existe déjà pour cette adresse e-mail ou ce nom."
 
-#: cps/admin.py:2584
+#: cps/admin.py:2593
 #, python-format
 msgid "User '%(nick)s' deleted"
 msgstr "Utilisateur '%(nick)s' supprimé"
 
-#: cps/admin.py:2587
+#: cps/admin.py:2596
 msgid "Can't delete Guest User"
 msgstr "Impossible de supprimer l’utilisateur Invité"
 
-#: cps/admin.py:2590
+#: cps/admin.py:2599
 msgid "No admin user remaining, can't delete user"
 msgstr "Aucun utilisateur admin restant, impossible de supprimer l’utilisateur"
 
-#: cps/admin.py:2780 cps/web.py:2413
+#: cps/admin.py:2789 cps/web.py:2413
 msgid "Email can't be empty and has to be a valid Email"
 msgstr "L'adresse e-mail ne peut pas être vide et doit être valide"
 
-#: cps/admin.py:2821
+#: cps/admin.py:2830
 #, python-format
 msgid "User '%(nick)s' updated"
 msgstr "Utilisateur '%(nick)s'  mis à jour"
 
-#: cps/admin.py:2886
+#: cps/admin.py:2895
 #, python-format
 msgid ""
 "Connection successful! OIDC discovery endpoint is accessible.%(endpoints)s"
@@ -716,7 +722,7 @@ msgstr ""
 "Connexion réussie ! Le point de terminaison de découverte OIDC est "
 "accessible.%(endpoints)s"
 
-#: cps/admin.py:2891
+#: cps/admin.py:2900
 msgid ""
 "Connection failed: OIDC discovery endpoint not found (404). Check if the "
 "base URL is correct."
@@ -724,13 +730,13 @@ msgstr ""
 "Échec de la connexion : point de terminaison OIDC introuvable (404). "
 "Vérifiez que l'URL de base est correcte."
 
-#: cps/admin.py:2893 cps/admin.py:2950
+#: cps/admin.py:2902 cps/admin.py:2959
 #, python-format
 msgid "Connection failed: Server returned status code %(code)s"
 msgstr ""
 "Echec de la connexion: Le serveur a retourné le code de status %(code)s"
 
-#: cps/admin.py:2895
+#: cps/admin.py:2904
 #, fuzzy
 msgid ""
 "Connection failed: Could not connect to server. Check the URL and network "
@@ -739,7 +745,7 @@ msgstr ""
 "Échec de la connexion : impossible de se connecter au serveur. Vérifiez "
 "l'URL et la connexion réseau."
 
-#: cps/admin.py:2897
+#: cps/admin.py:2906
 #, fuzzy
 msgid ""
 "Connection failed: Request timed out. The server may be slow or unreachable."
@@ -747,7 +753,7 @@ msgstr ""
 "Échec de la connexion : délai d'attente expiré. Le serveur est peut-être "
 "lent ou inaccessible."
 
-#: cps/admin.py:2899
+#: cps/admin.py:2908
 #, fuzzy
 msgid ""
 "Connection failed: Server returned invalid JSON. This may not be an OIDC "
@@ -756,12 +762,12 @@ msgstr ""
 "Échec de la connexion : le serveur a renvoyé un JSON non valide. Il ne "
 "s'agit peut-être pas d'un point de terminaison OIDC."
 
-#: cps/admin.py:2902
+#: cps/admin.py:2911
 #, fuzzy, python-format
 msgid "Connection failed: %(error)s"
 msgstr "Échec de la connexion : %(error)s"
 
-#: cps/admin.py:2928
+#: cps/admin.py:2937
 #, fuzzy, python-format
 msgid ""
 "Metadata is missing required OIDC fields: %(fields)s. This may not be a "
@@ -771,32 +777,32 @@ msgstr ""
 "se peut que ce ne soit pas un point de terminaison de métadonnées OIDC "
 "valide."
 
-#: cps/admin.py:2939
+#: cps/admin.py:2948
 #, fuzzy, python-format
 msgid "Metadata URL is valid! Found %(count)s OAuth endpoints."
 msgstr ""
 "L'URL des métadonnées est valide ! %(count)s points de terminaison OAuth "
 "trouvés."
 
-#: cps/admin.py:2941
+#: cps/admin.py:2950
 #, fuzzy
 msgid " User info endpoint is available."
 msgstr " Le point de terminaison des informations utilisateur est disponible."
 
-#: cps/admin.py:2943
+#: cps/admin.py:2952
 msgid ""
 " Note: User info endpoint not found - this may cause authentication issues."
 msgstr ""
 " Remarque : point de terminaison des informations utilisateur introuvable - "
 "cela peut entraîner des problèmes d'authentification."
 
-#: cps/admin.py:2948
+#: cps/admin.py:2957
 msgid "Metadata URL not found (404). Please check the URL is correct."
 msgstr ""
 "URL des métadonnées introuvable (404). Veuillez vérifier que l'URL est "
 "correcte."
 
-#: cps/admin.py:2952
+#: cps/admin.py:2961
 #, fuzzy
 msgid ""
 "Connection failed: Could not connect to metadata URL. Check the URL and "
@@ -805,47 +811,47 @@ msgstr ""
 "Échec de la connexion : impossible de se connecter à l'URL des métadonnées. "
 "Vérifiez l'URL et la connectivité réseau."
 
-#: cps/admin.py:2954
+#: cps/admin.py:2963
 msgid "Connection failed: Request timed out."
 msgstr "Echec de la connexion: Délai d'attente dépassé."
 
-#: cps/admin.py:2956
+#: cps/admin.py:2965
 msgid "Connection failed: Invalid JSON in response."
 msgstr "Echec de la connexion: Réponse JSON invalide."
 
-#: cps/admin.py:2959
+#: cps/admin.py:2968
 msgid "An unknown error occurred."
 msgstr "Une erreur inconnue est survenue."
 
-#: cps/admin.py:2971
+#: cps/admin.py:2980
 #, fuzzy
 msgid "Restore already in progress."
 msgstr "Échec de la connexion : %(error)s"
 
-#: cps/admin.py:2975
+#: cps/admin.py:2984
 msgid "Restore failed: Calibre library path is not configured."
 msgstr ""
 
-#: cps/admin.py:2980
+#: cps/admin.py:2989
 #, python-format
 msgid "Restore failed: metadata.db not found at %(path)s"
 msgstr ""
 
-#: cps/admin.py:2985
+#: cps/admin.py:2994
 #, python-format
 msgid "Restore failed: app.db not found at %(path)s"
 msgstr ""
 
-#: cps/admin.py:3057 cps/admin.py:3097
+#: cps/admin.py:3066 cps/admin.py:3106
 #, fuzzy, python-format
 msgid "Restore failed: %(err)s"
 msgstr "Échec de la connexion : %(error)s"
 
-#: cps/admin.py:3074
+#: cps/admin.py:3083
 msgid "Restore completed but app.db cleanup failed. See logs for details."
 msgstr ""
 
-#: cps/admin.py:3093
+#: cps/admin.py:3102
 #, python-format
 msgid ""
 "Restore complete. Backups and restore log saved to %(dir)s. All book-linked "
@@ -1199,7 +1205,7 @@ msgstr "Image de profil mise à jour."
 msgid "CWA Profile Picture Management (WIP)"
 msgstr "Manageur de photo de profil (travail en cours)"
 
-#: cps/db.py:1240 cps/templates/config_edit.html:294
+#: cps/db.py:1240 cps/templates/config_edit.html:316
 #: cps/templates/config_view_edit.html:79
 #: cps/templates/config_view_edit.html:90 cps/templates/email_edit.html:41
 #: cps/web.py:645 cps/web.py:679 cps/web.py:724 cps/web.py:764 cps/web.py:793
@@ -2019,45 +2025,77 @@ msgstr ""
 "est temporairement désactivé pendant que nous développons une nouvelle "
 "interface pour la version 5.0.0."
 
-#: cps/search.py:53 cps/search.py:440 cps/templates/book_edit.html:275
+#: cps/search.py:59 cps/search.py:475 cps/templates/book_edit.html:275
 #: cps/templates/cwa_epub_fixer.html:25 cps/templates/feed.xml:34
 #: cps/templates/index.xml:12 cps/templates/layout.html:114
 #: cps/templates/layout.html:117 cps/templates/search_form.html:247
 msgid "Search"
 msgstr "Chercher"
 
-#: cps/search.py:204
+#: cps/search.py:210
 msgid "Published after "
 msgstr "Publié après le "
 
-#: cps/search.py:211
+#: cps/search.py:217
 msgid "Published before "
 msgstr "Publié avant le "
 
-#: cps/search.py:233
+#: cps/search.py:239
 #, python-format
 msgid "Rating <= %(rating)s"
 msgstr "Évaluation <= %(rating)s"
 
-#: cps/search.py:235
+#: cps/search.py:241
 #, python-format
 msgid "Rating >= %(rating)s"
 msgstr "Évaluation >= %(rating)s"
 
-#: cps/search.py:237
+#: cps/search.py:243
 #, python-format
 msgid "Read Status = '%(status)s'"
 msgstr "Statut de lecture = « %(status)s »"
 
-#: cps/search.py:354
+#: cps/search.py:360
 msgid "Error on search for custom columns, please restart Calibre-Web"
 msgstr ""
 "Erreur lors de la recherche de colonnes personnalisées, veuillez redémarrer "
 "Calibre-Web"
 
-#: cps/search.py:384 cps/search.py:416 cps/templates/layout.html:125
+#: cps/search.py:393
+#, fuzzy
+msgid "Advanced external query"
+msgstr "Recherche avancée"
+
+#: cps/search.py:395
+#, python-format
+msgid "Built from %(fields)s only. Other advanced filters stay local to CWA."
+msgstr ""
+
+#: cps/search.py:397
+msgid ""
+"Advanced external search only uses title, author, and publisher fields when "
+"present."
+msgstr ""
+
+#: cps/search.py:399
+msgid ""
+"Add a title, author, or publisher filter to include Shelfmark external "
+"results in advanced search."
+msgstr ""
+
+#: cps/search.py:408 cps/search.py:440 cps/templates/layout.html:125
 msgid "Advanced Search"
 msgstr "Recherche avancée"
+
+#: cps/search.py:460 cps/templates/search.html:156
+#, fuzzy
+msgid "External lookup query"
+msgstr "Port externe"
+
+#: cps/search.py:501 cps/search.py:511
+#: cps/templates/shelfmark_external_detail.html:10
+msgid "Shelfmark External Result"
+msgstr ""
 
 #: cps/shelf.py:34 cps/shelf.py:128
 msgid "Invalid shelf specified"
@@ -2603,6 +2641,185 @@ msgstr "Plugin KOReader Sync"
 msgid "Found no valid gmail.json file with OAuth information"
 msgstr "Aucun fichier gmail.json avec information OAuth valide trouvé"
 
+#: cps/services/shelfmark_search.py:195
+msgid "Configure Shelfmark Base URL as a full http:// or https:// URL."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:224 cps/services/shelfmark_search.py:238
+msgid ""
+"Shelfmark Base URL could not be resolved for trusted server-side access."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:325
+#, fuzzy
+msgid "author"
+msgstr "Auteur"
+
+#: cps/services/shelfmark_search.py:326
+#, fuzzy
+msgid "publisher"
+msgstr "Éditeur"
+
+#: cps/services/shelfmark_search.py:376
+msgid "Open existing CWA book"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:377
+msgid "Exact hardcover-id already exists in your library."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:385 cps/services/shelfmark_search.py:394
+#: cps/services/shelfmark_search.py:403 cps/services/shelfmark_search.py:410
+#: cps/services/shelfmark_search.py:413 cps/services/shelfmark_search.py:430
+#: cps/templates/search.html:289
+#: cps/templates/shelfmark_external_detail.html:113
+msgid "Open in Shelfmark"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:386
+msgid ""
+"Direct request actions are unavailable because this result has no exact "
+"hardcover-id metadata."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:395
+msgid ""
+"Direct request actions are unavailable because Shelfmark did not return "
+"enough exact metadata to build a safe book request."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:404
+msgid ""
+"Request availability is checked in your browser. Until Shelfmark confirms a "
+"live session and compatible policy, opening Shelfmark remains the safe "
+"fallback."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:410
+#, fuzzy
+msgid "Login required"
+msgstr "Examen requis"
+
+#: cps/services/shelfmark_search.py:414
+#, python-format
+msgid "Shelfmark session was not found for this browser. %(suffix)s."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:422
+msgid "Request in Shelfmark"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:423
+msgid ""
+"This browser already has a Shelfmark session and the current policy allows "
+"book-level requests."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:431
+msgid ""
+"Shelfmark is signed in, but the current Shelfmark policy does not allow "
+"direct book-level requests for this result."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:445 cps/templates/search.html:169
+#, fuzzy
+msgid "Already in library"
+msgstr "Séries dans la librairie"
+
+#: cps/services/shelfmark_search.py:446
+msgid "Exact hardcover-id match in metadata.db."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:457
+#, fuzzy
+msgid "External candidate"
+msgstr "Exécutables externes"
+
+#: cps/services/shelfmark_search.py:458
+#: cps/templates/shelfmark_external_detail.html:78
+msgid "No exact hardcover-id match was found in metadata.db."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:468
+msgid "Library match unavailable"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:469
+msgid ""
+"No exact hardcover-id is available from this external result, so CWA does "
+"not guess duplicates."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:533
+#, fuzzy
+msgid "Unknown title"
+msgstr "Statut inconnu"
+
+#: cps/services/shelfmark_search.py:603
+#, fuzzy
+msgid "Already in Your Library"
+msgstr "Séries dans la librairie"
+
+#: cps/services/shelfmark_search.py:604
+msgid ""
+"These external hits already exist in metadata.db via an exact hardcover-id "
+"match."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:608
+#, fuzzy
+msgid "External Candidates"
+msgstr "Exécutables externes"
+
+#: cps/services/shelfmark_search.py:609
+msgid ""
+"These results have an exact hardcover-id, but no matching library record yet."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:613
+msgid "External Results Without Exact Hardcover ID"
+msgstr ""
+
+#: cps/services/shelfmark_search.py:614
+msgid ""
+"CWA does not guess duplicate status for these results because Shelfmark did "
+"not return an exact hardcover-id."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:711
+msgid "Shelfmark integration is not enabled."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:746 cps/services/shelfmark_search.py:754
+msgid "Shelfmark search failed."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:768 cps/services/shelfmark_search.py:770
+msgid "Shelfmark book details are unavailable."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:772
+msgid "Shelfmark returned an invalid book detail payload."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:787
+msgid ""
+"Configure both a Shelfmark search username and password before enabling "
+"integrated external search."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:793 cps/services/shelfmark_search.py:800
+#: cps/services/shelfmark_search.py:803
+msgid "Shelfmark login failed for the configured search account."
+msgstr ""
+
+#: cps/services/shelfmark_search.py:817
+msgid ""
+"Shelfmark server-side request validation blocked this address. Check that "
+"Shelfmark Base URL points directly to your Shelfmark instance and is not "
+"redirecting to a different host or port."
+msgstr ""
+
 #: cps/tasks/auto_hardcover_id.py:45
 msgid "Auto-fetching Hardcover IDs"
 msgstr "Récupération automatique des IDs Hardvocer"
@@ -2901,7 +3118,7 @@ msgstr "Connexion à distance Magic Link"
 msgid "Reverse Proxy Login"
 msgstr "Compte du Reverse Proxy"
 
-#: cps/templates/admin.html:159 cps/templates/config_edit.html:258
+#: cps/templates/admin.html:159 cps/templates/config_edit.html:280
 msgid "Reverse Proxy Header Name"
 msgstr "Nom de l'en-tête du Reverse Proxy"
 
@@ -3020,7 +3237,7 @@ msgstr "A propos"
 msgid "Version"
 msgstr "Version"
 
-#: cps/templates/admin.html:251
+#: cps/templates/admin.html:251 cps/templates/search.html:284
 msgid "Details"
 msgstr "Détails"
 
@@ -3056,7 +3273,7 @@ msgstr "OK"
 #: cps/templates/book_table.html:231 cps/templates/book_table.html:251
 #: cps/templates/book_table.html:271 cps/templates/book_table.html:329
 #: cps/templates/book_table.html:365 cps/templates/config_db.html:111
-#: cps/templates/config_edit.html:620 cps/templates/config_view_edit.html:215
+#: cps/templates/config_edit.html:642 cps/templates/config_view_edit.html:215
 #: cps/templates/cwa_convert_library.html:23
 #: cps/templates/cwa_epub_fixer.html:40 cps/templates/detail.html:938
 #: cps/templates/duplicates.html:540 cps/templates/duplicates.html:567
@@ -3085,38 +3302,38 @@ msgid "In Library"
 msgstr "Dans la librairie"
 
 #: cps/templates/author.html:27 cps/templates/index.html:173
-#: cps/templates/search.html:31 cps/templates/shelf.html:20
+#: cps/templates/search.html:38 cps/templates/shelf.html:20
 msgid "Sort according to book date, newest first"
 msgstr "Trier en fonction de la date du livre, le plus récent en premier"
 
 #: cps/templates/author.html:28 cps/templates/index.html:174
-#: cps/templates/search.html:32 cps/templates/shelf.html:21
+#: cps/templates/search.html:39 cps/templates/shelf.html:21
 msgid "Sort according to book date, oldest first"
 msgstr "Trier en fonction de la date du livre, le plus ancien en premier"
 
 #: cps/templates/author.html:29 cps/templates/index.html:175
-#: cps/templates/search.html:33 cps/templates/shelf.html:22
+#: cps/templates/search.html:40 cps/templates/shelf.html:22
 msgid "Sort title in alphabetical order"
 msgstr "Trier les titres dans l’ordre alphabétique"
 
 #: cps/templates/author.html:30 cps/templates/index.html:176
-#: cps/templates/search.html:34 cps/templates/shelf.html:23
+#: cps/templates/search.html:41 cps/templates/shelf.html:23
 msgid "Sort title in reverse alphabetical order"
 msgstr "Trier le titre dans l’ordre alphabétique inverse"
 
 #: cps/templates/author.html:31 cps/templates/index.html:179
-#: cps/templates/search.html:37 cps/templates/shelf.html:26
+#: cps/templates/search.html:44 cps/templates/shelf.html:26
 msgid "Sort according to publishing date, newest first"
 msgstr "Trier en fonction de la date de publication, le plus récent en premier"
 
 #: cps/templates/author.html:32 cps/templates/index.html:180
-#: cps/templates/search.html:38 cps/templates/shelf.html:27
+#: cps/templates/search.html:45 cps/templates/shelf.html:27
 msgid "Sort according to publishing date, oldest first"
 msgstr "Trier en fonction de la date de publication, le plus ancien en premier"
 
 #: cps/templates/author.html:61 cps/templates/author.html:118
 #: cps/templates/index.html:76 cps/templates/index.html:217
-#: cps/templates/search.html:71 cps/templates/shelf.html:62
+#: cps/templates/search.html:92 cps/templates/shelf.html:62
 msgid "reduce"
 msgstr "réduire"
 
@@ -3184,7 +3401,9 @@ msgid "Upload Format"
 msgstr "Format du fichier téléversé"
 
 #: cps/templates/book_edit.html:90 cps/templates/book_edit.html:371
-#: cps/templates/cwa_settings.html:1091 cps/templates/search_form.html:12
+#: cps/templates/cwa_settings.html:1091 cps/templates/search.html:247
+#: cps/templates/search_form.html:12
+#: cps/templates/shelfmark_external_detail.html:62
 msgid "Author"
 msgstr "Auteur"
 
@@ -3221,6 +3440,7 @@ msgstr "Évaluation"
 #: cps/templates/book_edit.html:126 cps/templates/book_edit.html:373
 #: cps/templates/cwa_settings.html:341 cps/templates/cwa_settings.html:343
 #: cps/templates/search_form.html:154
+#: cps/templates/shelfmark_external_detail.html:180
 msgid "Description"
 msgstr "Description"
 
@@ -3290,7 +3510,7 @@ msgid "Fetch Metadata"
 msgstr "Obtenir les métadonnées"
 
 #: cps/templates/book_edit.html:252 cps/templates/config_db.html:110
-#: cps/templates/config_edit.html:619 cps/templates/config_view_edit.html:214
+#: cps/templates/config_edit.html:641 cps/templates/config_view_edit.html:214
 #: cps/templates/email_edit.html:65 cps/templates/schedule_edit.html:45
 #: cps/templates/shelf_edit.html:25 cps/templates/shelf_order.html:41
 #: cps/templates/user_edit.html:553
@@ -3672,11 +3892,11 @@ msgstr ""
 "Le nouvel emplacement pour la DB est incorrect, veuillez saisir un chemin "
 "valide"
 
-#: cps/templates/config_edit.html:6 cps/templates/config_edit.html:272
+#: cps/templates/config_edit.html:6 cps/templates/config_edit.html:294
 msgid "Use Standard Authentication"
 msgstr "Utiliser l’authentification standard"
 
-#: cps/templates/config_edit.html:8 cps/templates/config_edit.html:274
+#: cps/templates/config_edit.html:8 cps/templates/config_edit.html:296
 msgid "Use LDAP Authentication"
 msgstr "Utiliser l’authentification LDAP"
 
@@ -3829,10 +4049,59 @@ msgid "Hardcover API Key"
 msgstr "Clef API Harcover"
 
 #: cps/templates/config_edit.html:248
+msgid "Enable Shelfmark External Search"
+msgstr ""
+
+#: cps/templates/config_edit.html:249
+msgid ""
+"Adds Shelfmark external results alongside library search. Duplicate "
+"awareness is exact metadata.db hardcover-id matching only, and request "
+"attribution stays on the Shelfmark/browser side. Advanced search only sends "
+"title, author, and publisher metadata to Shelfmark; all other advanced "
+"filters stay local to CWA. The UI groups exact duplicates, external "
+"candidates, and results without exact Hardcover IDs separately. Direct "
+"Request in Shelfmark works best when CWA and Shelfmark are served from the "
+"same browser origin via a reverse proxy."
+msgstr ""
+
+#: cps/templates/config_edit.html:253
+#, fuzzy
+msgid "Shelfmark Base URL"
+msgstr "URL de base OAuth"
+
+#: cps/templates/config_edit.html:255
+msgid ""
+"CWA uses this exact URL as the trust boundary for server-side Shelfmark "
+"metadata requests. Local/private Shelfmark hosts are supported here without "
+"relaxing request validation globally, but requests remain scoped to this "
+"exact host and port."
+msgstr ""
+
+#: cps/templates/config_edit.html:258
+#, fuzzy
+msgid "Shelfmark Search Username"
+msgstr "Utiliser l'e-mail comme nom d'utilisateur"
+
+#: cps/templates/config_edit.html:260
+msgid ""
+"Optional. Use a dedicated Shelfmark account if integrated external search "
+"needs authentication."
+msgstr ""
+
+#: cps/templates/config_edit.html:263
+#, fuzzy
+msgid "Shelfmark Search Password"
+msgstr "Changer le mot de passe"
+
+#: cps/templates/config_edit.html:265
+msgid "Leave blank to keep the current stored password unchanged."
+msgstr ""
+
+#: cps/templates/config_edit.html:270
 msgid "Allow Reverse Proxy Authentication"
 msgstr "Autoriser l'authentification Reverse Proxy"
 
-#: cps/templates/config_edit.html:249
+#: cps/templates/config_edit.html:271
 msgid ""
 "Trusts the \"Remote-User\" header from a reverse proxy for authentication. "
 "This is an authentication method, distinct from the HTTPS security setting "
@@ -3842,11 +4111,11 @@ msgstr ""
 "l'authentification. Il s'agit d'une méthode d'authentification distincte du "
 "paramètre de sécurité HTTPS ci-dessous."
 
-#: cps/templates/config_edit.html:253
+#: cps/templates/config_edit.html:275
 msgid "Use via HTTPS"
 msgstr "Utilisation via HTTPS"
 
-#: cps/templates/config_edit.html:254
+#: cps/templates/config_edit.html:276
 msgid ""
 "Enables secure cookie settings (Secure, SameSite=Lax). Enable this ONLY if "
 "you are accessing the server via HTTPS, otherwise you will be locked out."
@@ -3855,11 +4124,11 @@ msgstr ""
 "Activez cette option UNIQUEMENT si vous accédez au serveur via HTTPS, sinon "
 "vous serez bloqué."
 
-#: cps/templates/config_edit.html:263
+#: cps/templates/config_edit.html:285
 msgid "Auto-create users from reverse proxy"
 msgstr "Création automatique d'utilisateurs à partir d'un proxy inverse"
 
-#: cps/templates/config_edit.html:264
+#: cps/templates/config_edit.html:286
 msgid ""
 "Automatically create user accounts when valid reverse proxy headers are "
 "received. Only enable if your reverse proxy authentication is properly "
@@ -3869,95 +4138,95 @@ msgstr ""
 "inverse valides sont reçus. N'activez cette option que si l'authentification "
 "de votre proxy inverse est correctement sécurisée."
 
-#: cps/templates/config_edit.html:270
+#: cps/templates/config_edit.html:292
 msgid "Login type"
 msgstr "Type de connexion"
 
-#: cps/templates/config_edit.html:277
+#: cps/templates/config_edit.html:299
 msgid "Use OAuth (requires HTTPS)"
 msgstr "Utiliser OAuth (nécessite HTTPS)"
 
-#: cps/templates/config_edit.html:284
+#: cps/templates/config_edit.html:306
 msgid "LDAP Server Host Name or IP Address"
 msgstr "Nom d'hôte ou Adresse IP du serveur LDAP"
 
-#: cps/templates/config_edit.html:288
+#: cps/templates/config_edit.html:310
 msgid "LDAP Server Port"
 msgstr "Port du serveur LDAP"
 
-#: cps/templates/config_edit.html:292
+#: cps/templates/config_edit.html:314
 msgid "LDAP Encryption"
 msgstr "Chiffrement LDAP"
 
-#: cps/templates/config_edit.html:295
+#: cps/templates/config_edit.html:317
 msgid "TLS"
 msgstr "TLS"
 
-#: cps/templates/config_edit.html:296
+#: cps/templates/config_edit.html:318
 msgid "SSL"
 msgstr "SSL"
 
-#: cps/templates/config_edit.html:300
+#: cps/templates/config_edit.html:322
 msgid ""
 "LDAP CACertificate Path (Only needed for Client Certificate Authentication)"
 msgstr ""
 "Chemin d’accès LDAP CACertificat (uniquement requis pour l’authentification "
 "par certificat client)"
 
-#: cps/templates/config_edit.html:307
+#: cps/templates/config_edit.html:329
 msgid ""
 "LDAP Certificate Path (Only needed for Client Certificate Authentication)"
 msgstr ""
 "Chemin d’accès LDAP CACertificat (requis uniquement pour l’authentification "
 "par certificat client)"
 
-#: cps/templates/config_edit.html:314
+#: cps/templates/config_edit.html:336
 msgid "LDAP Keyfile Path (Only needed for Client Certificate Authentication)"
 msgstr ""
 "Chemin d’accès au fichier de clés LDAP (requis uniquement pour "
 "l’authentification par certificat client)"
 
-#: cps/templates/config_edit.html:323
+#: cps/templates/config_edit.html:345
 msgid "LDAP Authentication"
 msgstr "Authentification LDAP"
 
-#: cps/templates/config_edit.html:325
+#: cps/templates/config_edit.html:347
 msgid "Anonymous"
 msgstr "Anonyme"
 
-#: cps/templates/config_edit.html:326
+#: cps/templates/config_edit.html:348
 msgid "Unauthenticated"
 msgstr "Non authentifié"
 
-#: cps/templates/config_edit.html:327
+#: cps/templates/config_edit.html:349
 msgid "Simple"
 msgstr "Simple"
 
-#: cps/templates/config_edit.html:332
+#: cps/templates/config_edit.html:354
 msgid "LDAP Administrator Username"
 msgstr "Nom d'utilisateur de l'administrateur LDAP"
 
-#: cps/templates/config_edit.html:338
+#: cps/templates/config_edit.html:360
 msgid "LDAP Administrator Password"
 msgstr "Mot de passe de l'administrateur LDAP"
 
-#: cps/templates/config_edit.html:343
+#: cps/templates/config_edit.html:365
 msgid "LDAP Distinguished Name (DN)"
 msgstr "LDAP Distinguished Name (DN)"
 
-#: cps/templates/config_edit.html:347
+#: cps/templates/config_edit.html:369
 msgid "LDAP User Object Filter"
 msgstr "Filtre objet de l'utilisateur LDAP"
 
-#: cps/templates/config_edit.html:352
+#: cps/templates/config_edit.html:374
 msgid "LDAP Server is OpenLDAP?"
 msgstr "Est-ce que le serveur LDAP est OpenLDAP?"
 
-#: cps/templates/config_edit.html:356
+#: cps/templates/config_edit.html:378
 msgid "Auto-create users from LDAP"
 msgstr "Création automatique d'utilisateurs à partir de LDAP"
 
-#: cps/templates/config_edit.html:357
+#: cps/templates/config_edit.html:379
 msgid ""
 "Automatically create user accounts when LDAP authentication succeeds for new "
 "users. Recommended for enterprise environments."
@@ -3966,43 +4235,43 @@ msgstr ""
 "LDAP réussit pour les nouveaux utilisateurs. Recommandé pour les "
 "environnements d'entreprise."
 
-#: cps/templates/config_edit.html:359
+#: cps/templates/config_edit.html:381
 msgid "Following Settings are Needed For User Import"
 msgstr "Les paramètres suivant sont nécessaires pour importer un utilisateur"
 
-#: cps/templates/config_edit.html:361
+#: cps/templates/config_edit.html:383
 msgid "LDAP Group Object Filter"
 msgstr "Filtre objet de groupe LDAP"
 
-#: cps/templates/config_edit.html:365
+#: cps/templates/config_edit.html:387
 msgid "LDAP Group Name"
 msgstr "Nom de groupe LDAP"
 
-#: cps/templates/config_edit.html:369
+#: cps/templates/config_edit.html:391
 msgid "LDAP Group Members Field"
 msgstr "Champ des membres de groupe LDAP"
 
-#: cps/templates/config_edit.html:373
+#: cps/templates/config_edit.html:395
 msgid "LDAP Member User Filter Detection"
 msgstr "Filtre de détection des utilisateurs membres LDAP"
 
-#: cps/templates/config_edit.html:375
+#: cps/templates/config_edit.html:397
 msgid "Autodetect"
 msgstr "Détecter automatiquement"
 
-#: cps/templates/config_edit.html:376
+#: cps/templates/config_edit.html:398
 msgid "Custom Filter"
 msgstr "Filtre personnalisé"
 
-#: cps/templates/config_edit.html:381
+#: cps/templates/config_edit.html:403
 msgid "LDAP Member User Filter"
 msgstr "Filtre utilisateur des membres LDAP"
 
-#: cps/templates/config_edit.html:391
+#: cps/templates/config_edit.html:413
 msgid "Important:"
 msgstr "Important :"
 
-#: cps/templates/config_edit.html:391
+#: cps/templates/config_edit.html:413
 msgid ""
 "OAuth authentication requires this server to be accessed via HTTPS. If you "
 "are using HTTP, login will fail."
@@ -4010,29 +4279,29 @@ msgstr ""
 "L'authentification OAuth nécessite que ce serveur soit accessible via HTTPS. "
 "Si vous utilisez HTTP, la connexion échouera."
 
-#: cps/templates/config_edit.html:394
+#: cps/templates/config_edit.html:416
 msgid "Generic OAuth Provider"
 msgstr "Fournisseur OAuth générique"
 
-#: cps/templates/config_edit.html:398
+#: cps/templates/config_edit.html:420
 msgid "OAuth Metadata URL (for auto-discovery)"
 msgstr "URL de métadonnées OAuth (pour auto-découverte)"
 
-#: cps/templates/config_edit.html:402
+#: cps/templates/config_edit.html:424
 msgid "Test Metadata"
 msgstr "Tester les métadonnées"
 
-#: cps/templates/config_edit.html:405
+#: cps/templates/config_edit.html:427
 msgid "Leave empty to use manual configuration below"
 msgstr "Laisser vide pour utiliser la configuration manuelle ci-dessous"
 
-#: cps/templates/config_edit.html:411
+#: cps/templates/config_edit.html:433
 msgid "Use Manual Endpoint URLs (override auto-discovery)"
 msgstr ""
 "Utiliser les URL manuelles des points de terminaison (remplacer la détection "
 "automatique)"
 
-#: cps/templates/config_edit.html:412
+#: cps/templates/config_edit.html:434
 msgid ""
 "Check this to manually configure individual OAuth endpoints instead of using "
 "auto-discovery"
@@ -4040,43 +4309,43 @@ msgstr ""
 "Cochez cette case pour configurer manuellement les points de terminaison "
 "OAuth individuels au lieu d'utiliser la détection automatique"
 
-#: cps/templates/config_edit.html:417
+#: cps/templates/config_edit.html:439
 msgid "Manual Endpoint Configuration"
 msgstr "Configuration manuelle des terminaux"
 
-#: cps/templates/config_edit.html:420
+#: cps/templates/config_edit.html:442
 msgid "OAuth Base URL"
 msgstr "URL de base OAuth"
 
-#: cps/templates/config_edit.html:425
+#: cps/templates/config_edit.html:447
 msgid "Authorization Endpoint"
 msgstr "Point final d'autorisation"
 
-#: cps/templates/config_edit.html:430
+#: cps/templates/config_edit.html:452
 msgid "Token Endpoint"
 msgstr "Point de terminaison du jeton"
 
-#: cps/templates/config_edit.html:435
+#: cps/templates/config_edit.html:457
 msgid "UserInfo Endpoint"
 msgstr "Point de terminaison UserInfo"
 
-#: cps/templates/config_edit.html:443
+#: cps/templates/config_edit.html:465
 msgid "Test Connection"
 msgstr "Test de connexion"
 
-#: cps/templates/config_edit.html:452
+#: cps/templates/config_edit.html:474
 msgid "OAuth Scopes"
 msgstr "Portées OAuth"
 
-#: cps/templates/config_edit.html:454
+#: cps/templates/config_edit.html:476
 msgid "Space-separated list of OAuth scopes"
 msgstr "Liste d’autorisations OAuth séparées par des espaces"
 
-#: cps/templates/config_edit.html:459
+#: cps/templates/config_edit.html:481
 msgid "OAuth Redirect Host"
 msgstr "Hôte de redirection OAuth"
 
-#: cps/templates/config_edit.html:462
+#: cps/templates/config_edit.html:484
 msgid ""
 "Set a consistent hostname for OAuth redirects to prevent \"invalid redirect "
 "URI\" errors. Include protocol (https://). Leave empty to use automatic "
@@ -4086,7 +4355,7 @@ msgstr ""
 "les erreurs « URI de redirection non valide ». Incluez le protocole "
 "(https://). Laissez ce champ vide pour utiliser la détection automatique."
 
-#: cps/templates/config_edit.html:464
+#: cps/templates/config_edit.html:486
 msgid ""
 "Required if: accessing via multiple hostnames, behind reverse proxy, or "
 "getting \"invalid redirect URI\" errors."
@@ -4094,39 +4363,39 @@ msgstr ""
 "Requis si : accès via plusieurs noms d'hôte, derrière un proxy inverse ou "
 "obtention d'erreurs « URI de redirection non valide »."
 
-#: cps/templates/config_edit.html:469
+#: cps/templates/config_edit.html:491
 msgid "OAuth Client Id"
 msgstr "Client Id OAuth"
 
-#: cps/templates/config_edit.html:473
+#: cps/templates/config_edit.html:495
 msgid "OAuth Client Secret"
 msgstr "Client secret OAuth"
 
-#: cps/templates/config_edit.html:478
+#: cps/templates/config_edit.html:500
 msgid "Field Mapping Configuration"
 msgstr "Configuration du mappage de champs"
 
-#: cps/templates/config_edit.html:480
+#: cps/templates/config_edit.html:502
 msgid "Username Field"
 msgstr "Champs nom d'utilisateur"
 
-#: cps/templates/config_edit.html:482
+#: cps/templates/config_edit.html:504
 msgid "JWT field to extract username from"
 msgstr "Champs JWT d'où extraire le num d'utilisateur"
 
-#: cps/templates/config_edit.html:485
+#: cps/templates/config_edit.html:507
 msgid "Email Field"
 msgstr "Champs courriel"
 
-#: cps/templates/config_edit.html:487
+#: cps/templates/config_edit.html:509
 msgid "JWT field to extract email from"
 msgstr "Champs JWT d'où extraire le courriel"
 
-#: cps/templates/config_edit.html:490
+#: cps/templates/config_edit.html:512
 msgid "OAuth group for Admin"
 msgstr "Groupe OAuth pour les administrateurs"
 
-#: cps/templates/config_edit.html:492
+#: cps/templates/config_edit.html:514
 msgid ""
 "Name of the OAuth group that grants admin privileges. Leave empty to disable "
 "group-based admin management, or use the global setting in Security Settings "
@@ -4137,54 +4406,54 @@ msgstr ""
 "groupes, ou utilisez le paramètre global dans les paramètres de sécurité "
 "pour plus de contrôle."
 
-#: cps/templates/config_edit.html:495
+#: cps/templates/config_edit.html:517
 msgid "Login Button Text"
 msgstr "Texte du bouton d'authentification"
 
-#: cps/templates/config_edit.html:501
+#: cps/templates/config_edit.html:523
 #, python-format
 msgid "Obtain %(provider)s OAuth Credential"
 msgstr "Obtenir les identifiants OAuth %(provider)s"
 
-#: cps/templates/config_edit.html:504
+#: cps/templates/config_edit.html:526
 #, python-format
 msgid "%(provider)s OAuth Client Id"
 msgstr "Client Id OAuth %(provider)s"
 
-#: cps/templates/config_edit.html:508
+#: cps/templates/config_edit.html:530
 #, python-format
 msgid "%(provider)s OAuth Client Secret"
 msgstr "Client secret OAuth %(provider)s"
 
-#: cps/templates/config_edit.html:519
+#: cps/templates/config_edit.html:541
 msgid "External binaries"
 msgstr "Exécutables externes"
 
-#: cps/templates/config_edit.html:520
+#: cps/templates/config_edit.html:542
 msgid "Path to Calibre Binaries"
 msgstr "Chemin vers les exécutables de Calibre"
 
-#: cps/templates/config_edit.html:528
+#: cps/templates/config_edit.html:550
 msgid "Calibre E-Book Converter Settings"
 msgstr "Paramètres du convertisseur E-Book de Calibre"
 
-#: cps/templates/config_edit.html:531
+#: cps/templates/config_edit.html:553
 msgid "Path to Kepubify E-Book Converter"
 msgstr "Chemin vers le convertisseur de livres Kepubify"
 
-#: cps/templates/config_edit.html:539
+#: cps/templates/config_edit.html:561
 msgid "Location of Unrar binary"
 msgstr "Chemin d’accès du binaire UnRar"
 
-#: cps/templates/config_edit.html:550
+#: cps/templates/config_edit.html:572
 msgid "Security Settings"
 msgstr "Réglages de sécurité"
 
-#: cps/templates/config_edit.html:553
+#: cps/templates/config_edit.html:575
 msgid "Disable Standard Login (Username/Password)"
 msgstr "Désactiver la connexion standard (nom d'utilisateur/mot de passe)"
 
-#: cps/templates/config_edit.html:554
+#: cps/templates/config_edit.html:576
 msgid ""
 "Hides the standard login form. Users must log in via OAuth or LDAP. Ensure "
 "you have a working alternative login method before enabling."
@@ -4193,12 +4462,12 @@ msgstr ""
 "connecter via OAuth ou LDAP. Assurez-vous de disposer d'une autre méthode de "
 "connexion fonctionnelle avant d'activer cette option."
 
-#: cps/templates/config_edit.html:558
+#: cps/templates/config_edit.html:580
 msgid "Enable OAuth Group-Based Admin Role Management"
 msgstr ""
 "Activer la gestion des rôles administratifs basée sur les groupes OAuth"
 
-#: cps/templates/config_edit.html:559
+#: cps/templates/config_edit.html:581
 msgid ""
 "When enabled, admin privileges are automatically granted or revoked based on "
 "OAuth group membership. Disable this to manually manage admin roles in the "
@@ -4212,62 +4481,62 @@ msgstr ""
 "d'empêcher les connexions OAuth de remplacer les attributions de rôles "
 "locales."
 
-#: cps/templates/config_edit.html:563
+#: cps/templates/config_edit.html:585
 msgid "Limit failed login attempts"
 msgstr "Limiter le nombre de tentatives de connexion"
 
-#: cps/templates/config_edit.html:567
+#: cps/templates/config_edit.html:589
 msgid "Configure Backend for Limiter"
 msgstr "Configurer le backend pour le limiteur"
 
-#: cps/templates/config_edit.html:571
+#: cps/templates/config_edit.html:593
 msgid "Options for Limiter Backend"
 msgstr "Options pour le backend du limiteur"
 
-#: cps/templates/config_edit.html:577
+#: cps/templates/config_edit.html:599
 msgid "Check if file extensions matches file content on upload"
 msgstr ""
 "Vérifiez si les extensions de fichier correspondent au contenu du fichier "
 "lors du téléversement"
 
-#: cps/templates/config_edit.html:580
+#: cps/templates/config_edit.html:602
 msgid "Session protection"
 msgstr "Protection de la session"
 
-#: cps/templates/config_edit.html:582
+#: cps/templates/config_edit.html:604
 msgid "Basic"
 msgstr "Basique"
 
-#: cps/templates/config_edit.html:583
+#: cps/templates/config_edit.html:605
 msgid "Strong"
 msgstr "Fort"
 
-#: cps/templates/config_edit.html:588
+#: cps/templates/config_edit.html:610
 msgid "User Password policy"
 msgstr "Politique de mot de passe utilisateur"
 
-#: cps/templates/config_edit.html:592
+#: cps/templates/config_edit.html:614
 msgid "Minimum password length"
 msgstr "Longueur minimum du mot de passe"
 
-#: cps/templates/config_edit.html:597
+#: cps/templates/config_edit.html:619
 msgid "Enforce number"
 msgstr "Imposer des chiffres"
 
-#: cps/templates/config_edit.html:601
+#: cps/templates/config_edit.html:623
 msgid "Enforce lowercase characters"
 msgstr "Imposer lettre en minuscule"
 
-#: cps/templates/config_edit.html:605
+#: cps/templates/config_edit.html:627
 msgid "Enforce uppercase characters"
 msgstr "Imposer lettre en majuscule"
 
-#: cps/templates/config_edit.html:609
+#: cps/templates/config_edit.html:631
 msgid "Enforce characters (needed For Chinese/Japanese/Korean Characters)"
 msgstr ""
 "Imposer des caractères (requis pour les caractères Chinois/Japonnais/Coréens)"
 
-#: cps/templates/config_edit.html:613
+#: cps/templates/config_edit.html:635
 msgid "Enforce special characters"
 msgstr "Imposer des caractères spéciaux"
 
@@ -5700,7 +5969,7 @@ msgstr "Restaurer à partir de l'archive"
 
 #: cps/templates/detail.html:579 cps/templates/detail.html:773
 #: cps/templates/detail.html:774 cps/templates/detail.html:1288
-#: cps/templates/listenmp3.html:190 cps/templates/search.html:16
+#: cps/templates/listenmp3.html:190 cps/templates/search.html:22
 msgid "Add to shelf"
 msgstr "Ajouter à l'étagère"
 
@@ -5709,7 +5978,7 @@ msgstr "Ajouter à l'étagère"
 #: cps/templates/feed.xml:83 cps/templates/feed.xml:85
 #: cps/templates/layout.html:302 cps/templates/layout.html:311
 #: cps/templates/listenmp3.html:201 cps/templates/listenmp3.html:218
-#: cps/templates/search.html:22
+#: cps/templates/search.html:28
 msgid "(Public)"
 msgstr "(Public)"
 
@@ -5777,6 +6046,7 @@ msgid "Add tag"
 msgstr ""
 
 #: cps/templates/detail.html:787 cps/templates/listenmp3.html:111
+#: cps/templates/shelfmark_external_detail.html:150
 msgid "Published"
 msgstr "Publié"
 
@@ -6333,12 +6603,12 @@ msgstr "Trier de manière ascendante selon le nombre de téléchargements"
 msgid "Sort descending according to download count"
 msgstr "Trier de manière descendante selon le nombre de téléchargements"
 
-#: cps/templates/index.html:177 cps/templates/search.html:35
+#: cps/templates/index.html:177 cps/templates/search.html:42
 #: cps/templates/shelf.html:24
 msgid "Sort authors in alphabetical order"
 msgstr "Trier les auteurs dans l’ordre alphabétique"
 
-#: cps/templates/index.html:178 cps/templates/search.html:36
+#: cps/templates/index.html:178 cps/templates/search.html:43
 #: cps/templates/shelf.html:25
 msgid "Sort authors in reverse alphabetical order"
 msgstr "Trier les auteurs dans l’ordre alphabétique inverse"
@@ -6892,17 +7162,90 @@ msgstr ""
 msgid "Generate Series Cover Thumbnails"
 msgstr "Générer des miniatures de couverture des séries"
 
-#: cps/templates/search.html:6
+#: cps/templates/search.html:12
 msgid "No Results Found"
 msgstr "Aucun résultat trouvé"
 
-#: cps/templates/search.html:7
+#: cps/templates/search.html:13
 msgid "Search Term:"
 msgstr "Chercher le terme:"
 
-#: cps/templates/search.html:9
-msgid "Results for:"
+#: cps/templates/search.html:15
+#, fuzzy
+msgid "Library Results for:"
 msgstr "Résultats pour :"
+
+#: cps/templates/search.html:55
+#, fuzzy
+msgid "Library Results"
+msgstr "Statistiques de la librairie Calibre"
+
+#: cps/templates/search.html:58
+msgid "These are books already present in your Calibre library."
+msgstr ""
+
+#: cps/templates/search.html:132
+msgid "No library matches were found for this search term."
+msgstr ""
+
+#: cps/templates/search.html:143
+msgid "Shelfmark External Results"
+msgstr ""
+
+#: cps/templates/search.html:146
+msgid ""
+"External search is separate from your local library results and duplicate "
+"awareness stays exact."
+msgstr ""
+
+#: cps/templates/search.html:152
+msgid ""
+"External results come from Shelfmark. Duplicate awareness is exact metadata."
+"db hardcover-id matching only."
+msgstr ""
+
+#: cps/templates/search.html:176
+#, fuzzy
+msgid "External candidates"
+msgstr "Exécutables externes"
+
+#: cps/templates/search.html:183
+#, fuzzy
+msgid "Duplicate state unavailable"
+msgstr "Scan en double"
+
+#: cps/templates/search.html:192
+msgid ""
+"Request actions are verified in your browser against Shelfmark. If direct "
+"browser requests are not viable here, Open in Shelfmark remains the safe "
+"fallback."
+msgstr ""
+
+#: cps/templates/search.html:242
+#: cps/templates/shelfmark_external_detail.html:58
+#, fuzzy
+msgid "Hardcover ID"
+msgstr "Clef API Harcover"
+
+#: cps/templates/search.html:253
+#: cps/templates/shelfmark_external_detail.html:137
+msgid "Existing CWA book"
+msgstr ""
+
+#: cps/templates/search.html:254
+#: cps/templates/shelfmark_external_detail.html:70
+#: cps/templates/shelfmark_external_detail.html:138
+#, fuzzy
+msgid "Open existing book"
+msgstr "Erreur d'édition du livre: {}"
+
+#: cps/templates/search.html:306
+msgid "No Shelfmark external results were returned for this search."
+msgstr ""
+
+#: cps/templates/search.html:310
+msgid "Shelfmark external search is currently unavailable."
+msgstr ""
 
 #: cps/templates/search_form.html:21
 msgid "Published Date From"
@@ -7011,6 +7354,94 @@ msgstr "Glisser-déposer pour modifier l’ordre"
 #: cps/templates/shelf_order.html:33
 msgid "Hidden Book"
 msgstr "Livre caché"
+
+#: cps/templates/shelfmark_external_detail.html:16
+#: cps/templates/shelfmark_external_detail.html:23
+msgid "Back to search results"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:67
+msgid "Already in library via exact Hardcover ID match"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:73
+msgid "Duplicate awareness uses exact metadata.db hardcover-id matching only."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:77
+#, fuzzy
+msgid "External-only result"
+msgstr "Port externe"
+
+#: cps/templates/shelfmark_external_detail.html:79
+msgid ""
+"This result stays external-only until the same exact Hardcover ID exists in "
+"the library."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:83
+msgid ""
+"Already-in-library detection is unavailable because this result has no exact "
+"hardcover-id."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:84
+msgid ""
+"CWA does not guess duplicates from title, author, or filename in this "
+"feature."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:89
+msgid ""
+"Request actions are verified in your browser against Shelfmark. Until that "
+"check completes, or if direct browser requests are not viable here, the safe "
+"fallback is to open Shelfmark directly."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:118
+msgid "Open source page"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:122
+#, fuzzy
+msgid "Action state"
+msgstr "Actions"
+
+#: cps/templates/shelfmark_external_detail.html:132
+#, fuzzy
+msgid "Library status"
+msgstr "Statistiques de la librairie Calibre"
+
+#: cps/templates/shelfmark_external_detail.html:141
+msgid "Duplicate awareness remains metadata.db + exact hardcover-id only."
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:147
+#, fuzzy
+msgid "External metadata"
+msgstr "modifier les métadonnées"
+
+#: cps/templates/shelfmark_external_detail.html:152
+msgid "Provider"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:154
+msgid "Provider ID"
+msgstr ""
+
+#: cps/templates/shelfmark_external_detail.html:157
+#, fuzzy
+msgid "Source URL"
+msgstr "Source"
+
+#: cps/templates/shelfmark_external_detail.html:166
+#, fuzzy
+msgid "Metadata"
+msgstr "Éditer les métadonnées"
+
+#: cps/templates/shelfmark_external_detail.html:187
+msgid "No Shelfmark result details are available."
+msgstr ""
 
 #: cps/templates/stats.html:7
 msgid "Library Statistics"
