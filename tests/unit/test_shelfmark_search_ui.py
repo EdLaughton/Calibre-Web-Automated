@@ -419,6 +419,8 @@ def test_search_template_renders_external_cover_image_when_available():
         html = render_template("search.html", **_base_context())
 
     assert 'src="https://covers.example.com/999.jpg"' in html
+    assert 'loading="lazy"' in html
+    assert 'class="shelfmark-result-card__cover-image"' in html
 
 
 def test_search_template_omits_group_wrapper_chrome_for_external_results():
@@ -452,20 +454,44 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
 
     assert "Back to search results" in html
     assert 'href="/search?query=Dune"' in html
-    assert "Already in your library via an exact Hardcover ID match." in html
+    assert "Shelfmark External Result" not in html
+    assert "Detailed external metadata, cover, and request actions from Shelfmark." not in html
+    assert "Duplicate awareness remains metadata.db + exact Hardcover ID only." not in html
+    assert "Already in library" in html
+    assert "Exact Hardcover ID match found in metadata.db." in html
     assert "Existing CWA book" in html
     assert 'href="/book/7"' in html
-    assert "Open existing CWA book" in html
     assert 'class="discover shelfmark-search-page shelfmark-detail-page"' in html
     assert 'class="shelfmark-detail-page__shell"' in html
     assert 'class="shelfmark-detail-layout"' in html
     assert 'class="shelfmark-detail-cover-card"' in html
-    assert 'class="shelfmark-detail-card shelfmark-detail-card--hero shelfmark-detail-card--success"' in html
-    assert 'class="shelfmark-section-line shelfmark-section-line--detail"' in html
+    assert 'class="shelfmark-detail-hero shelfmark-detail-hero--success"' in html
     assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
     assert html.count("Open in Shelfmark") == 1
     assert 'class="btn btn-default btn-sm shelfmark-detail-page__back-action"' in html
     assert 'target="_blank"' in html
+
+
+def test_detail_template_hides_request_ready_browser_copy_for_requestable_result():
+    app = _create_app()
+    context = _base_context()
+    result = context["shelfmark_section"]["results"][1]
+
+    with app.test_request_context("/search/external/shelfmark/hardcover/222?query=Dune"):
+        html = render_template(
+            "shelfmark_external_detail.html",
+            title=result["title"],
+            result=result,
+            search_query="Dune",
+            return_to="/search?query=Dune",
+            shelfmark_error=None,
+        )
+
+    assert "This browser already has a valid Shelfmark session and the current Shelfmark policy allows a direct book-level request for this result." not in html
+    assert "Duplicate awareness remains metadata.db + exact Hardcover ID only." not in html
+    assert "Shelfmark External Result" not in html
+    assert "Not in your library" in html
+    assert "No exact Hardcover ID match found in metadata.db." in html
 
 
 def test_search_template_renders_intentional_zero_results_state():

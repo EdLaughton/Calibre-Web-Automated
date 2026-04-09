@@ -6,30 +6,30 @@
 <div class="discover shelfmark-search-page shelfmark-detail-page">
   <div class="shelfmark-detail-page__shell">
     <div class="shelfmark-detail-page__header">
-      <div class="shelfmark-section-line shelfmark-section-line--detail">
-        <div class="shelfmark-section-line__lead shelfmark-detail-page__lead">
-          <div class="shelfmark-detail-page__eyebrow">{{ _("Shelfmark External Result") }}</div>
-          <h2 class="shelfmark-detail-page__title">
-            <span class="glyphicon glyphicon-globe" aria-hidden="true"></span>
-            {{ result.title if result else _("Shelfmark External Result") }}
-          </h2>
-          <p class="shelfmark-section-line__subtitle shelfmark-detail-page__subtitle">
-            {{ _("Detailed external metadata, cover, and request actions from Shelfmark.") }}
-          </p>
-        </div>
-        <div class="shelfmark-detail-page__header-actions">
-          {% if return_to %}
-            <a class="btn btn-default btn-sm shelfmark-detail-page__back-action" href="{{ return_to }}">
-              <span class="glyphicon glyphicon-arrow-left" aria-hidden="true"></span>
-              {{ _("Back to search results") }}
-            </a>
-          {% elif search_query %}
-            <a class="btn btn-default btn-sm shelfmark-detail-page__back-action" href="{{ url_for('web.books_list', data='search', sort_param='stored', query=search_query) }}">
-              <span class="glyphicon glyphicon-arrow-left" aria-hidden="true"></span>
-              {{ _("Back to search results") }}
-            </a>
-          {% endif %}
-        </div>
+      <div class="shelfmark-detail-page__header-main">
+        <h2 class="shelfmark-detail-page__title">
+          <span class="glyphicon glyphicon-globe" aria-hidden="true"></span>
+          {{ result.title if result else _("Shelfmark Result") }}
+        </h2>
+        {% if result and result.subtitle %}
+          <p class="shelfmark-detail-page__subtitle">{{ result.subtitle }}</p>
+        {% endif %}
+        {% if result and result.authors %}
+          <p class="shelfmark-detail-page__authorline">{{ result.authors|join(', ') }}</p>
+        {% endif %}
+      </div>
+      <div class="shelfmark-detail-page__header-actions">
+        {% if return_to %}
+          <a class="btn btn-default btn-sm shelfmark-detail-page__back-action" href="{{ return_to }}">
+            <span class="glyphicon glyphicon-arrow-left" aria-hidden="true"></span>
+            {{ _("Back to search results") }}
+          </a>
+        {% elif search_query %}
+          <a class="btn btn-default btn-sm shelfmark-detail-page__back-action" href="{{ url_for('web.books_list', data='search', sort_param='stored', query=search_query) }}">
+            <span class="glyphicon glyphicon-arrow-left" aria-hidden="true"></span>
+            {{ _("Back to search results") }}
+          </a>
+        {% endif %}
       </div>
     </div>
 
@@ -48,37 +48,11 @@
               </div>
             {% endif %}
           </div>
-          <div class="shelfmark-detail-card shelfmark-detail-card--library {{ result.library_state.panel_class }}">
-            <h3 class="shelfmark-detail-card__title">{{ _("Library status") }}</h3>
-            {% if result.already_in_library %}
-              <p class="shelfmark-detail-card__lead">{{ _("Already in your library via an exact Hardcover ID match.") }}</p>
-            {% elif result.hardcover_id %}
-              <p class="shelfmark-detail-card__lead">{{ _("Not currently in your library.") }}</p>
-              <p class="shelfmark-detail-card__copy">{{ _("No exact Hardcover ID match was found in metadata.db for this result.") }}</p>
-            {% else %}
-              <p class="shelfmark-detail-card__lead">{{ _("Duplicate status unavailable for this result.") }}</p>
-              <p class="shelfmark-detail-card__copy">{{ _("Shelfmark did not return an exact Hardcover ID, so CWA will not guess duplicate status from title, author, or filename.") }}</p>
-            {% endif %}
-              {% if result.library_book_url %}
-              <a class="btn btn-success btn-sm shelfmark-detail-card__inline-action" href="{{ result.library_book_url }}">
-                <span class="glyphicon glyphicon-book" aria-hidden="true"></span>
-                <span>{{ _("Open existing CWA book") }}</span>
-              </a>
-              <p class="shelfmark-detail-card__copy">
-                <strong>{{ _("Existing CWA book") }}:</strong>
-                <a href="{{ result.library_book_url }}">{{ result.library_book_title or _("Open existing book") }}</a>
-              </p>
-            {% endif %}
-            <p class="shelfmark-detail-card__footnote">{{ _("Duplicate awareness remains metadata.db + exact Hardcover ID only.") }}</p>
-          </div>
         </aside>
 
         <section class="shelfmark-detail-main">
-          <div class="shelfmark-detail-card shelfmark-detail-card--hero shelfmark-detail-card--{{ result.library_state.row_class }}">
+          <div class="shelfmark-detail-hero shelfmark-detail-hero--{{ result.library_state.row_class }}">
             <div class="shelfmark-detail-hero__body">
-              {% if result.subtitle %}
-                <p class="shelfmark-detail-hero__subtitle">{{ result.subtitle }}</p>
-              {% endif %}
               <div class="shelfmark-detail-hero__badges">
                 {% if result.library_state.label and result.library_state.badge_class %}
                   <span class="label {{ result.library_state.badge_class }}">
@@ -93,22 +67,27 @@
                   <span class="label label-default">{{ _("Hardcover ID") }} {{ result.hardcover_id }}</span>
                 {% endif %}
               </div>
-              {% if result.authors %}
-                <p class="shelfmark-detail-hero__authors"><strong>{{ _("Author") }}:</strong> {{ result.authors|join(', ') }}</p>
-              {% endif %}
 
-              <div class="shelfmark-detail-hero__status-strip shelfmark-detail-hero__status-strip--{{ result.library_state.row_class }}">
+              <div class="shelfmark-detail-hero__status-line shelfmark-detail-hero__status-line--{{ result.library_state.row_class }}">
                 {% if result.already_in_library %}
                   <strong>{{ _("Already in library") }}</strong>
-                  <span>{{ _("This result matches your library on exact Hardcover ID.") }}</span>
+                  <span>{{ _("Exact Hardcover ID match found in metadata.db.") }}</span>
                 {% elif result.hardcover_id %}
-                  <strong>{{ _("Ready to compare and request") }}</strong>
-                  <span>{{ _("CWA found an exact Hardcover ID but no matching library book.") }}</span>
+                  <strong>{{ _("Not in your library") }}</strong>
+                  <span>{{ _("No exact Hardcover ID match found in metadata.db.") }}</span>
                 {% else %}
-                  <strong>{{ _("Limited duplicate awareness") }}</strong>
+                  <strong>{{ _("No Hardcover ID") }}</strong>
                   <span>{{ _("Shelfmark did not return an exact Hardcover ID for this result.") }}</span>
                 {% endif %}
               </div>
+
+              {% if result.library_book_url %}
+                <div class="shelfmark-detail-hero__existing">
+                  <span class="glyphicon glyphicon-link" aria-hidden="true"></span>
+                  <strong>{{ _("Existing CWA book") }}:</strong>
+                  <a href="{{ result.library_book_url }}">{{ result.library_book_title or _("Open existing book") }}</a>
+                </div>
+              {% endif %}
 
               <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ result.shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
 
@@ -146,48 +125,40 @@
                   </a>
                 {% endif %}
               </div>
-              <p class="help-block js-shelfmark-action-hint shelfmark-detail-hero__action-hint">{{ result.action.hint }}</p>
+              {% if result.action.mode == 'open' %}
+                <p class="help-block js-shelfmark-action-hint shelfmark-detail-hero__action-hint">{{ result.action.hint }}</p>
+              {% endif %}
             </div>
           </div>
 
-          <div class="shelfmark-detail-grid">
-            <div class="shelfmark-detail-card shelfmark-detail-card--metadata">
-              <h3 class="shelfmark-detail-card__title">{{ _("External metadata") }}</h3>
-              <dl class="shelfmark-detail-meta-list">
-                {% if result.publish_year %}
-                  <dt>{{ _("Published") }}</dt>
-                  <dd>{{ result.publish_year }}</dd>
-                {% endif %}
-                <dt>{{ _("Provider") }}</dt>
-                <dd>{{ result.provider }}</dd>
-                {% if result.provider_id %}
-                  <dt>{{ _("Provider ID") }}</dt>
-                  <dd>{{ result.provider_id }}</dd>
-                {% endif %}
-                {% if result.source_url %}
-                  <dt>{{ _("Source URL") }}</dt>
-                  <dd><a href="{{ result.source_url }}" target="_blank" rel="noopener noreferrer">{{ result.source_url }}</a></dd>
-                {% endif %}
-              </dl>
-            </div>
-
-            {% if result.display_fields %}
-              <div class="shelfmark-detail-card shelfmark-detail-card--metadata">
-                <h3 class="shelfmark-detail-card__title">{{ _("Metadata") }}</h3>
-                <dl class="shelfmark-detail-meta-list">
-                  {% for field in result.display_fields %}
-                    <dt>{{ field.label }}</dt>
-                    <dd>{{ field.value }}</dd>
-                  {% endfor %}
-                </dl>
-              </div>
-            {% endif %}
+          <div class="shelfmark-detail-section">
+            <h3 class="shelfmark-detail-section__title">{{ _("Metadata") }}</h3>
+            <dl class="shelfmark-detail-meta-list">
+              {% if result.publish_year %}
+                <dt>{{ _("Published") }}</dt>
+                <dd>{{ result.publish_year }}</dd>
+              {% endif %}
+              <dt>{{ _("Provider") }}</dt>
+              <dd>{{ result.provider }}</dd>
+              {% if result.provider_id %}
+                <dt>{{ _("Provider ID") }}</dt>
+                <dd>{{ result.provider_id }}</dd>
+              {% endif %}
+              {% if result.source_url %}
+                <dt>{{ _("Source URL") }}</dt>
+                <dd><a href="{{ result.source_url }}" target="_blank" rel="noopener noreferrer">{{ result.source_url }}</a></dd>
+              {% endif %}
+              {% for field in result.display_fields %}
+                <dt>{{ field.label }}</dt>
+                <dd>{{ field.value }}</dd>
+              {% endfor %}
+            </dl>
           </div>
 
           {% if result.description %}
-            <div class="shelfmark-detail-card shelfmark-detail-card--description">
-              <h3 class="shelfmark-detail-card__title">{{ _("Description") }}</h3>
-              <p class="shelfmark-detail-card__copy shelfmark-detail-card__copy--description">{{ result.description }}</p>
+            <div class="shelfmark-detail-section shelfmark-detail-section--description">
+              <h3 class="shelfmark-detail-section__title">{{ _("Description") }}</h3>
+              <p class="shelfmark-detail-section__copy shelfmark-detail-section__copy--description">{{ result.description }}</p>
             </div>
           {% endif %}
         </section>

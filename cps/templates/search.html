@@ -227,18 +227,18 @@
         <div class="shelfmark-results-list" role="list">
           {% for result in shelfmark.results %}
               <article class="shelfmark-result-card shelfmark-result-card--{{ result.library_state.row_class }}" role="listitem">
-                <div class="media shelfmark-result-card__media">
-                <div class="media-left shelfmark-result-card__cover">
+                <div class="shelfmark-result-card__media">
+                <div class="shelfmark-result-card__cover">
                   {% if result.cover_url %}
-                    <img src="{{ result.cover_url }}" alt="{{ result.title }}" class="media-object img-thumbnail shelfmark-result-card__cover-image">
+                    <img src="{{ result.cover_url }}" alt="{{ result.title }}" loading="lazy" class="shelfmark-result-card__cover-image">
                   {% else %}
-                    <div class="img-thumbnail text-center shelfmark-result-card__cover-fallback" aria-hidden="true">
+                    <div class="shelfmark-result-card__cover-fallback" aria-hidden="true">
                       <span class="glyphicon glyphicon-book shelfmark-result-card__cover-fallback-icon"></span>
                       <span class="shelfmark-result-card__cover-fallback-label">{{ _('No cover') }}</span>
                     </div>
                   {% endif %}
                 </div>
-                <div class="media-body shelfmark-result-card__body">
+                <div class="shelfmark-result-card__body">
                   <div class="shelfmark-result-card__header">
                     <div>
                       <h4 class="media-heading shelfmark-result-card__title">

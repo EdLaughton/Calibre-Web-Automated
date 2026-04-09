@@ -764,8 +764,7 @@ def group_shelfmark_results(results: Sequence[ShelfmarkResultView]) -> tuple[She
 
 def _needs_cover_enrichment(book: Mapping[str, Any]) -> bool:
     return bool(
-        not _resolve_shelfmark_cover_value(book)
-        and _normalize_text(book.get("provider"))
+        _normalize_text(book.get("provider"))
         and _normalize_text(book.get("provider_id"))
     )
 
@@ -778,12 +777,11 @@ def _merge_cover_details(
     if not detail_book:
         return merged
 
-    if not _resolve_shelfmark_cover_value(merged):
-        for key in ("cover_url", "preview"):
-            value = _normalize_text(detail_book.get(key))
-            if value:
-                merged[key] = value
-                break
+    for key in ("cover_url", "preview"):
+        value = _normalize_text(detail_book.get(key))
+        if value:
+            merged[key] = value
+            break
     return merged
 
 

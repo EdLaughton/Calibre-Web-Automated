@@ -556,6 +556,64 @@ def test_search_results_enrich_missing_cover_from_detail_payload(shelfmark_modul
     )
 
 
+def test_search_results_prefer_detail_cover_when_search_cover_differs(shelfmark_module):
+    fake_client = mock.Mock()
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=(
+            {
+                "provider": "hardcover",
+                "provider_id": "379631",
+                "title": "The Two Towers",
+                "authors": ["J.R.R. Tolkien"],
+                "cover_url": "/api/covers/hardcover_379631?url=aHR0cHM6Ly9jb3ZlcnMuZXhhbXBsZS5jb20vc2VhcmNoLmpwZw==",
+                "identifiers": {"hardcover-id": "379631"},
+            },
+        ),
+        page=1,
+        total_found=1,
+        has_more=False,
+    )
+    fake_client.fetch_book.return_value = {
+        "provider": "hardcover",
+        "provider_id": "379631",
+        "title": "The Two Towers",
+        "authors": ["J.R.R. Tolkien"],
+        "cover_url": "/api/covers/hardcover_379631?url=aHR0cHM6Ly9jb3ZlcnMuZXhhbXBsZS5jb20vZGV0YWlsLmpwZw==",
+        "identifiers": {"hardcover-id": "379631"},
+    }
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ):
+        section = shelfmark_module.search_shelfmark_results(
+            "the two towers",
+            detail_url_builder=lambda _: "/external/two-towers",
+            page=1,
+        )
+
+    assert fake_client.fetch_book.call_count == 1
+    assert section.results[0].cover_url == (
+        "https://library.example.com/shelfmark/api/covers/hardcover_379631"
+        "?url=aHR0cHM6Ly9jb3ZlcnMuZXhhbXBsZS5jb20vZGV0YWlsLmpwZw=="
+    )
+
+
 def test_search_results_apply_sort_page_size_and_visible_filters(shelfmark_module):
     fake_client = mock.Mock()
     fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
