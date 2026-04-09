@@ -244,6 +244,27 @@
       </div>
     </div>
     <div class="form-group">
+      <input type="checkbox" id="config_shelfmark_search" name="config_shelfmark_search" data-control="shelfmark-search-settings" {% if config.config_shelfmark_search %}checked{% endif %}>
+      <label for="config_shelfmark_search">{{_('Enable Shelfmark External Search')}}</label>
+      <div class="help-block">{{_('Adds Shelfmark external results alongside library search. Duplicate awareness is exact metadata.db hardcover-id matching only, and request attribution stays on the Shelfmark/browser side. Advanced search only sends title, author, and publisher metadata to Shelfmark; all other advanced filters stay local to CWA. The UI groups exact duplicates, external candidates, and results without exact Hardcover IDs separately. Direct Request in Shelfmark works best when CWA and Shelfmark are served from the same browser origin via a reverse proxy.')}}</div>
+    </div>
+    <div data-related="shelfmark-search-settings">
+      <div class="form-group">
+        <label for="config_shelfmark_url">{{_('Shelfmark Base URL')}}</label>
+        <input type="text" class="form-control" id="config_shelfmark_url" name="config_shelfmark_url" value="{% if config.config_shelfmark_url != None %}{{ config.config_shelfmark_url }}{% endif %}" autocomplete="off" placeholder="https://shelfmark.example.com">
+      </div>
+      <div class="form-group">
+        <label for="config_shelfmark_username">{{_('Shelfmark Search Username')}}</label>
+        <input type="text" class="form-control" id="config_shelfmark_username" name="config_shelfmark_username" value="{% if config.config_shelfmark_username != None %}{{ config.config_shelfmark_username }}{% endif %}" autocomplete="off">
+        <div class="help-block">{{_('Optional. Use a dedicated Shelfmark account if integrated external search needs authentication.')}}</div>
+      </div>
+      <div class="form-group">
+        <label for="config_shelfmark_password_e">{{_('Shelfmark Search Password')}}</label>
+        <input type="password" class="form-control" id="config_shelfmark_password_e" name="config_shelfmark_password_e" value="" autocomplete="off">
+        <div class="help-block">{{_('Leave blank to keep the current stored password unchanged.')}}</div>
+      </div>
+    </div>
+    <div class="form-group">
       <input type="checkbox" id="config_allow_reverse_proxy_header_login" name="config_allow_reverse_proxy_header_login" data-control="reverse-proxy-login-settings" {% if config.config_allow_reverse_proxy_header_login %}checked{% endif %}>
       <label for="config_allow_reverse_proxy_header_login">{{_('Allow Reverse Proxy Authentication')}}</label>
       <div class="help-block">{{_('Trusts the "Remote-User" header from a reverse proxy for authentication. This is an authentication method, distinct from the HTTPS security setting below.')}}</div>

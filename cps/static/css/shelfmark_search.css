@@ -1,0 +1,361 @@
+.shelfmark-search-page {
+  margin-bottom: 24px;
+}
+
+.shelfmark-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  border: 1px solid #dfe6ee;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8fc 100%);
+}
+
+.shelfmark-section-heading--local {
+  border-left: 5px solid #61748a;
+}
+
+.shelfmark-section-heading--external {
+  border-left: 5px solid #3c78b4;
+  background: linear-gradient(180deg, #fdfefe 0%, #eef6fc 100%);
+}
+
+.shelfmark-section-heading__title {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.shelfmark-section-heading__title .glyphicon {
+  margin-right: 8px;
+}
+
+.shelfmark-section-heading__subtitle {
+  margin: 0;
+  color: #607284;
+}
+
+.shelfmark-section-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.shelfmark-section-pill--local {
+  background: #eff3f7;
+  color: #33485b;
+}
+
+.shelfmark-section-pill--external {
+  background: #dfeffc;
+  color: #1f5f96;
+}
+
+.shelfmark-external-header__copy,
+.shelfmark-external-header__query,
+.shelfmark-external-header__hint {
+  margin-bottom: 12px;
+}
+
+.shelfmark-summary-grid {
+  margin-top: 16px;
+  margin-bottom: 0;
+}
+
+.shelfmark-summary-card {
+  min-height: 126px;
+  margin-bottom: 16px;
+  padding: 18px 16px;
+  border: 1px solid #dfe6ee;
+  border-radius: 10px;
+  background: #fff;
+  text-align: center;
+  box-shadow: 0 1px 1px rgba(25, 35, 45, 0.04);
+}
+
+.shelfmark-summary-card__icon {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 24px;
+}
+
+.shelfmark-summary-card__count {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.shelfmark-summary-card__label {
+  margin-top: 8px;
+  color: #56697c;
+  font-weight: 600;
+}
+
+.shelfmark-summary-card--success {
+  border-top: 4px solid #4d9d67;
+}
+
+.shelfmark-summary-card--success .shelfmark-summary-card__icon,
+.shelfmark-summary-card--success .shelfmark-summary-card__count {
+  color: #2f7b47;
+}
+
+.shelfmark-summary-card--info {
+  border-top: 4px solid #4c8ec7;
+}
+
+.shelfmark-summary-card--info .shelfmark-summary-card__icon,
+.shelfmark-summary-card--info .shelfmark-summary-card__count {
+  color: #2e6d9e;
+}
+
+.shelfmark-summary-card--warning {
+  border-top: 4px solid #cf8b1b;
+}
+
+.shelfmark-summary-card--warning .shelfmark-summary-card__icon,
+.shelfmark-summary-card--warning .shelfmark-summary-card__count {
+  color: #9a650f;
+}
+
+.shelfmark-status-banner {
+  margin-bottom: 18px;
+}
+
+.shelfmark-group-panel {
+  margin-bottom: 20px;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(25, 35, 45, 0.05);
+}
+
+.shelfmark-group-panel__heading {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.shelfmark-group-panel__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+
+.shelfmark-group-panel__count {
+  float: right;
+  margin-top: -2px;
+}
+
+.shelfmark-group-panel__hint {
+  margin-top: 6px;
+}
+
+.shelfmark-group-panel__list .list-group-item:first-child {
+  border-top: 0;
+}
+
+.shelfmark-result-card {
+  padding: 18px;
+  border-left-width: 5px;
+}
+
+.shelfmark-result-card--success {
+  border-left-color: #4d9d67;
+  background: linear-gradient(180deg, #ffffff 0%, #f5fbf7 100%);
+}
+
+.shelfmark-result-card--info {
+  border-left-color: #4c8ec7;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f9fd 100%);
+}
+
+.shelfmark-result-card--warning {
+  border-left-color: #cf8b1b;
+  background: linear-gradient(180deg, #ffffff 0%, #fff9ef 100%);
+}
+
+.shelfmark-result-card__cover-image {
+  width: 84px;
+  max-width: 84px;
+}
+
+.shelfmark-result-card__cover-fallback {
+  width: 84px;
+  height: 112px;
+  padding-top: 36px;
+}
+
+.shelfmark-result-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shelfmark-result-card__title {
+  margin: 0 0 6px;
+}
+
+.shelfmark-result-card__subtitle {
+  margin: 0;
+}
+
+.shelfmark-result-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 170px;
+}
+
+.shelfmark-result-card__badges .label .glyphicon {
+  margin-right: 4px;
+}
+
+.shelfmark-result-card__authors,
+.shelfmark-result-card__status,
+.shelfmark-result-card__description,
+.shelfmark-result-card__action-hint {
+  margin-bottom: 8px;
+}
+
+.shelfmark-result-card__existing {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.shelfmark-result-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.shelfmark-result-card__actions .btn .glyphicon,
+.shelfmark-detail-hero__actions .btn .glyphicon {
+  margin-right: 6px;
+}
+
+.shelfmark-result-card__primary-action,
+.shelfmark-detail-hero__primary-action {
+  font-weight: 600;
+}
+
+.shelfmark-detail-page__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shelfmark-detail-hero {
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(25, 35, 45, 0.06);
+}
+
+.shelfmark-detail-hero__body {
+  padding: 20px 22px;
+}
+
+.shelfmark-detail-hero__cover-image {
+  width: 100%;
+  max-width: 180px;
+}
+
+.shelfmark-detail-hero__cover-fallback {
+  padding: 24px 12px;
+}
+
+.shelfmark-detail-hero__book-title {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.shelfmark-detail-hero__subtitle {
+  margin-bottom: 8px;
+}
+
+.shelfmark-detail-hero__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.shelfmark-detail-hero__badges .label .glyphicon {
+  margin-right: 4px;
+}
+
+.shelfmark-detail-hero__authors {
+  margin-bottom: 12px;
+}
+
+.shelfmark-detail-hero__status {
+  margin-bottom: 14px;
+}
+
+.shelfmark-detail-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.shelfmark-detail-hero__action-label {
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+
+.shelfmark-detail-panel {
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(25, 35, 45, 0.05);
+}
+
+.shelfmark-detail-panel__existing-link {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+@media (max-width: 767px) {
+  .shelfmark-section-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .shelfmark-section-pill {
+    align-self: flex-start;
+  }
+
+  .shelfmark-result-card__header {
+    flex-direction: column;
+  }
+
+  .shelfmark-result-card__badges {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .shelfmark-result-card__actions,
+  .shelfmark-detail-hero__actions {
+    flex-direction: column;
+  }
+
+  .shelfmark-result-card__actions .btn,
+  .shelfmark-detail-hero__actions .btn {
+    width: 100%;
+  }
+}

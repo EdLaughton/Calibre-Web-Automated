@@ -114,6 +114,10 @@ class _Settings(_Base):
     config_use_goodreads = Column(Boolean, default=False)
     config_goodreads_api_key = Column(String)
     config_hardcover_token = Column(String)
+    config_shelfmark_search = Column(Boolean, default=False)
+    config_shelfmark_url = Column(String, default="")
+    config_shelfmark_username = Column(String, default="")
+    config_shelfmark_password_e = Column(String)
     
     config_register_email = Column(Boolean, default=False)
     config_login_type = Column(Integer, default=0)

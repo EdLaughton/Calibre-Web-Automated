@@ -258,6 +258,39 @@ Built-in KOReader progress sync with automatic book identification:
 - Configurable scheduling with progress tracking in Tasks
 - Graceful handling of invalid tokens
 
+#### **Shelfmark External Search (Stage 4)** 🔎📚
+- Optional CWA-side integration that shows Shelfmark external results alongside normal library search results
+- Simple search and advanced search can both surface Shelfmark results:
+  - simple search forwards the search term directly
+  - advanced search only sends title, author, and publisher metadata when those fields are present
+  - other advanced filters stay local to CWA
+- Duplicate awareness is deliberately exact and read-only:
+  - `metadata.db`
+  - exact `hardcover-id`
+  - no filename, title, or author fuzzy matching
+- External results are grouped to make the state obvious:
+  - already in your library
+  - external candidates with an exact Hardcover ID but no local match
+  - external results where duplicate status is unavailable because Shelfmark returned no exact Hardcover ID
+- The search and detail views now highlight those states visually with grouped headers, quick-jump links back into CWA, and clearer primary actions for:
+  - opening the existing CWA book
+  - requesting in Shelfmark
+  - opening Shelfmark directly
+- External results that already exist in the library link straight back to the existing CWA book page
+- External detail pages keep the same exact duplicate rules and show the existing CWA book when a match exists
+- Request attribution stays on the Shelfmark side:
+  - CWA can fetch external results server-side
+  - the browser probes Shelfmark session state via Shelfmark auth APIs
+  - if the browser already has a valid Shelfmark session and the current Shelfmark policy allows it, the action upgrades to `Request in Shelfmark`
+  - otherwise the safe fallback remains `Open in Shelfmark`
+- Recommended deployment model for direct requests:
+  - put CWA and Shelfmark behind the same browser origin or reverse proxy path
+  - if the browser sees Shelfmark as cross-origin, CWA falls back to `Open in Shelfmark` rather than trying to fake request attribution
+- Admin configuration:
+  - enable `Shelfmark External Search`
+  - set `Shelfmark Base URL`
+  - optionally set a dedicated Shelfmark search username/password if Shelfmark metadata search requires authentication
+
 #### **Library Auto-Detect** 📚🕵️
   - Made to **MASSIVELY** simplify the setup process for both **new and existing users** alike
   - **New Users without existing Libraries:** 🆕

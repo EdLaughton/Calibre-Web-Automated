@@ -20,6 +20,12 @@ from .string_helper import strip_whitespaces
 from .usermanagement import login_required_if_no_ano
 from .render_template import render_title_template
 from .pagination import Pagination
+from .services.shelfmark_search import (
+    ShelfmarkIntegrationError,
+    build_shelfmark_advanced_query,
+    fetch_shelfmark_detail,
+    search_shelfmark_results,
+)
 
 
 search = Blueprint('search', __name__)
@@ -376,10 +382,28 @@ def render_adv_search_results(term, offset=None, order=None, limit=None):
     ub.store_combo_ids(results)
 
     entries = calibre_db.order_authors(results, list_return=True, combined=True)
+    shelfmark_query, shelfmark_fields = build_shelfmark_advanced_query(term)
+    shelfmark_section = search_shelfmark_results(
+        shelfmark_query,
+        detail_url_builder=lambda book: _build_shelfmark_detail_url(
+            book,
+            query=shelfmark_query or search_term,
+            return_to=_current_request_path(),
+        ),
+        query_label=_("Advanced external query"),
+        context_hint=(
+            _("Built from %(fields)s only. Other advanced filters stay local to CWA.", fields=", ".join(shelfmark_fields))
+            if shelfmark_query
+            else _("Advanced external search only uses title, author, and publisher fields when present.")
+        ),
+        empty_message=_("Add a title, author, or publisher filter to include Shelfmark external results in advanced search."),
+    ).to_template_dict()
     return render_title_template('search.html',
                                  adv_searchterm=search_term,
                                  pagination=pagination,
                                  entries=entries,
+                                 query="",
+                                 shelfmark_section=shelfmark_section,
                                  result_count=result_count,
                                  title=_("Advanced Search"), page="advsearch",
                                  order=order[1])
@@ -417,6 +441,7 @@ def render_prepare_search_form(cc):
 
 
 def render_search_results(term, offset=None, order=None, limit=None):
+    shelfmark_section = None
     if term:
         join = db.books_series_link, db.Books.id == db.books_series_link.c.book, db.Series
         entries, result_count, pagination = calibre_db.get_search_results(term,
@@ -425,6 +450,15 @@ def render_search_results(term, offset=None, order=None, limit=None):
                                                                           order,
                                                                           limit,
                                                                           *join)
+        shelfmark_section = search_shelfmark_results(
+            term,
+            detail_url_builder=lambda book: _build_shelfmark_detail_url(
+                book,
+                query=term,
+                return_to=_current_request_path(),
+            ),
+            query_label=_("External lookup query"),
+        ).to_template_dict()
     else:
         entries = list()
         order = [None, None]
@@ -436,9 +470,77 @@ def render_search_results(term, offset=None, order=None, limit=None):
                                  query=term,
                                  adv_searchterm=term,
                                  entries=entries,
+                                 shelfmark_section=shelfmark_section,
                                  result_count=result_count,
                                  title=_("Search"),
                                  page="search",
                                  order=order[1])
 
 
+@search.route("/search/external/shelfmark/<provider>/<provider_id>", methods=["GET"])
+@login_required_if_no_ano
+def shelfmark_external_detail(provider, provider_id):
+    query = (request.args.get("query") or "").strip()
+    return_to = _safe_local_return_url(request.args.get("return_to"))
+    detail_url = url_for(
+        "search.shelfmark_external_detail",
+        provider=provider,
+        provider_id=provider_id,
+        query=query,
+        return_to=return_to,
+    )
+
+    try:
+        result = fetch_shelfmark_detail(
+            provider,
+            provider_id,
+            detail_url=detail_url,
+        ).to_template_dict()
+        return render_title_template(
+            "shelfmark_external_detail.html",
+            title=result.get("title") or _("Shelfmark External Result"),
+            page="search",
+            result=result,
+            search_query=query,
+            return_to=return_to,
+        )
+    except ShelfmarkIntegrationError as exc:
+        flash(str(exc), category="error")
+        return render_title_template(
+            "shelfmark_external_detail.html",
+            title=_("Shelfmark External Result"),
+            page="search",
+            result=None,
+            search_query=query,
+            return_to=return_to,
+            shelfmark_error=str(exc),
+        )
+
+
+def _build_shelfmark_detail_url(book, *, query, return_to=None):
+    provider = (book or {}).get("provider")
+    provider_id = (book or {}).get("provider_id")
+    if not provider or not provider_id:
+        return None
+    return url_for(
+        "search.shelfmark_external_detail",
+        provider=provider,
+        provider_id=provider_id,
+        query=query,
+        return_to=_safe_local_return_url(return_to),
+    )
+
+
+def _current_request_path():
+    if not request.query_string:
+        return request.path
+    return request.full_path.rstrip("?")
+
+
+def _safe_local_return_url(value):
+    if not value:
+        return None
+    candidate = str(value).strip()
+    if not candidate or not candidate.startswith("/") or candidate.startswith("//"):
+        return None
+    return candidate
