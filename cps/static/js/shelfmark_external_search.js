@@ -60,11 +60,14 @@
     nodes.forEach(function (node) {
       clearStatusTimer(node);
       if (!text) {
+        node.textContent = '';
+        node.classList.remove('is-visible', 'is-settled', 'alert-info', 'alert-success', 'alert-warning', 'alert-danger');
         node.classList.add('is-hidden');
         node.setAttribute('aria-hidden', 'true');
         return;
       }
       node.classList.remove('is-hidden', 'is-settled');
+      node.classList.add('is-visible');
       node.removeAttribute('aria-hidden');
       node.textContent = text;
       node.classList.remove('alert-info', 'alert-success', 'alert-warning', 'alert-danger');
@@ -259,8 +262,6 @@
       return;
     }
 
-    setStatusText('Checking your Shelfmark session for direct request availability…', 'alert-info', { persist: true });
-
     try {
       var authPayload = await fetchJson(stripTrailingSlash(baseUrl) + '/api/auth/check', {}, DEFAULT_TIMEOUT_MS);
       if (!authPayload || !authPayload.authenticated) {
@@ -288,23 +289,12 @@
       });
 
       if (!perActionSummary.payloadCount) {
-        setStatusText(
-          'Shelfmark session detected. These results still open in Shelfmark because the search response did not include the exact book metadata CWA needs for a direct request here.',
-          'alert-info'
-        );
-        return;
-      }
-
-      if (perActionSummary.requestableCount > 0 && perActionSummary.blockedCount > 0) {
-        setStatusText(
-          'Direct Shelfmark requests are ready for supported rows. Other rows still open in Shelfmark when policy or metadata requires it.',
-          'alert-success'
-        );
+        setStatusText('');
         return;
       }
 
       if (perActionSummary.requestableCount > 0) {
-        setStatusText(probeOutcome.bannerText, probeOutcome.bannerLevel);
+        setStatusText('');
         return;
       }
 

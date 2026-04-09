@@ -103,9 +103,7 @@
                 {% endif %}
               </div>
 
-              <div class="alert alert-info shelfmark-status-banner js-shelfmark-request-status" data-base-url="{{ result.shelfmark_base_url }}" role="status" aria-live="polite">
-                {{ _("Checking your browser for direct Shelfmark request availability.") }}
-              </div>
+              <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ result.shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
 
               <div class="btn-toolbar shelfmark-detail-hero__actions" role="toolbar">
                 {% if result.action.mode == 'view_library' and result.library_book_url %}

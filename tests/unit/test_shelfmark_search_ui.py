@@ -278,9 +278,18 @@ def _base_context():
             "available": True,
             "query": "Dune",
             "page": 1,
+            "page_size": 12,
+            "total_pages": 75,
+            "visible_start": 1,
+            "visible_end": 3,
+            "has_previous": False,
+            "previous_page": None,
+            "next_page": 2,
             "has_more": True,
             "total_available": 895,
             "open_search_url": "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&page=1&query=Dune",
+            "previous_page_url": None,
+            "next_page_url": "/search/stored/?query=Dune&shelfmark_page=2",
             "query_label": "External lookup query",
             "context_hint": "Duplicate awareness remains exact hardcover-id matching only.",
             "message": None,
@@ -343,9 +352,15 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'class="shelfmark-external-shell"' in html
     assert "1 book" in html
     assert "Showing 3 of 895" in html
-    assert "CWA is previewing the first Shelfmark page here." in html
-    assert "See more in Shelfmark" in html
+    assert "Showing 1-3 of 895" in html
+    assert "Page 1 of 75" in html
+    assert 'href="/search/stored/?query=Dune&amp;shelfmark_page=2"' in html
+    assert "CWA is previewing the first Shelfmark page here." not in html
+    assert "Checking your browser for direct Shelfmark request availability." not in html
+    assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
     assert 'href="https://library.example.com/shelfmark/?content_type=ebook&amp;sort=relevance&amp;page=1&amp;query=Dune"' in html
+    assert "shelfmark_request_flow.js" in html
+    assert "shelfmark_external_search.js" in html
     assert "shelfmark-section-pill" not in html
     assert "Already in Your Library" in html
     assert "External Candidates" in html
@@ -367,6 +382,16 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     duplicate_chunk = html[html.index("Already Present"):html.index("External Candidate")]
     assert candidate_chunk.count("Open in Shelfmark") == 0
     assert duplicate_chunk.count("Open in Shelfmark") == 1
+
+
+def test_search_template_renders_external_cover_image_when_available():
+    app = _create_app()
+    with app.test_request_context("/search?query=Dune"):
+        g.shelves_access = []
+        g.config_authors_max = 0
+        html = render_template("search.html", **_base_context())
+
+    assert 'src="https://covers.example.com/999.jpg"' in html
 
 
 def test_detail_template_renders_existing_book_jump_and_action_markup():
@@ -395,6 +420,7 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert 'class="shelfmark-detail-layout"' in html
     assert 'class="shelfmark-detail-cover-card"' in html
     assert 'class="shelfmark-detail-card shelfmark-detail-card--hero shelfmark-detail-card--success"' in html
+    assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
     assert html.count("Open in Shelfmark") == 1
     assert 'target="_blank"' in html
 

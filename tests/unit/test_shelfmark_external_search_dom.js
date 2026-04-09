@@ -274,8 +274,8 @@ async function runScenario(options) {
     sameOrigin.dom.action.querySelector('.js-shelfmark-action-label').textContent,
     'Request in Shelfmark'
   );
-  assert.match(sameOrigin.dom.status.textContent, /Direct Shelfmark requests are ready|Shelfmark session detected/i);
-  assert.equal(sameOrigin.dom.status.classList.contains('is-settled'), true);
+  assert.equal(sameOrigin.dom.status.textContent, '');
+  assert.equal(sameOrigin.dom.status.classList.contains('is-hidden'), true);
   assert.equal(sameOrigin.dom.action.getAttribute('target'), '_blank');
 
   await sameOrigin.clickPrimaryAction();
@@ -289,6 +289,7 @@ async function runScenario(options) {
     'Requested in Shelfmark'
   );
   assert.match(sameOrigin.dom.status.textContent, /Request created in Shelfmark/i);
+  assert.equal(sameOrigin.dom.status.classList.contains('is-hidden'), false);
   assert.equal(sameOrigin.dom.status.classList.contains('is-settled'), true);
   assert.equal(sameOrigin.dom.action.getAttribute('target'), '_blank');
 

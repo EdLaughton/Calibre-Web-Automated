@@ -400,7 +400,7 @@ def render_adv_search_results(term, offset=None, order=None, limit=None):
 
     entries = calibre_db.order_authors(results, list_return=True, combined=True)
     shelfmark_query, shelfmark_fields = build_shelfmark_advanced_query(term)
-    shelfmark_section = search_shelfmark_results(
+    shelfmark_section = _build_shelfmark_section(
         shelfmark_query,
         detail_url_builder=lambda book: _build_shelfmark_detail_url(
             book,
@@ -414,7 +414,7 @@ def render_adv_search_results(term, offset=None, order=None, limit=None):
             else _("Advanced external search only uses title, author, and publisher fields when present.")
         ),
         empty_message=_("Add a title, author, or publisher filter to include Shelfmark external results in advanced search."),
-    ).to_template_dict()
+    )
     return render_title_template('search.html',
                                  adv_searchterm=search_term,
                                  pagination=pagination,
@@ -467,7 +467,7 @@ def render_search_results(term, offset=None, order=None, limit=None):
                                                                           order,
                                                                           limit,
                                                                           *join)
-        shelfmark_section = search_shelfmark_results(
+        shelfmark_section = _build_shelfmark_section(
             term,
             detail_url_builder=lambda book: _build_shelfmark_detail_url(
                 book,
@@ -475,7 +475,7 @@ def render_search_results(term, offset=None, order=None, limit=None):
                 return_to=_current_request_path(),
             ),
             query_label=_("External lookup query"),
-        ).to_template_dict()
+        )
     else:
         entries = list()
         order = [None, None]
@@ -551,6 +551,47 @@ def _current_request_path():
     if not request.query_string:
         return request.path
     return request.full_path.rstrip("?")
+
+
+def _requested_shelfmark_page():
+    try:
+        page = int(request.args.get("shelfmark_page", "1"))
+    except (TypeError, ValueError):
+        return 1
+    return page if page > 0 else 1
+
+
+def _current_request_url_with(**updates):
+    params = request.args.to_dict(flat=True)
+    params.update({key: str(value) for key, value in updates.items() if value not in (None, "")})
+    for key, value in updates.items():
+        if value in (None, ""):
+            params.pop(key, None)
+    return url_for(request.endpoint, **(request.view_args or {}), **params)
+
+
+def _build_shelfmark_section(query, **kwargs):
+    section = search_shelfmark_results(
+        query,
+        page=_requested_shelfmark_page(),
+        **kwargs,
+    ).to_template_dict()
+    if not section.get("enabled"):
+        return section
+
+    previous_page = section.get("previous_page")
+    next_page = section.get("next_page")
+    section["previous_page_url"] = (
+        _current_request_url_with(shelfmark_page=previous_page)
+        if previous_page
+        else None
+    )
+    section["next_page_url"] = (
+        _current_request_url_with(shelfmark_page=next_page)
+        if next_page
+        else None
+    )
+    return section
 
 
 def _safe_local_return_url(value):
