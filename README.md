@@ -285,12 +285,14 @@ Built-in KOReader progress sync with automatic book identification:
   - otherwise the safe fallback remains `Open in Shelfmark`
 - Recommended deployment model for direct requests:
   - put CWA and Shelfmark behind the same browser origin or reverse proxy path
+  - if CWA reaches Shelfmark server-side through a private or LAN-only URL, set `Shelfmark Browser URL` to the browser-facing same-origin or reverse-proxied Shelfmark address
   - if the browser sees Shelfmark as cross-origin, CWA falls back to `Open in Shelfmark` rather than trying to fake request attribution
   - if Shelfmark is configured to sync/auth users from the mounted CWA `app.db`, users can log into Shelfmark with those synced CWA credentials and direct requests will then be attributed in Shelfmark as that same user
 - Admin configuration:
   - enable `Shelfmark External Search`
   - set `Shelfmark Base URL`
-  - the configured `Shelfmark Base URL` is also the exact trust boundary for server-side Shelfmark metadata requests, including local/private Shelfmark hosts
+  - `Shelfmark Base URL` is the exact trust boundary for CWA's server-side Shelfmark metadata requests, including local/private Shelfmark hosts
+  - optionally set `Shelfmark Browser URL` when browsers should open Shelfmark through a different same-origin or reverse-proxied address than the server-side search URL
   - if Shelfmark protects `/api/metadata/search`, set Shelfmark search username/password in CWA admin for CWA's server-side metadata search
   - those search-account fields are separate from the browser's Shelfmark login used for `Request in Shelfmark`
   - when Shelfmark is using the mounted CWA `app.db` for auth, users can still use their own synced CWA credentials in the browser for per-user request attribution, while CWA can use a dedicated search account here if needed

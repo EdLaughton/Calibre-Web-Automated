@@ -154,12 +154,16 @@
             </p>
           </div>
           <div class="shelfmark-section-heading__meta">
-            {% if external_count == 0 %}
+            {% if external_count == 0 and shelfmark.total_available > 0 %}
+              {{ _('0 of %(count)s shown', count=shelfmark.total_available) }}
+            {% elif shelfmark.total_available > external_count %}
+              {{ _('Showing %(shown)s of %(count)s', shown=external_count, count=shelfmark.total_available) }}
+            {% elif external_count == 0 %}
               {{ _('No matches') }}
             {% elif external_count == 1 %}
-              {{ _('1 match') }}
+              {{ _('1 result') }}
             {% else %}
-              {{ _('%(count)s matches', count=external_count) }}
+              {{ _('%(count)s results', count=external_count) }}
             {% endif %}
           </div>
         </div>
@@ -171,6 +175,31 @@
         {% endif %}
         {% if shelfmark.context_hint %}
           <p class="shelfmark-external-header__hint">{{ shelfmark.context_hint }}</p>
+        {% endif %}
+        {% if shelfmark.available and shelfmark.total_available > 0 %}
+          <div class="shelfmark-external-header__summary">
+            <p class="shelfmark-external-header__summary-copy">
+              {% if shelfmark.total_available > external_count %}
+                {{ _('CWA is previewing the first Shelfmark page here. Open Shelfmark to browse the full %(count)s-result set.', count=shelfmark.total_available) }}
+              {% elif external_count == 1 %}
+                {{ _('Shelfmark returned 1 external result for this query.') }}
+              {% else %}
+                {{ _('Shelfmark returned %(count)s external results for this query.', count=external_count) }}
+              {% endif %}
+            </p>
+            {% if shelfmark.open_search_url %}
+              <a class="btn btn-default btn-sm shelfmark-external-header__open-all" href="{{ shelfmark.open_search_url }}" target="_blank" rel="noopener noreferrer">
+                <span class="glyphicon glyphicon-new-window" aria-hidden="true"></span>
+                <span>
+                  {% if shelfmark.total_available > external_count %}
+                    {{ _('See more in Shelfmark') }}
+                  {% else %}
+                    {{ _('Open this search in Shelfmark') }}
+                  {% endif %}
+                </span>
+              </a>
+            {% endif %}
+          </div>
         {% endif %}
       </div>
 
@@ -316,6 +345,14 @@
               <p class="shelfmark-empty-state__query">
                 <strong>{{ shelfmark.query_label or _('External lookup query') }}:</strong>
                 <code>{{ shelfmark.query }}</code>
+              </p>
+            {% endif %}
+            {% if shelfmark.open_search_url %}
+              <p class="shelfmark-empty-state__actions">
+                <a class="btn btn-default btn-sm" href="{{ shelfmark.open_search_url }}" target="_blank" rel="noopener noreferrer">
+                  <span class="glyphicon glyphicon-new-window" aria-hidden="true"></span>
+                  <span>{{ _('Open this search in Shelfmark') }}</span>
+                </a>
               </p>
             {% endif %}
           </div>

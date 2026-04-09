@@ -116,6 +116,7 @@ class _Settings(_Base):
     config_hardcover_token = Column(String)
     config_shelfmark_search = Column(Boolean, default=False)
     config_shelfmark_url = Column(String, default="")
+    config_shelfmark_browser_url = Column(String, default="")
     config_shelfmark_username = Column(String, default="")
     config_shelfmark_password_e = Column(String)
     
