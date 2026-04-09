@@ -7,7 +7,7 @@
 import json
 from datetime import datetime
 
-from flask import Blueprint, request, redirect, url_for, flash
+from flask import Blueprint, request, redirect, url_for, flash, jsonify
 from flask import session as flask_session
 from .cw_login import current_user
 from flask_babel import format_date
@@ -20,6 +20,7 @@ from .string_helper import strip_whitespaces
 from .usermanagement import login_required_if_no_ano
 from .render_template import render_title_template
 from .pagination import Pagination
+from .services.search_autocomplete import get_autocomplete_payload
 
 
 search = Blueprint('search', __name__)
@@ -52,6 +53,22 @@ def simple_search():
                                      result_count=0,
                                      title=_("Search"),
                                      page="search")
+
+
+@search.route("/search/autocomplete", methods=["GET"])
+@login_required_if_no_ano
+def autocomplete():
+    labels = {
+        "book": _("Book"),
+        "author": _("Author"),
+        "series": _("Series"),
+        "show_all": _('Show all results for "%(query)s"'),
+        "author_count_singular": _("1 book"),
+        "author_count_plural": _("%(count)d books"),
+        "series_count_singular": _("1 book"),
+        "series_count_plural": _("%(count)d books"),
+    }
+    return jsonify(get_autocomplete_payload(request.args.get("q"), labels))
 
 
 @search.route("/advsearch", methods=['POST'])
@@ -440,5 +457,4 @@ def render_search_results(term, offset=None, order=None, limit=None):
                                  title=_("Search"),
                                  page="search",
                                  order=order[1])
-
 
