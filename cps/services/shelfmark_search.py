@@ -146,12 +146,19 @@ class ShelfmarkResultView:
     request_payload: dict[str, Any] | None
     library_state: ShelfmarkLibraryState
     action: ShelfmarkActionState
+    pages: int | None = None
+    editions_count: int | None = None
+    lists_count: int | None = None
     description_html: str | None = None
     series_name: str | None = None
     series_position: float | None = None
     series_count: int | None = None
     series_display: str | None = None
     facts: tuple[str, ...] = field(default_factory=tuple)
+    detail_stats: tuple[dict[str, str], ...] = field(default_factory=tuple)
+    genres: tuple[str, ...] = field(default_factory=tuple)
+    moods: tuple[str, ...] = field(default_factory=tuple)
+    content_warnings: tuple[str, ...] = field(default_factory=tuple)
     series_context: ShelfmarkSeriesContext | None = None
     workflow_state: ShelfmarkWorkflowState | None = None
 
@@ -160,6 +167,10 @@ class ShelfmarkResultView:
         payload["authors"] = list(self.authors)
         payload["display_fields"] = list(self.display_fields)
         payload["facts"] = list(self.facts)
+        payload["detail_stats"] = list(self.detail_stats)
+        payload["genres"] = list(self.genres)
+        payload["moods"] = list(self.moods)
+        payload["content_warnings"] = list(self.content_warnings)
         if self.series_context:
             payload["series_context"]["badges"] = list(self.series_context.badges)
             payload["series_context"]["facts"] = list(self.series_context.facts)
@@ -866,13 +877,6 @@ def _build_series_context_facts(
         return tuple()
 
     facts: list[str] = []
-    if is_next_missing:
-        facts.append(_("Next likely book in your library run"))
-    elif is_continuation:
-        facts.append(_("Later entry in an owned series"))
-    else:
-        facts.append(_("Series already in your library"))
-
     if owned_book_count:
         label = _("book") if owned_book_count == 1 else _("books")
         facts.append(_("%(count)s %(label)s owned", count=owned_book_count, label=label))
@@ -888,7 +892,15 @@ def _build_series_context_facts(
 def _build_series_context_detail_value(context: ShelfmarkSeriesContext) -> str | None:
     if not context.matched:
         return None
-    return " \u00b7 ".join(context.facts) if context.facts else _("Series already in your library")
+    parts: list[str] = []
+    if context.is_next_missing:
+        parts.append(_("Next missing"))
+    elif context.is_continuation:
+        parts.append(_("Continue series"))
+    else:
+        parts.append(_("Owned series"))
+    parts.extend(context.facts)
+    return " \u00b7 ".join(part for part in parts if part)
 
 
 def build_shelfmark_series_contexts(
@@ -1003,6 +1015,9 @@ def build_shelfmark_result_view(
     series_name = _resolve_series_name(book)
     series_position = _resolve_series_position(book)
     series_count = _resolve_series_count(book)
+    pages = _resolve_pages(book)
+    editions_count = _resolve_editions_count(book)
+    lists_count = _resolve_lists_count(book)
     library_book_url = (
         url_for("web.show_book", book_id=library_match.book_id)
         if library_match is not None
@@ -1052,12 +1067,19 @@ def build_shelfmark_result_view(
         request_payload=request_payload,
         library_state=library_state,
         action=action,
+        pages=pages,
+        editions_count=editions_count,
+        lists_count=lists_count,
         description_html=description_html,
         series_name=series_name,
         series_position=series_position,
         series_count=series_count,
         series_display=_format_series_display(series_name, series_position),
         facts=_build_result_facts(book, publish_year=publish_year),
+        detail_stats=_build_detail_stats(book, publish_year=publish_year),
+        genres=_normalize_tag_list(book.get("genres"), limit=5),
+        moods=_resolve_moods(book),
+        content_warnings=_resolve_content_warnings(book),
         series_context=series_context,
         workflow_state=build_shelfmark_workflow_state(
             already_in_library=library_match is not None,
@@ -1166,6 +1188,7 @@ def _merge_book_details(
         "publish_year",
         "source_url",
         "display_fields",
+        "genres",
         "series_id",
         "series_name",
         "series_position",
@@ -1173,6 +1196,8 @@ def _merge_book_details(
         "rating",
         "ratings_count",
         "users_count",
+        "pages",
+        "editions_count",
         "provider_display_name",
         "cover_url",
         "preview",
@@ -1790,6 +1815,55 @@ def _resolve_series_count(book: Mapping[str, Any]) -> int | None:
     return _normalize_int(book.get("series_count"))
 
 
+def _lookup_display_field_value(book: Mapping[str, Any], *labels: str) -> str | None:
+    target_labels = {label.casefold() for label in labels if label}
+    if not target_labels:
+        return None
+
+    for field in _normalize_display_fields(book.get("display_fields")):
+        label = _normalize_text(field.get("label"))
+        if label and label.casefold() in target_labels:
+            return _normalize_text(field.get("value"))
+    return None
+
+
+def _resolve_pages(book: Mapping[str, Any]) -> int | None:
+    pages = _normalize_int(book.get("pages"))
+    if pages is not None:
+        return pages
+
+    display_value = _lookup_display_field_value(book, "Pages")
+    if not display_value:
+        return None
+    return _normalize_int(re.sub(r"[^\d]", "", display_value))
+
+
+def _resolve_editions_count(book: Mapping[str, Any]) -> int | None:
+    editions_count = _normalize_int(book.get("editions_count"))
+    if editions_count is not None:
+        return editions_count
+
+    display_value = _lookup_display_field_value(book, "Editions")
+    if not display_value:
+        return None
+    return _normalize_int(re.sub(r"[^\d]", "", display_value))
+
+
+def _resolve_lists_count(book: Mapping[str, Any]) -> int | None:
+    lists_count = _normalize_int(book.get("lists_count"))
+    if lists_count is not None:
+        return lists_count
+
+    list_count = _normalize_int(book.get("list_count"))
+    if list_count is not None:
+        return list_count
+
+    display_value = _lookup_display_field_value(book, "Lists", "List count", "Lists count")
+    if not display_value:
+        return None
+    return _normalize_int(re.sub(r"[^\d]", "", display_value))
+
+
 def _format_series_display(series_name: str | None, series_position: float | None) -> str | None:
     if not series_name:
         return None
@@ -1797,6 +1871,94 @@ def _format_series_display(series_name: str | None, series_position: float | Non
     if position:
         return f"{series_name} ({position})"
     return series_name
+
+
+def _normalize_tag_list(value: Any, *, limit: int | None = None) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)):
+        normalized = _normalize_text(value)
+        return (normalized,) if normalized else tuple()
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return tuple()
+
+    tags: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if isinstance(item, Mapping):
+            normalized = (
+                _normalize_text(item.get("tag"))
+                or _normalize_text(item.get("name"))
+                or _normalize_text(item.get("label"))
+            )
+        else:
+            normalized = _normalize_text(item)
+        if not normalized:
+            continue
+        tag_key = normalized.casefold()
+        if tag_key in seen:
+            continue
+        seen.add(tag_key)
+        tags.append(normalized)
+        if limit and len(tags) >= limit:
+            break
+    return tuple(tags)
+
+
+def _normalize_compact_values(value: Any, *, limit: int | None = None) -> tuple[str, ...]:
+    if isinstance(value, Mapping):
+        normalized = (
+            _normalize_text(value.get("value"))
+            or _normalize_text(value.get("label"))
+            or _normalize_text(value.get("name"))
+        )
+        return (normalized,) if normalized else tuple()
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return _normalize_tag_list(value, limit=limit)
+
+    normalized = _normalize_text(value)
+    if not normalized:
+        return tuple()
+
+    parts = re.split(r"\s*(?:,|;|\n|\u2022|\u00b7|\|)\s*", normalized)
+    values: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        item = _normalize_text(part)
+        if not item:
+            continue
+        item_key = item.casefold()
+        if item_key in seen:
+            continue
+        seen.add(item_key)
+        values.append(item)
+        if limit and len(values) >= limit:
+            break
+    return tuple(values)
+
+
+def _resolve_moods(book: Mapping[str, Any]) -> tuple[str, ...]:
+    direct = _normalize_compact_values(book.get("moods"), limit=5)
+    if direct:
+        return direct
+    return _normalize_compact_values(
+        _lookup_display_field_value(book, "Moods", "Mood"),
+        limit=5,
+    )
+
+
+def _resolve_content_warnings(book: Mapping[str, Any]) -> tuple[str, ...]:
+    direct = _normalize_compact_values(book.get("content_warnings"), limit=6)
+    if direct:
+        return direct
+
+    fallback = _normalize_compact_values(book.get("warnings"), limit=6)
+    if fallback:
+        return fallback
+
+    return _normalize_compact_values(
+        _lookup_display_field_value(book, "Content warnings", "Content warning", "Warnings"),
+        limit=6,
+    )
 
 
 def _build_result_facts(book: Mapping[str, Any], *, publish_year: int | None) -> tuple[str, ...]:
@@ -1824,6 +1986,36 @@ def _build_result_facts(book: Mapping[str, Any], *, publish_year: int | None) ->
         facts.append(series_display)
 
     return tuple(facts)
+
+
+def _build_detail_stats(book: Mapping[str, Any], *, publish_year: int | None) -> tuple[dict[str, str], ...]:
+    stats: list[dict[str, str]] = []
+    rating_value = _normalize_float(book.get("rating"))
+    ratings_count = _normalize_int(book.get("ratings_count"))
+    readers_count = _normalize_int(book.get("users_count"))
+    pages = _resolve_pages(book)
+    editions_count = _resolve_editions_count(book)
+    series_display = _format_series_display(
+        _resolve_series_name(book),
+        _resolve_series_position(book),
+    )
+
+    if rating_value is not None:
+        stats.append({"label": _("Rating"), "value": f"{rating_value:.1f} \u2605"})
+    if ratings_count:
+        stats.append({"label": _("Ratings"), "value": f"{ratings_count:,}"})
+    if readers_count:
+        stats.append({"label": _("Readers"), "value": f"{readers_count:,}"})
+    if publish_year:
+        stats.append({"label": _("Published"), "value": str(publish_year)})
+    if pages:
+        stats.append({"label": _("Pages"), "value": f"{pages:,}"})
+    if editions_count:
+        stats.append({"label": _("Editions"), "value": f"{editions_count:,}"})
+    if series_display:
+        stats.append({"label": _("Series"), "value": series_display})
+
+    return tuple(stats)
 
 
 def _normalize_shelfmark_cover_url(base_url: str, value: Any) -> str | None:

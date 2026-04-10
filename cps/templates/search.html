@@ -163,11 +163,13 @@
             </p>
           </div>
           <div class="shelfmark-section-line__meta">
-            {% if shelfmark.page_result_count > 0 %}
-              {{ _('%(count)s returned on this page', count=shelfmark.page_result_count) }}
-              {% if external_count != shelfmark.page_result_count %}
-                · {{ _('%(count)s visible', count=external_count) }}
+            {% if external_count > 0 %}
+              {{ _('%(count)s shown', count=external_count) }}
+              {% if shelfmark.total_available > external_count %}
+                · {{ _('%(count)s total', count=shelfmark.total_available) }}
               {% endif %}
+            {% elif shelfmark.page_result_count > 0 %}
+              {{ _('No visible matches') }}
             {% elif external_count == 0 %}
               {{ _('No matches') }}
             {% else %}
@@ -215,9 +217,9 @@
               </select>
             </div>
             <input type="hidden" name="shelfmark_filter_has_cover" value="0">
-            <label class="checkbox-inline shelfmark-external-controls__toggle">
-              <input type="checkbox" name="shelfmark_filter_has_cover" value="1"{% if shelfmark.filter_has_cover %} checked{% endif %}>
-              {{ _('Has cover') }}
+            <label class="shelfmark-external-controls__toggle">
+              <input class="shelfmark-external-controls__checkbox" type="checkbox" name="shelfmark_filter_has_cover" value="1"{% if shelfmark.filter_has_cover %} checked{% endif %}>
+              <span>{{ _('Has cover') }}</span>
             </label>
             <button type="submit" class="btn btn-default btn-sm shelfmark-external-controls__apply">{{ _('Apply') }}</button>
             {% if shelfmark.requestable_toggle_url %}
@@ -295,7 +297,7 @@
                     <div class="shelfmark-result-card__badges">
                     {% if result.workflow_state and not result.already_in_library %}
                       <span
-                        class="label shelfmark-status-chip {{ result.workflow_state.chip_class }} js-shelfmark-status-chip"
+                        class="label shelfmark-status-chip {{ result.workflow_state.chip_class }} js-shelfmark-status-chip{% if result.workflow_state.key == 'available' %} is-hidden{% endif %}"
                         data-status-key="{{ result.workflow_state.key }}"
                       >
                         {{ result.workflow_state.label }}
@@ -376,17 +378,18 @@
         {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.page_result_count > 0 %}
           <div class="shelfmark-pagination-footer">
             <div class="shelfmark-pagination-footer__summary">
-              {% if shelfmark.total_available > 0 and shelfmark.visible_start and shelfmark.visible_end %}
-                <span>{{ _('Showing %(start)s-%(end)s of %(count)s', start=shelfmark.visible_start, end=shelfmark.visible_end, count=shelfmark.total_available) }}</span>
-              {% elif shelfmark.total_available > 0 %}
-                <span>{{ _('%(count)s total results', count=shelfmark.total_available) }}</span>
+              {% if external_count > 0 %}
+                <span>{{ _('%(count)s shown on this page', count=external_count) }}</span>
+              {% elif shelfmark.page_result_count > 0 %}
+                <span>{{ _('No visible matches on this page') }}</span>
+              {% endif %}
+              {% if shelfmark.total_available > 0 %}
+                <span>{{ _('%(count)s total on Shelfmark', count=shelfmark.total_available) }}</span>
               {% endif %}
               {% if shelfmark.total_pages > 0 %}
                 <span>{{ _('Page %(page)s of %(pages)s', page=shelfmark.page, pages=shelfmark.total_pages) }}</span>
               {% endif %}
-              {% if shelfmark.page_result_count > 0 and external_count != shelfmark.page_result_count %}
-                <span>{{ _('%(shown)s visible here', shown=external_count) }}</span>
-              {% endif %}
+              <span>{{ _('%(count)s per page', count=shelfmark.page_size) }}</span>
             </div>
             <div class="shelfmark-pagination-footer__controls">
               <form class="shelfmark-pagination-footer__jump" method="get" action="{{ request.path }}">
@@ -395,8 +398,11 @@
                     <input type="hidden" name="{{ key }}" value="{{ value }}">
                   {% endif %}
                 {% endfor %}
-                <label class="shelfmark-pagination-footer__jump-label" for="shelfmark_page_jump">{{ _('Jump to page') }}</label>
+                <label class="shelfmark-pagination-footer__jump-label" for="shelfmark_page_jump">{{ _('Page') }}</label>
                 <input class="form-control input-sm shelfmark-pagination-footer__jump-input" id="shelfmark_page_jump" type="number" name="shelfmark_page" min="1" {% if shelfmark.total_pages %}max="{{ shelfmark.total_pages }}"{% endif %} value="{{ shelfmark.page }}">
+                {% if shelfmark.total_pages > 0 %}
+                  <span class="shelfmark-pagination-footer__jump-total">{{ _('of %(pages)s', pages=shelfmark.total_pages) }}</span>
+                {% endif %}
                 <button type="submit" class="btn btn-default btn-sm shelfmark-pagination-footer__jump-button">{{ _('Go') }}</button>
               </form>
               {% if shelfmark.previous_page_url %}
@@ -455,14 +461,14 @@
         {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.page_result_count > 0 %}
           <div class="shelfmark-pagination-footer">
             <div class="shelfmark-pagination-footer__summary">
-              {% if shelfmark.total_available > 0 and shelfmark.visible_start and shelfmark.visible_end %}
-                <span>{{ _('Showing %(start)s-%(end)s of %(count)s', start=shelfmark.visible_start, end=shelfmark.visible_end, count=shelfmark.total_available) }}</span>
-              {% elif shelfmark.total_available > 0 %}
-                <span>{{ _('%(count)s total results', count=shelfmark.total_available) }}</span>
+              <span>{{ _('No visible matches on this page') }}</span>
+              {% if shelfmark.total_available > 0 %}
+                <span>{{ _('%(count)s total on Shelfmark', count=shelfmark.total_available) }}</span>
               {% endif %}
               {% if shelfmark.total_pages > 0 %}
                 <span>{{ _('Page %(page)s of %(pages)s', page=shelfmark.page, pages=shelfmark.total_pages) }}</span>
               {% endif %}
+              <span>{{ _('%(count)s per page', count=shelfmark.page_size) }}</span>
             </div>
             <div class="shelfmark-pagination-footer__controls">
               <form class="shelfmark-pagination-footer__jump" method="get" action="{{ request.path }}">
@@ -471,8 +477,11 @@
                     <input type="hidden" name="{{ key }}" value="{{ value }}">
                   {% endif %}
                 {% endfor %}
-                <label class="shelfmark-pagination-footer__jump-label" for="shelfmark_page_jump_empty">{{ _('Jump to page') }}</label>
+                <label class="shelfmark-pagination-footer__jump-label" for="shelfmark_page_jump_empty">{{ _('Page') }}</label>
                 <input class="form-control input-sm shelfmark-pagination-footer__jump-input" id="shelfmark_page_jump_empty" type="number" name="shelfmark_page" min="1" {% if shelfmark.total_pages %}max="{{ shelfmark.total_pages }}"{% endif %} value="{{ shelfmark.page }}">
+                {% if shelfmark.total_pages > 0 %}
+                  <span class="shelfmark-pagination-footer__jump-total">{{ _('of %(pages)s', pages=shelfmark.total_pages) }}</span>
+                {% endif %}
                 <button type="submit" class="btn btn-default btn-sm shelfmark-pagination-footer__jump-button">{{ _('Go') }}</button>
               </form>
               {% if shelfmark.previous_page_url %}

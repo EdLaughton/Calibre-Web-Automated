@@ -523,10 +523,13 @@ def test_series_context_flags_next_missing_and_owned_series(shelfmark_module):
     assert contexts[0].is_next_missing is True
     assert contexts[0].badges[0]["label"] == "Next missing"
     assert "3 books owned" in contexts[0].facts
+    assert "Owned through 1" in contexts[0].facts
+    assert contexts[0].detail_value == "Next missing · 3 books owned · Owned through 1"
     assert contexts[1] is not None
     assert contexts[1].is_continuation is True
     assert contexts[1].is_next_missing is False
     assert contexts[1].badges[0]["label"] == "Continue series"
+    assert contexts[1].detail_value == "Continue series · 3 books owned · Owned through 1"
     assert contexts[2] is None
 
 
@@ -835,6 +838,100 @@ def test_search_results_promote_detail_series_facts_and_plain_description(shelfm
         "9,893 readers",
         "1937",
         "The Lord of the Rings (2)",
+    )
+    assert result.detail_stats == (
+        {"label": "Rating", "value": "4.3 ★"},
+        {"label": "Ratings", "value": "5,900"},
+        {"label": "Readers", "value": "9,893"},
+        {"label": "Published", "value": "1937"},
+        {"label": "Series", "value": "The Lord of the Rings (2)"},
+    )
+
+
+def test_search_results_promote_detail_genres_pages_and_editions(shelfmark_module):
+    fake_client = mock.Mock()
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=(
+            {
+                "provider": "hardcover",
+                "provider_id": "555",
+                "title": "Guards! Guards!",
+                "authors": ["Terry Pratchett"],
+                "identifiers": {"hardcover-id": "555"},
+            },
+        ),
+        page=1,
+        total_found=1,
+        has_more=False,
+    )
+    fake_client.fetch_book.return_value = {
+        "provider": "hardcover",
+        "provider_id": "555",
+        "title": "Guards! Guards!",
+        "authors": ["Terry Pratchett"],
+        "rating": 4.2,
+        "ratings_count": 12034,
+        "users_count": 22221,
+        "publish_year": 1989,
+        "series_name": "Discworld",
+        "series_position": 8,
+        "genres": ["Fantasy", {"name": "Humour"}, {"tag": "Comedy"}],
+        "pages": 384,
+        "editions_count": 57,
+        "display_fields": [
+            {"label": "Lists", "value": "128", "icon": "list"},
+            {"label": "Moods", "value": "Whimsical, Wry", "icon": "spark"},
+            {"label": "Content warnings", "value": "Violence; Death", "icon": "warning"},
+        ],
+        "identifiers": {"hardcover-id": "555"},
+    }
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={},
+    ):
+        section = shelfmark_module.search_shelfmark_results(
+            "guards guards",
+            detail_url_builder=lambda _: "/external/guards-guards",
+            page=1,
+            filter_requestable=False,
+            filter_has_cover=False,
+        )
+
+    result = section.results[0]
+    assert result.pages == 384
+    assert result.editions_count == 57
+    assert result.lists_count == 128
+    assert result.genres == ("Fantasy", "Humour", "Comedy")
+    assert result.moods == ("Whimsical", "Wry")
+    assert result.content_warnings == ("Violence", "Death")
+    assert result.detail_stats == (
+        {"label": "Rating", "value": "4.2 ★"},
+        {"label": "Ratings", "value": "12,034"},
+        {"label": "Readers", "value": "22,221"},
+        {"label": "Published", "value": "1989"},
+        {"label": "Pages", "value": "384"},
+        {"label": "Editions", "value": "57"},
+        {"label": "Series", "value": "Discworld (8)"},
     )
 
 

@@ -581,6 +581,10 @@ async function runScenario(options) {
   assert.equal(batchReady.dom.batchToolbar.classList.contains('is-hidden'), false);
   assert.equal(batchReady.dom.batchSelect.classList.contains('is-hidden'), false);
   assert.equal(batchReady.dom.batchToggle.disabled, false);
+  assert.equal(
+    batchReady.dom.document.querySelector('.js-shelfmark-status-chip').classList.contains('is-hidden'),
+    true
+  );
   assert.equal(batchCount.textContent, '0 selected');
   assert.equal(batchReadyText.textContent, '1 ready on this page');
   assert.equal(batchSelectVisible.disabled, false);

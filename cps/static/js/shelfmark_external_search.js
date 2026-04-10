@@ -477,6 +477,14 @@
     });
   }
 
+  function shouldHideAvailableWorkflowState(target, workflowState) {
+    if (!target || !workflowState || workflowState.key !== 'available') {
+      return false;
+    }
+    var actionNode = target.querySelector('.js-shelfmark-action');
+    return Boolean(actionNode && flow && flow.normalizeMode(actionNode.dataset.mode) === 'request');
+  }
+
   function setWorkflowState(target, workflowState) {
     if (!target) {
       return;
@@ -485,6 +493,7 @@
     var chipNode = target.querySelector('.js-shelfmark-status-chip');
     var timestampNode = target.querySelector('.js-shelfmark-status-timestamp');
     var messageNode = target.querySelector('.js-shelfmark-status-message');
+    var detailStatusNode = target.querySelector('.shelfmark-detail-status');
 
     if (!chipNode) {
       return;
@@ -498,6 +507,9 @@
       chipNode.classList.add('is-hidden');
       chipNode.textContent = '';
       chipNode.dataset.statusKey = '';
+      if (detailStatusNode) {
+        detailStatusNode.classList.add('is-hidden');
+      }
       if (timestampNode) {
         timestampNode.textContent = '';
         timestampNode.classList.add('is-hidden');
@@ -509,16 +521,21 @@
       return;
     }
 
-    chipNode.classList.remove('is-hidden');
+    var shouldHide = shouldHideAvailableWorkflowState(target, workflowState);
+
+    chipNode.classList.toggle('is-hidden', shouldHide);
     chipNode.textContent = workflowState.label;
     chipNode.dataset.statusKey = workflowState.key;
     if (workflowState.chipClass) {
       chipNode.classList.add(workflowState.chipClass);
     }
+    if (detailStatusNode) {
+      detailStatusNode.classList.toggle('is-hidden', shouldHide);
+    }
 
     if (timestampNode) {
       var formattedTimestamp = formatStatusTimestamp(workflowState.timestamp);
-      if (formattedTimestamp) {
+      if (formattedTimestamp && !shouldHide) {
         timestampNode.textContent = 'Updated ' + formattedTimestamp;
         timestampNode.classList.remove('is-hidden');
       } else {
@@ -528,7 +545,7 @@
     }
 
     if (messageNode) {
-      if (workflowState.message) {
+      if (workflowState.message && !shouldHide) {
         messageNode.textContent = workflowState.message;
         messageNode.classList.remove('is-hidden');
       } else {

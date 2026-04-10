@@ -70,10 +70,10 @@
             {% endif %}
 
             {% if result.workflow_state %}
-              <div class="shelfmark-detail-status">
+              <div class="shelfmark-detail-status{% if result.workflow_state.key == 'available' %} is-hidden{% endif %}">
                 <div class="shelfmark-detail-status__row">
                   <span
-                    class="label shelfmark-status-chip {{ result.workflow_state.chip_class }} js-shelfmark-status-chip"
+                    class="label shelfmark-status-chip {{ result.workflow_state.chip_class }} js-shelfmark-status-chip{% if result.workflow_state.key == 'available' %} is-hidden{% endif %}"
                     data-status-key="{{ result.workflow_state.key }}"
                   >
                     {{ result.workflow_state.label }}
@@ -85,6 +85,33 @@
             {% endif %}
 
             <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ result.shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
+
+            {% if result.detail_stats %}
+              <dl class="shelfmark-detail-top-stats" aria-label="{{ _('Book highlights') }}">
+                {% for stat in result.detail_stats %}
+                  <div class="shelfmark-detail-top-stats__item">
+                    <dt class="shelfmark-detail-top-stats__label">{{ stat.label }}</dt>
+                    <dd class="shelfmark-detail-top-stats__value">{{ stat.value }}</dd>
+                  </div>
+                {% endfor %}
+              </dl>
+            {% endif %}
+
+            {% if result.genres %}
+              <div class="shelfmark-detail-tags" aria-label="{{ _('Genres') }}">
+                {% for genre in result.genres %}
+                  <span class="shelfmark-detail-tags__tag">{{ genre }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+
+            {% if result.moods %}
+              <div class="shelfmark-detail-tags shelfmark-detail-tags--moods" aria-label="{{ _('Moods') }}">
+                {% for mood in result.moods %}
+                  <span class="shelfmark-detail-tags__tag shelfmark-detail-tags__tag--mood">{{ mood }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
 
             <div class="btn-toolbar shelfmark-detail-hero__actions" role="toolbar">
               {% if result.action.mode == 'view_library' and result.library_book_url %}
@@ -115,17 +142,21 @@
         <div class="shelfmark-detail-section">
           <h3 class="shelfmark-detail-section__title">{{ _("Book details") }}</h3>
           <dl class="shelfmark-detail-meta-list">
-            {% if result.series_display %}
-              <dt>{{ _("Series") }}</dt>
-              <dd>{{ result.series_display }}</dd>
-            {% endif %}
             {% if result.series_context and result.series_context.detail_value %}
               <dt>{{ _("Library series") }}</dt>
               <dd>{{ result.series_context.detail_value }}</dd>
             {% endif %}
-            {% if result.publish_year %}
-              <dt>{{ _("Published") }}</dt>
-              <dd>{{ result.publish_year }}</dd>
+            {% if result.series_count %}
+              <dt>{{ _("Series size") }}</dt>
+              <dd>{{ _('%(count)s books', count=result.series_count) }}</dd>
+            {% endif %}
+            {% if result.lists_count %}
+              <dt>{{ _("Lists") }}</dt>
+              <dd>{{ _('%(count)s lists', count=result.lists_count) }}</dd>
+            {% endif %}
+            {% if result.editions_count %}
+              <dt>{{ _("Editions") }}</dt>
+              <dd>{{ result.editions_count }}</dd>
             {% endif %}
             <dt>{{ _("Provider") }}</dt>
             <dd>{{ result.provider }}</dd>
@@ -138,13 +169,24 @@
               <dd><a href="{{ result.source_url }}" target="_blank" rel="noopener noreferrer">{{ result.source_url }}</a></dd>
             {% endif %}
             {% for field in result.display_fields %}
-              {% if field.label not in ['Rating', 'Readers'] %}
+              {% if field.label not in ['Rating', 'Readers', 'Pages', 'Editions', 'Lists', 'Moods', 'Mood', 'Content warnings', 'Content warning', 'Warnings'] %}
                 <dt>{{ field.label }}</dt>
                 <dd>{{ field.value }}</dd>
               {% endif %}
             {% endfor %}
           </dl>
         </div>
+
+        {% if result.content_warnings %}
+          <div class="shelfmark-detail-section shelfmark-detail-section--content-notes">
+            <h3 class="shelfmark-detail-section__title">{{ _("Content notes") }}</h3>
+            <div class="shelfmark-detail-tags shelfmark-detail-tags--warnings" aria-label="{{ _('Content warnings') }}">
+              {% for warning in result.content_warnings %}
+                <span class="shelfmark-detail-tags__tag shelfmark-detail-tags__tag--warning">{{ warning }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
 
         {% if result.description_html %}
           <div class="shelfmark-detail-section shelfmark-detail-section--description">

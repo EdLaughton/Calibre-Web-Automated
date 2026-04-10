@@ -149,6 +149,17 @@ def _base_context():
         "display_fields": [],
         "series_display": "Dune (1)",
         "facts": ["2024", "Dune (1)"],
+        "detail_stats": [
+            {"label": "Published", "value": "2024"},
+            {"label": "Series", "value": "Dune (1)"},
+        ],
+        "genres": ["Science Fiction"],
+        "moods": [],
+        "content_warnings": [],
+        "pages": None,
+        "editions_count": None,
+        "lists_count": None,
+        "series_count": None,
         "series_context": None,
         "workflow_state": {
             "key": "imported",
@@ -201,9 +212,29 @@ def _base_context():
         "display_fields": [
             {"label": "Rating", "value": "4.3 (5,900)", "icon": "star"},
             {"label": "Readers", "value": "9,893", "icon": "users"},
+            {"label": "Pages", "value": "304", "icon": "book"},
+            {"label": "Editions", "value": "42", "icon": "duplicate"},
+            {"label": "Lists", "value": "128", "icon": "list"},
+            {"label": "Moods", "value": "Whimsical, Adventurous", "icon": "spark"},
+            {"label": "Content warnings", "value": "Violence, Death", "icon": "warning"},
         ],
         "series_display": "The Lord of the Rings (2)",
         "facts": ["4.3 ★", "5,900 ratings", "9,893 readers", "2025", "The Lord of the Rings (2)"],
+        "detail_stats": [
+            {"label": "Rating", "value": "4.3 ★"},
+            {"label": "Ratings", "value": "5,900"},
+            {"label": "Readers", "value": "9,893"},
+            {"label": "Published", "value": "2025"},
+            {"label": "Pages", "value": "304"},
+            {"label": "Series", "value": "The Lord of the Rings (2)"},
+        ],
+        "genres": ["Fantasy", "Adventure", "Epic Fantasy"],
+        "moods": ["Whimsical", "Adventurous"],
+        "content_warnings": ["Violence", "Death"],
+        "pages": 304,
+        "editions_count": 42,
+        "lists_count": 128,
+        "series_count": 3,
         "series_context": {
             "matched": True,
             "owned_series_name": "The Lord of the Rings",
@@ -213,8 +244,8 @@ def _base_context():
             "is_continuation": True,
             "is_next_missing": True,
             "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
-            "facts": ["Next likely book in your library run", "1 book owned", "Owned through 1"],
-            "detail_value": "Next likely book in your library run · 1 book owned · Owned through 1",
+            "facts": ["1 book owned", "Owned through 1"],
+            "detail_value": "Next missing · 1 book owned · Owned through 1",
         },
         "workflow_state": {
             "key": "available",
@@ -267,6 +298,14 @@ def _base_context():
         "display_fields": [],
         "series_display": None,
         "facts": [],
+        "detail_stats": [],
+        "genres": [],
+        "moods": [],
+        "content_warnings": [],
+        "pages": None,
+        "editions_count": None,
+        "lists_count": None,
+        "series_count": None,
         "series_context": None,
         "workflow_state": None,
         "hardcover_id": None,
@@ -339,7 +378,7 @@ def _base_context():
             "total_available": 895,
             "page_result_count": 3,
             "filter_requestable": False,
-            "filter_has_cover": False,
+            "filter_has_cover": True,
             "filters_active": False,
             "open_search_url": "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&limit=12&page=1&query=Dune",
             "previous_page_url": None,
@@ -412,10 +451,12 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'class="shelfmark-section-line shelfmark-section-line--local"' in html
     assert 'class="shelfmark-section-line shelfmark-section-line--external"' in html
     assert "1 book" in html
-    assert "3 returned on this page" in html
-    assert "Showing 1-3 of 895" in html
+    assert "3 shown" in html
+    assert "895 total" in html
+    assert "3 shown on this page" in html
+    assert "895 total on Shelfmark" in html
     assert "Page 1 of 75" in html
-    assert "Jump to page" in html
+    assert "11 visible here" not in html
     assert 'name="shelfmark_page_size"' in html
     assert 'name="shelfmark_sort"' in html
     assert 'name="shelfmark_series_filter"' in html
@@ -428,8 +469,8 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "js-shelfmark-batch-toolbar" in html
     assert "Request-capable" not in html
     assert "Has cover" in html
+    assert 'name="shelfmark_filter_has_cover" value="1" checked' in html
     assert "Focus on requestable" in html
-    assert "Available to request" in html
     assert 'href="/search/stored/?query=Dune&amp;shelfmark_page=2"' in html
     assert "CWA is previewing the first Shelfmark page here." not in html
     assert "Checking your browser for direct Shelfmark request availability." not in html
@@ -470,13 +511,15 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'class="modal fade shelfmark-detail-modal"' in html
     assert "4.3 ★" in html
     assert "The Lord of the Rings (2)" in html
-    assert "Next likely book in your library run" in html
+    assert "1 book owned" in html
     assert "Owned through 1" in html
+    assert "Next likely book in your library run" not in html
     assert "No cover" in html
     candidate_chunk = html[html.index("External Candidate"):html.index("No Hardcover ID")]
     duplicate_chunk = html[html.index("Already Present"):html.index("External Candidate")]
     assert candidate_chunk.count("Open in Shelfmark") == 0
     assert duplicate_chunk.count("Open in Shelfmark") == 0
+    assert 'shelfmark-status-chip shelfmark-status-chip--available js-shelfmark-status-chip is-hidden' in candidate_chunk
 
 
 def test_search_template_renders_external_cover_image_when_available():
@@ -503,6 +546,30 @@ def test_search_template_omits_group_wrapper_chrome_for_external_results():
     assert "External Results Without Exact Hardcover ID" not in html
     assert "panel-heading shelfmark-group-panel__heading" not in html
     assert html.count('role="listitem"') == 3
+
+
+def test_search_template_uses_compact_count_wording_for_filtered_page_results():
+    app = _create_app()
+    context = _base_context()
+    context["shelfmark_section"] = {
+        **context["shelfmark_section"],
+        "page_result_count": 25,
+        "results": context["shelfmark_section"]["results"][:1],
+        "summary": {
+            **context["shelfmark_section"]["summary"],
+            "total_results": 1,
+        },
+    }
+
+    with app.test_request_context("/search?query=Dune"):
+        g.shelves_access = []
+        g.config_authors_max = 0
+        html = render_template("search.html", **context)
+
+    assert "1 shown on this page" in html
+    assert "25 returned on this page" not in html
+    assert "1 visible here" not in html
+    assert "Showing 1-25 of" not in html
 
 
 def test_search_template_limits_batch_selection_to_request_candidates():
@@ -554,6 +621,9 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert 'class="shelfmark-detail-status"' in html
     assert 'class="btn btn-default btn-sm shelfmark-detail-page__back-action"' in html
     assert 'href="https://source.example.com/999"' in html
+    assert "Published" in html
+    assert "Dune (1)" in html
+    assert "Science Fiction" in html
 
 
 def test_detail_partial_renders_modal_ready_content_without_back_link():
@@ -576,6 +646,14 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
     assert "Available to request" in html
     assert "<i>Shelfmark</i>" in html
     assert "Next missing" in html
+    assert "Fantasy" in html
+    assert "Pages" in html
+    assert "304" in html
+    assert "Whimsical" in html
+    assert "Lists" in html
+    assert "128 lists" in html
+    assert "Content notes" in html
+    assert "Violence" in html
 
 
 def test_detail_template_hides_request_ready_browser_copy_for_requestable_result():
@@ -602,6 +680,18 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "The Lord of the Rings (2)" in html
     assert "Library series" in html
     assert "Available to request" in html
+    assert 'class="shelfmark-detail-status is-hidden"' in html
+    assert "Next likely book in your library run" not in html
+    assert "1 book owned" in html
+    assert "Owned through 1" in html
+    assert "Fantasy" in html
+    assert "304" in html
+    assert "42" in html
+    assert "128 lists" in html
+    assert "Whimsical" in html
+    assert "Content notes" in html
+    assert "Violence" in html
+    assert "Death" in html
 
 
 def test_detail_template_renders_sanitized_description_html():
@@ -684,7 +774,8 @@ def test_search_template_renders_filter_toolbar_and_page_jump_state():
 
     assert 'value="rating" selected' in html
     assert 'value="24" selected' in html
-    assert html.count('checked') == 1
+    assert 'name="shelfmark_filter_has_cover" value="1" checked' in html
     assert "Show all matches" in html
     assert "Clear filters" not in html
-    assert "Jump to page" in html
+    assert "Page" in html
+    assert "of 75" in html
