@@ -111,7 +111,8 @@
       node.textContent = next.label;
     }
     if (hintNode) {
-      hintNode.textContent = next.hint;
+      hintNode.textContent = next.hint || '';
+      hintNode.classList.toggle('is-hidden', !next.hint);
     }
   }
 
@@ -299,7 +300,7 @@
       }
 
       setStatusText(
-        'Shelfmark session detected, but these results still need Open in Shelfmark because the current policy or metadata does not allow direct book-level requests here.',
+        'Open in Shelfmark is required for the visible results.',
         'alert-warning'
       );
     } catch (error) {

@@ -9,9 +9,11 @@ from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from requests import RequestException
 from flask import url_for
 from flask_babel import gettext as _
+from markupsafe import Markup
 from sqlalchemy.sql.expression import func
 
 from cps import calibre_db, config, db, logger
+from cps.clean_html import clean_string
 from cps.cw_advocate import AddrValidator
 from cps.cw_advocate import Session as SafeSession
 from cps.cw_advocate.exceptions import UnacceptableAddressException
@@ -22,6 +24,8 @@ DEFAULT_SHELFMARK_TIMEOUT_SECONDS = 15
 DEFAULT_SHELFMARK_LIMIT = 12
 DEFAULT_SHELFMARK_SORT = "relevance"
 DEFAULT_SHELFMARK_PAGE = 1
+DEFAULT_SHELFMARK_FILTER_REQUESTABLE = True
+DEFAULT_SHELFMARK_FILTER_HAS_COVER = True
 SHELFMARK_PAGE_SIZE_OPTIONS = (12, 24, 50, 100)
 SHELFMARK_SORT_OPTIONS = (
     ("relevance", "Most relevant"),
@@ -99,11 +103,18 @@ class ShelfmarkResultView:
     request_payload: dict[str, Any] | None
     library_state: ShelfmarkLibraryState
     action: ShelfmarkActionState
+    description_html: str | None = None
+    series_name: str | None = None
+    series_position: float | None = None
+    series_count: int | None = None
+    series_display: str | None = None
+    facts: tuple[str, ...] = field(default_factory=tuple)
 
     def to_template_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["authors"] = list(self.authors)
         payload["display_fields"] = list(self.display_fields)
+        payload["facts"] = list(self.facts)
         payload["library_state"] = asdict(self.library_state)
         payload["action"] = asdict(self.action)
         return payload
@@ -168,8 +179,8 @@ class ShelfmarkSearchSection:
     has_more: bool = False
     total_available: int = 0
     page_result_count: int = 0
-    filter_requestable: bool = False
-    filter_has_cover: bool = False
+    filter_requestable: bool = DEFAULT_SHELFMARK_FILTER_REQUESTABLE
+    filter_has_cover: bool = DEFAULT_SHELFMARK_FILTER_HAS_COVER
     filters_active: bool = False
     open_search_url: str | None = None
     query_label: str | None = None
@@ -491,7 +502,7 @@ def select_shelfmark_action(
         return ShelfmarkActionState(
             mode="view_library",
             label=_("Open existing CWA book"),
-            hint=_("Exact Hardcover ID already exists in your library."),
+            hint=None,
             button_class="btn-success",
             icon_class="glyphicon glyphicon-book",
         )
@@ -500,7 +511,7 @@ def select_shelfmark_action(
         return ShelfmarkActionState(
             mode="open",
             label=_("Open in Shelfmark"),
-            hint=_("This result has no exact Hardcover ID, so CWA cannot prepare a direct Shelfmark request."),
+            hint=_("Direct request needs an exact Hardcover ID."),
             button_class="btn-default",
             icon_class="glyphicon glyphicon-new-window",
         )
@@ -511,7 +522,7 @@ def select_shelfmark_action(
             mode="open",
             label=_("Open in Shelfmark"),
             hint=requirement_hint
-            or _("Shelfmark did not return enough exact metadata to prepare a direct request."),
+            or _("Direct request needs more exact metadata from Shelfmark."),
             button_class="btn-default",
             icon_class="glyphicon glyphicon-new-window",
         )
@@ -520,7 +531,7 @@ def select_shelfmark_action(
         return ShelfmarkActionState(
             mode="open",
             label=_("Open in Shelfmark"),
-            hint=_("Request availability is checked in your browser. Until Shelfmark confirms a live session and compatible policy, opening Shelfmark remains the safe fallback."),
+            hint=None,
             button_class="btn-default",
             icon_class="glyphicon glyphicon-new-window",
         )
@@ -530,7 +541,7 @@ def select_shelfmark_action(
         return ShelfmarkActionState(
             mode="open",
             label=_("Open in Shelfmark"),
-            hint=_("Shelfmark session was not found for this browser. %(suffix)s.", suffix=suffix),
+            hint=_("Shelfmark needs a live browser login here. %(suffix)s.", suffix=suffix),
             button_class="btn-default",
             icon_class="glyphicon glyphicon-new-window",
         )
@@ -539,7 +550,7 @@ def select_shelfmark_action(
         return ShelfmarkActionState(
             mode="request",
             label=_("Request in Shelfmark"),
-            hint=_("This browser already has a Shelfmark session and the current policy allows book-level requests."),
+            hint=None,
             button_class="btn-primary",
             icon_class="glyphicon glyphicon-send",
         )
@@ -547,7 +558,7 @@ def select_shelfmark_action(
     return ShelfmarkActionState(
         mode="open",
         label=_("Open in Shelfmark"),
-        hint=_("Shelfmark is signed in, but the current Shelfmark policy does not allow direct book-level requests for this result."),
+        hint=_("Open this in Shelfmark to continue under the current request policy."),
         button_class="btn-default",
         icon_class="glyphicon glyphicon-new-window",
     )
@@ -649,6 +660,11 @@ def build_shelfmark_result_view(
     title = _resolve_shelfmark_title(book) or _("Unknown title")
     authors = tuple(_resolve_shelfmark_authors(book))
     hardcover_id = _extract_hardcover_id(book)
+    publish_year = _normalize_int(book.get("publish_year"))
+    description_html = _sanitize_description_html(book.get("description"))
+    series_name = _resolve_series_name(book)
+    series_position = _resolve_series_position(book)
+    series_count = _resolve_series_count(book)
     library_book_url = (
         url_for("web.show_book", book_id=library_match.book_id)
         if library_match is not None
@@ -678,8 +694,8 @@ def build_shelfmark_result_view(
             shelfmark_browser_base_url,
             _resolve_shelfmark_cover_value(book),
         ),
-        description=_normalize_text(book.get("description")),
-        publish_year=_normalize_int(book.get("publish_year")),
+        description=_plain_text_from_html(description_html),
+        publish_year=publish_year,
         source_url=_normalize_text(book.get("source_url")),
         display_fields=_normalize_display_fields(book.get("display_fields")),
         hardcover_id=hardcover_id,
@@ -698,6 +714,12 @@ def build_shelfmark_result_view(
         request_payload=request_payload,
         library_state=library_state,
         action=action,
+        description_html=description_html,
+        series_name=series_name,
+        series_position=series_position,
+        series_count=series_count,
+        series_display=_format_series_display(series_name, series_position),
+        facts=_build_result_facts(book, publish_year=publish_year),
     )
 
 
@@ -762,14 +784,26 @@ def group_shelfmark_results(results: Sequence[ShelfmarkResultView]) -> tuple[She
     return tuple(grouped)
 
 
-def _needs_cover_enrichment(book: Mapping[str, Any]) -> bool:
+def _needs_detail_enrichment(book: Mapping[str, Any]) -> bool:
     return bool(
         _normalize_text(book.get("provider"))
         and _normalize_text(book.get("provider_id"))
     )
 
 
-def _merge_cover_details(
+def _has_usable_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, Mapping):
+        return bool(value)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return bool(value)
+    return True
+
+
+def _merge_book_details(
     search_book: Mapping[str, Any],
     detail_book: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -777,11 +811,35 @@ def _merge_cover_details(
     if not detail_book:
         return merged
 
-    for key in ("cover_url", "preview"):
-        value = _normalize_text(detail_book.get(key))
-        if value:
+    preferred_keys = (
+        "title",
+        "subtitle",
+        "authors",
+        "author",
+        "search_title",
+        "search_author",
+        "description",
+        "publish_year",
+        "source_url",
+        "display_fields",
+        "series_id",
+        "series_name",
+        "series_position",
+        "series_count",
+        "rating",
+        "ratings_count",
+        "users_count",
+        "provider_display_name",
+        "cover_url",
+        "preview",
+        "cached_image",
+        "image",
+    )
+
+    for key in preferred_keys:
+        value = detail_book.get(key)
+        if _has_usable_value(value):
             merged[key] = value
-            break
     return merged
 
 
@@ -794,7 +852,7 @@ def _enrich_books_with_detail_covers(
 
     for book in books:
         normalized_book = dict(book)
-        if not _needs_cover_enrichment(normalized_book):
+        if not _needs_detail_enrichment(normalized_book):
             enriched.append(normalized_book)
             continue
 
@@ -812,7 +870,7 @@ def _enrich_books_with_detail_covers(
                     exc,
                 )
                 detail_cache[cache_key] = None
-        enriched.append(_merge_cover_details(normalized_book, detail_cache[cache_key]))
+        enriched.append(_merge_book_details(normalized_book, detail_cache[cache_key]))
 
     return tuple(enriched)
 
@@ -842,8 +900,8 @@ def search_shelfmark_results(
     page: int = DEFAULT_SHELFMARK_PAGE,
     page_size: int = DEFAULT_SHELFMARK_LIMIT,
     sort: str = DEFAULT_SHELFMARK_SORT,
-    filter_requestable: bool = False,
-    filter_has_cover: bool = False,
+    filter_requestable: bool = DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+    filter_has_cover: bool = DEFAULT_SHELFMARK_FILTER_HAS_COVER,
     query_label: str | None = None,
     context_hint: str | None = None,
     empty_message: str | None = None,
@@ -854,7 +912,10 @@ def search_shelfmark_results(
     selected_sort = _normalize_sort(sort)
     requestable_only = bool(filter_requestable)
     has_cover_only = bool(filter_has_cover)
-    filters_active = requestable_only or has_cover_only
+    filters_active = (
+        requestable_only != DEFAULT_SHELFMARK_FILTER_REQUESTABLE
+        or has_cover_only != DEFAULT_SHELFMARK_FILTER_HAS_COVER
+    )
     sort_options = get_shelfmark_sort_options()
     config_data = get_shelfmark_client_config()
     if not config_data.enabled:
@@ -1199,6 +1260,15 @@ def _normalize_int(value: Any) -> int | None:
         return None
 
 
+def _normalize_float(value: Any) -> float | None:
+    try:
+        if value in (None, ""):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _normalize_authors(value: Any) -> list[str]:
     if isinstance(value, (str, bytes)):
         normalized = _normalize_text(value)
@@ -1231,11 +1301,88 @@ def _resolve_shelfmark_authors(book: Mapping[str, Any]) -> list[str]:
 
 
 def _resolve_shelfmark_cover_value(book: Mapping[str, Any]) -> Any:
-    for key in ("cover_url", "preview"):
+    for key in ("cover_url", "preview", "cached_image", "image"):
         value = _normalize_text(book.get(key))
         if value:
             return value
     return None
+
+
+def _sanitize_description_html(value: Any) -> str | None:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+    cleaned = clean_string(normalized)
+    cleaned = _normalize_text(cleaned)
+    return cleaned
+
+
+def _plain_text_from_html(value: Any) -> str | None:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+    plain = _normalize_text(Markup(normalized).striptags())
+    return plain
+
+
+def _normalize_series_position(value: Any) -> float | None:
+    return _normalize_float(value)
+
+
+def _format_series_position(value: float | None) -> str | None:
+    if value is None:
+        return None
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _resolve_series_name(book: Mapping[str, Any]) -> str | None:
+    return _normalize_text(book.get("series_name"))
+
+
+def _resolve_series_position(book: Mapping[str, Any]) -> float | None:
+    return _normalize_series_position(book.get("series_position"))
+
+
+def _resolve_series_count(book: Mapping[str, Any]) -> int | None:
+    return _normalize_int(book.get("series_count"))
+
+
+def _format_series_display(series_name: str | None, series_position: float | None) -> str | None:
+    if not series_name:
+        return None
+    position = _format_series_position(series_position)
+    if position:
+        return f"{series_name} ({position})"
+    return series_name
+
+
+def _build_result_facts(book: Mapping[str, Any], *, publish_year: int | None) -> tuple[str, ...]:
+    facts: list[str] = []
+
+    rating_value = _normalize_float(book.get("rating"))
+    ratings_count = _normalize_int(book.get("ratings_count"))
+    readers_count = _normalize_int(book.get("users_count"))
+    series_display = _format_series_display(
+        _resolve_series_name(book),
+        _resolve_series_position(book),
+    )
+
+    if rating_value is not None:
+        facts.append(f"{rating_value:.1f} \u2605")
+    if ratings_count:
+        label = _("rating") if ratings_count == 1 else _("ratings")
+        facts.append(f"{ratings_count:,} {label}")
+    if readers_count:
+        label = _("reader") if readers_count == 1 else _("readers")
+        facts.append(f"{readers_count:,} {label}")
+    if publish_year:
+        facts.append(str(publish_year))
+    if series_display:
+        facts.append(series_display)
+
+    return tuple(facts)
 
 
 def _normalize_shelfmark_cover_url(base_url: str, value: Any) -> str | None:

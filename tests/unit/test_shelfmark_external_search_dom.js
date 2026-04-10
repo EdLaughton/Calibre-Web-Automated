@@ -21,6 +21,23 @@ class FakeClassList {
     return this.element._classes.has(name);
   }
 
+  toggle(name, force) {
+    if (typeof force === 'boolean') {
+      if (force) {
+        this.add(name);
+        return true;
+      }
+      this.remove(name);
+      return false;
+    }
+    if (this.contains(name)) {
+      this.remove(name);
+      return false;
+    }
+    this.add(name);
+    return true;
+  }
+
   toString() {
     return Array.from(this.element._classes).join(' ');
   }
@@ -286,9 +303,9 @@ async function runScenario(options) {
   assert.match(sameOrigin.dom.action.className, /btn-success/);
   assert.equal(
     sameOrigin.dom.action.querySelector('.js-shelfmark-action-label').textContent,
-    'Requested in Shelfmark'
+    'Requested'
   );
-  assert.match(sameOrigin.dom.status.textContent, /Request created in Shelfmark/i);
+  assert.match(sameOrigin.dom.status.textContent, /Request sent to Shelfmark/i);
   assert.equal(sameOrigin.dom.status.classList.contains('is-hidden'), false);
   assert.equal(sameOrigin.dom.status.classList.contains('is-settled'), true);
   assert.equal(sameOrigin.dom.action.getAttribute('target'), '_blank');
@@ -345,7 +362,7 @@ async function runScenario(options) {
     releasePolicyFallback.dom.action.querySelector('.js-shelfmark-action-label').textContent,
     'Open in Shelfmark'
   );
-  assert.match(releasePolicyFallback.dom.status.textContent, /still need Open in Shelfmark/i);
+  assert.match(releasePolicyFallback.dom.status.textContent, /Open in Shelfmark is required/i);
 
   console.log('test_shelfmark_external_search_dom.js: ok');
 })().catch((error) => {

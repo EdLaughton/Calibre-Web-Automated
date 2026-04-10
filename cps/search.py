@@ -21,6 +21,8 @@ from .usermanagement import login_required_if_no_ano
 from .render_template import render_title_template
 from .pagination import Pagination
 from .services.shelfmark_search import (
+    DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+    DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
     ShelfmarkIntegrationError,
     build_shelfmark_advanced_query,
     fetch_shelfmark_detail,
@@ -557,8 +559,11 @@ def _requested_shelfmark_sort():
     return (request.args.get("shelfmark_sort", "relevance") or "relevance").strip().lower()
 
 
-def _requested_shelfmark_flag(name):
-    return (request.args.get(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+def _requested_shelfmark_flag(name, default=False):
+    values = request.args.getlist(name)
+    if not values:
+        return default
+    return (values[-1] or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _current_request_url_with(**updates):
@@ -576,8 +581,14 @@ def _build_shelfmark_section(query, **kwargs):
         page=_requested_shelfmark_page(),
         page_size=_requested_shelfmark_page_size(),
         sort=_requested_shelfmark_sort(),
-        filter_requestable=_requested_shelfmark_flag("shelfmark_filter_requestable"),
-        filter_has_cover=_requested_shelfmark_flag("shelfmark_filter_has_cover"),
+        filter_requestable=_requested_shelfmark_flag(
+            "shelfmark_filter_requestable",
+            default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+        ),
+        filter_has_cover=_requested_shelfmark_flag(
+            "shelfmark_filter_has_cover",
+            default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+        ),
         **kwargs,
     ).to_template_dict()
     if not section.get("enabled"):
@@ -599,6 +610,15 @@ def _build_shelfmark_section(query, **kwargs):
         shelfmark_page=1,
         shelfmark_filter_requestable=None,
         shelfmark_filter_has_cover=None,
+    )
+    section["requestable_toggle_url"] = _current_request_url_with(
+        shelfmark_page=1,
+        shelfmark_filter_requestable="0" if section.get("filter_requestable") else "1",
+    )
+    section["requestable_toggle_label"] = (
+        _("Show all matches")
+        if section.get("filter_requestable")
+        else _("Focus on requestable")
     )
     return section
 

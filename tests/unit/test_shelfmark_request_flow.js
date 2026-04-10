@@ -58,6 +58,7 @@ assert.equal(requestableOutcome.kind, 'requestable');
 assert.equal(requestableOutcome.actionState.mode, 'request');
 assert.equal(requestableOutcome.actionState.buttonClass, 'btn-primary');
 assert.equal(requestableOutcome.actionState.iconClass, 'glyphicon glyphicon-send');
+assert.equal(requestableOutcome.actionState.hint, '');
 assert.match(requestableOutcome.bannerText, /current Shelfmark user/i);
 
 const sourceReleaseOutcome = flow.resolveProbeState({
@@ -108,9 +109,10 @@ assert.equal(probeFailureOutcome.actionState.mode, 'open');
 const requestSuccess = flow.resolveRequestOutcome({ success: true });
 assert.equal(requestSuccess.kind, 'request_created');
 assert.equal(requestSuccess.actionState.mode, 'open');
-assert.equal(requestSuccess.actionState.label, 'Requested in Shelfmark');
+assert.equal(requestSuccess.actionState.label, 'Requested');
 assert.equal(requestSuccess.actionState.buttonClass, 'btn-success');
 assert.equal(requestSuccess.actionState.iconClass, 'glyphicon glyphicon-ok');
+assert.equal(requestSuccess.actionState.hint, '');
 
 const requestPolicyFailure = flow.resolveRequestOutcome({
   success: false,

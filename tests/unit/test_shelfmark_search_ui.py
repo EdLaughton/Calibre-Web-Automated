@@ -143,9 +143,12 @@ def _base_context():
         "authors": ["Author One"],
         "cover_url": "https://covers.example.com/999.jpg",
         "description": "A duplicate already present in the library.",
+        "description_html": "<p>A duplicate already present in the library.</p>",
         "publish_year": 2024,
         "source_url": "https://source.example.com/999",
         "display_fields": [],
+        "series_display": "Dune (1)",
+        "facts": ["2024", "Dune (1)"],
         "hardcover_id": "999",
         "already_in_library": True,
         "library_book_id": 7,
@@ -173,7 +176,7 @@ def _base_context():
         "action": {
             "mode": "view_library",
             "label": "Open existing CWA book",
-            "hint": "Exact Hardcover ID already exists in your library.",
+            "hint": None,
             "button_class": "btn-success",
             "icon_class": "glyphicon glyphicon-book",
         },
@@ -186,9 +189,15 @@ def _base_context():
         "authors": ["Author Two"],
         "cover_url": None,
         "description": "A result that can be requested in Shelfmark.",
+        "description_html": "<p>A result that can be requested in <i>Shelfmark</i>.</p>",
         "publish_year": 2025,
         "source_url": "https://source.example.com/222",
-        "display_fields": [],
+        "display_fields": [
+            {"label": "Rating", "value": "4.3 (5,900)", "icon": "star"},
+            {"label": "Readers", "value": "9,893", "icon": "users"},
+        ],
+        "series_display": "The Lord of the Rings (2)",
+        "facts": ["4.3 ★", "5,900 ratings", "9,893 readers", "2025", "The Lord of the Rings (2)"],
         "hardcover_id": "222",
         "already_in_library": False,
         "library_book_id": None,
@@ -216,7 +225,7 @@ def _base_context():
         "action": {
             "mode": "request",
             "label": "Request in Shelfmark",
-            "hint": "This browser already has a Shelfmark session and the current policy allows book-level requests.",
+            "hint": None,
             "button_class": "btn-primary",
             "icon_class": "glyphicon glyphicon-send",
         },
@@ -229,9 +238,12 @@ def _base_context():
         "authors": ["Author Three"],
         "cover_url": None,
         "description": "Duplicate status cannot be determined.",
+        "description_html": "<p>Duplicate status cannot be determined.</p>",
         "publish_year": None,
         "source_url": None,
         "display_fields": [],
+        "series_display": None,
+        "facts": [],
         "hardcover_id": None,
         "already_in_library": False,
         "library_book_id": None,
@@ -256,7 +268,7 @@ def _base_context():
         "action": {
             "mode": "open",
             "label": "Open in Shelfmark",
-            "hint": "This result has no exact Hardcover ID, so CWA cannot prepare a direct Shelfmark request.",
+            "hint": "Direct request needs an exact Hardcover ID.",
             "button_class": "btn-default",
             "icon_class": "glyphicon glyphicon-new-window",
         },
@@ -302,6 +314,8 @@ def _base_context():
             "previous_page_url": None,
             "next_page_url": "/search/stored/?query=Dune&shelfmark_page=2",
             "clear_filters_url": "/search/stored/?query=Dune&shelfmark_page=1",
+            "requestable_toggle_url": "/search/stored/?query=Dune&shelfmark_page=1&shelfmark_filter_requestable=1",
+            "requestable_toggle_label": "Focus on requestable",
             "query_label": "External lookup query",
             "context_hint": "Duplicate awareness remains exact hardcover-id matching only.",
             "message": None,
@@ -367,14 +381,15 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'class="shelfmark-section-line shelfmark-section-line--local"' in html
     assert 'class="shelfmark-section-line shelfmark-section-line--external"' in html
     assert "1 book" in html
-    assert "Showing 3 of 895" in html
+    assert "3 returned on this page" in html
     assert "Showing 1-3 of 895" in html
     assert "Page 1 of 75" in html
     assert "Jump to page" in html
     assert 'name="shelfmark_page_size"' in html
     assert 'name="shelfmark_sort"' in html
-    assert "Request-capable" in html
+    assert "Request-capable" not in html
     assert "Has cover" in html
+    assert "Focus on requestable" in html
     assert 'href="/search/stored/?query=Dune&amp;shelfmark_page=2"' in html
     assert "CWA is previewing the first Shelfmark page here." not in html
     assert "Checking your browser for direct Shelfmark request availability." not in html
@@ -393,22 +408,25 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'class="shelfmark-results-list"' in html
     assert "Open existing CWA book" in html
     assert 'href="/book/7"' in html
+    assert "Existing CWA book" not in html
     assert "Duplicate state unavailable" not in html
     assert "No exact hardcover-id match was found in metadata.db." not in html
     assert "Exact hardcover-id match in metadata.db." not in html
     assert "Duplicate checking is unavailable for these results because Shelfmark did not return an exact Hardcover ID." not in html
-    assert "This result has no exact Hardcover ID, so CWA cannot prepare a direct Shelfmark request." in html
+    assert "Direct request needs an exact Hardcover ID." in html
     assert 'class="btn btn-sm btn-primary shelfmark-result-card__primary-action js-shelfmark-action"' in html
     assert 'target="_blank"' in html
     assert 'rel="noopener noreferrer"' in html
     assert "js-shelfmark-action-icon" in html
     assert "js-shelfmark-action-label" in html
     assert "shelfmark-result-card__secondary-action" in html
+    assert "4.3 ★" in html
+    assert "The Lord of the Rings (2)" in html
     assert "No cover" in html
     candidate_chunk = html[html.index("External Candidate"):html.index("No Hardcover ID")]
     duplicate_chunk = html[html.index("Already Present"):html.index("External Candidate")]
     assert candidate_chunk.count("Open in Shelfmark") == 0
-    assert duplicate_chunk.count("Open in Shelfmark") == 1
+    assert duplicate_chunk.count("Open in Shelfmark") == 0
 
 
 def test_search_template_renders_external_cover_image_when_available():
@@ -457,9 +475,8 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert "Shelfmark External Result" not in html
     assert "Detailed external metadata, cover, and request actions from Shelfmark." not in html
     assert "Duplicate awareness remains metadata.db + exact Hardcover ID only." not in html
-    assert "Already in library" in html
-    assert "Exact Hardcover ID match found in metadata.db." in html
-    assert "Existing CWA book" in html
+    assert "Already in library" not in html
+    assert "Existing CWA book" not in html
     assert 'href="/book/7"' in html
     assert 'class="discover shelfmark-search-page shelfmark-detail-page"' in html
     assert 'class="shelfmark-detail-page__shell"' in html
@@ -467,9 +484,11 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert 'class="shelfmark-detail-cover-card"' in html
     assert 'class="shelfmark-detail-hero shelfmark-detail-hero--success"' in html
     assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
-    assert html.count("Open in Shelfmark") == 1
+    assert "Open in Shelfmark" not in html
+    assert "Open source page" not in html
+    assert "Book details" in html
     assert 'class="btn btn-default btn-sm shelfmark-detail-page__back-action"' in html
-    assert 'target="_blank"' in html
+    assert 'href="https://source.example.com/999"' in html
 
 
 def test_detail_template_hides_request_ready_browser_copy_for_requestable_result():
@@ -490,8 +509,29 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "This browser already has a valid Shelfmark session and the current Shelfmark policy allows a direct book-level request for this result." not in html
     assert "Duplicate awareness remains metadata.db + exact Hardcover ID only." not in html
     assert "Shelfmark External Result" not in html
-    assert "Not in your library" in html
-    assert "No exact Hardcover ID match found in metadata.db." in html
+    assert "Not in your library" not in html
+    assert "No exact Hardcover ID match found in metadata.db." not in html
+    assert "4.3 ★" in html
+    assert "The Lord of the Rings (2)" in html
+
+
+def test_detail_template_renders_sanitized_description_html():
+    app = _create_app()
+    context = _base_context()
+    result = context["shelfmark_section"]["results"][1]
+
+    with app.test_request_context("/search/external/shelfmark/hardcover/222?query=Dune"):
+        html = render_template(
+            "shelfmark_external_detail.html",
+            title=result["title"],
+            result=result,
+            search_query="Dune",
+            return_to="/search?query=Dune",
+            shelfmark_error=None,
+        )
+
+    assert "<i>Shelfmark</i>" in html
+    assert "&lt;i&gt;" not in html
 
 
 def test_search_template_renders_intentional_zero_results_state():
@@ -501,6 +541,7 @@ def test_search_template_renders_intentional_zero_results_state():
         **context["shelfmark_section"],
         "has_more": False,
         "total_available": 0,
+        "page_result_count": 0,
         "summary": {
             "total_results": 0,
             "total_available": 0,
@@ -537,10 +578,12 @@ def test_search_template_renders_filter_toolbar_and_page_jump_state():
         "selected_sort": "rating",
         "filter_requestable": True,
         "filter_has_cover": True,
-        "filters_active": True,
+        "filters_active": False,
         "page_result_count": 12,
         "results": context["shelfmark_section"]["results"][:1],
         "clear_filters_url": "/search/stored/?query=Dune&shelfmark_page=1",
+        "requestable_toggle_url": "/search/stored/?query=Dune&shelfmark_page=1&shelfmark_filter_requestable=0",
+        "requestable_toggle_label": "Show all matches",
     }
 
     with app.test_request_context(
@@ -552,6 +595,7 @@ def test_search_template_renders_filter_toolbar_and_page_jump_state():
 
     assert 'value="rating" selected' in html
     assert 'value="24" selected' in html
-    assert html.count('checked') >= 2
-    assert "Clear filters" in html
+    assert html.count('checked') == 1
+    assert "Show all matches" in html
+    assert "Clear filters" not in html
     assert "Jump to page" in html

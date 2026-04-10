@@ -52,7 +52,7 @@
     return {
       mode: 'request',
       label: 'Request in Shelfmark',
-      hint: hint,
+      hint: hint || '',
       buttonClass: 'btn-primary',
       iconClass: 'glyphicon glyphicon-send'
     };
@@ -357,7 +357,7 @@
         kind: 'requestable',
         bannerLevel: 'alert-success',
         bannerText: 'Shelfmark session detected. Request buttons are enabled where the current policy allows direct book-level requests.',
-        actionState: buildRequestState('This browser already has a valid Shelfmark session. Each result is checked against the current Shelfmark policy before request buttons are enabled.')
+        actionState: buildRequestState('')
       };
     }
 
@@ -386,7 +386,7 @@
       kind: 'requestable',
       bannerLevel: 'alert-success',
       bannerText: 'Shelfmark session detected. Direct requests will be attributed in Shelfmark as the current Shelfmark user.',
-      actionState: buildRequestState('This browser already has a valid Shelfmark session and the current Shelfmark policy allows a direct book-level request for this result.')
+      actionState: buildRequestState('')
     };
   }
 
@@ -395,10 +395,10 @@
       return {
         kind: 'request_created',
         bannerLevel: 'alert-success',
-        bannerText: 'Request created in Shelfmark as your current Shelfmark user.',
+        bannerText: 'Request sent to Shelfmark.',
         actionState: buildOpenState(
-          'The request was created in Shelfmark. Open Shelfmark to review request status.',
-          'Requested in Shelfmark',
+          '',
+          'Requested',
           'btn-success',
           'glyphicon glyphicon-ok'
         )
