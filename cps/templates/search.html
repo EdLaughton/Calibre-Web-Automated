@@ -151,7 +151,11 @@
               {{ _('Shelfmark Results') }}
             </h3>
             <p class="shelfmark-section-line__subtitle">
-              {% if shelfmark.filter_requestable %}
+              {% if shelfmark.selected_series_filter == 'next_missing' %}
+                {{ _('Likely next books in series you already own.') }}
+              {% elif shelfmark.selected_series_filter == 'owned' %}
+                {{ _('Matches from series already in your library.') }}
+              {% elif shelfmark.filter_requestable %}
                 {{ _('Request-ready matches from Shelfmark.') }}
               {% else %}
                 {{ _('Additional matches from Shelfmark.') }}
@@ -180,7 +184,7 @@
         <div class="shelfmark-external-toolbar">
           <form class="shelfmark-external-controls form-inline" method="get" action="{{ request.path }}">
             {% for key, value in request.args.items() %}
-              {% if key not in ['shelfmark_page', 'shelfmark_page_size', 'shelfmark_sort', 'shelfmark_filter_requestable', 'shelfmark_filter_has_cover'] %}
+              {% if key not in ['shelfmark_page', 'shelfmark_page_size', 'shelfmark_sort', 'shelfmark_series_filter', 'shelfmark_filter_requestable', 'shelfmark_filter_has_cover'] %}
                 <input type="hidden" name="{{ key }}" value="{{ value }}">
               {% endif %}
             {% endfor %}
@@ -191,6 +195,14 @@
               <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_sort" name="shelfmark_sort">
                 {% for option in shelfmark.sort_options %}
                   <option value="{{ option.value }}"{% if option.value == shelfmark.selected_sort %} selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group shelfmark-external-controls__group">
+              <label class="shelfmark-external-controls__label" for="shelfmark_series_filter">{{ _('Series') }}</label>
+              <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_series_filter" name="shelfmark_series_filter">
+                {% for option in shelfmark.series_filter_options %}
+                  <option value="{{ option.value }}"{% if option.value == shelfmark.selected_series_filter %} selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -225,11 +237,37 @@
       </div>
 
       {% if shelfmark.available and external_count > 0 %}
+        <div class="shelfmark-batch-toolbar js-shelfmark-batch-toolbar is-hidden" role="group" aria-label="{{ _('Batch request actions') }}" aria-hidden="true">
+          <div class="shelfmark-batch-toolbar__summary">
+            <span class="shelfmark-batch-toolbar__count js-shelfmark-batch-count">{{ _('0 selected') }}</span>
+            <span class="shelfmark-batch-toolbar__meta js-shelfmark-batch-ready">{{ _('0 ready on this page') }}</span>
+            <span class="shelfmark-batch-toolbar__message js-shelfmark-batch-message is-hidden"></span>
+          </div>
+          <div class="shelfmark-batch-toolbar__actions">
+            <button type="button" class="btn btn-link btn-sm shelfmark-batch-toolbar__link js-shelfmark-batch-select-visible" disabled>{{ _('Select visible') }}</button>
+            <button type="button" class="btn btn-link btn-sm shelfmark-batch-toolbar__link js-shelfmark-batch-clear" disabled>{{ _('Clear') }}</button>
+            <button type="button" class="btn btn-default btn-sm shelfmark-batch-toolbar__request js-shelfmark-batch-request" disabled>{{ _('Request selected') }}</button>
+          </div>
+        </div>
         <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ shelfmark.results[0].shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
         <div class="shelfmark-results-list" role="list">
           {% for result in shelfmark.results %}
-              <article class="shelfmark-result-card shelfmark-result-card--{{ result.library_state.row_class }}" role="listitem">
+              <article
+                class="shelfmark-result-card shelfmark-result-card--{{ result.library_state.row_class }}{% if result.workflow_state and not result.already_in_library %} js-shelfmark-status-target{% endif %}{% if result.request_payload and not result.already_in_library %} js-shelfmark-batch-row{% endif %}"
+                role="listitem"
+                {% if result.workflow_state and not result.already_in_library %}
+                  data-status-provider="hardcover"
+                  data-status-provider-id="{{ result.hardcover_id or '' }}"
+                  data-status-in-library="{{ 1 if result.already_in_library else 0 }}"
+                {% endif %}
+              >
                 <div class="shelfmark-result-card__media">
+                {% if result.request_payload and not result.already_in_library %}
+                  <label class="shelfmark-result-card__select shelfmark-batch-select js-shelfmark-batch-select is-hidden">
+                    <input type="checkbox" class="js-shelfmark-batch-toggle" disabled aria-label="{{ _('Select %(title)s for batch request', title=result.title) }}">
+                    <span class="sr-only">{{ _('Select %(title)s for batch request', title=result.title) }}</span>
+                  </label>
+                {% endif %}
                 <div class="shelfmark-result-card__cover">
                   {% if result.cover_url %}
                     <img src="{{ result.cover_url }}" alt="{{ result.title }}" loading="lazy" class="shelfmark-result-card__cover-image">
@@ -255,6 +293,19 @@
                   {% endif %}
                     </div>
                     <div class="shelfmark-result-card__badges">
+                    {% if result.workflow_state and not result.already_in_library %}
+                      <span
+                        class="label shelfmark-status-chip {{ result.workflow_state.chip_class }} js-shelfmark-status-chip"
+                        data-status-key="{{ result.workflow_state.key }}"
+                      >
+                        {{ result.workflow_state.label }}
+                      </span>
+                    {% endif %}
+                    {% if result.series_context and result.series_context.badges %}
+                      {% for badge in result.series_context.badges %}
+                        <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
+                      {% endfor %}
+                    {% endif %}
                     {% if result.library_state.label and result.library_state.badge_class %}
                       <span class="label {{ result.library_state.badge_class }}">
                         <span class="{{ result.library_state.icon_class }}" aria-hidden="true"></span>
@@ -273,6 +324,13 @@
                     <p class="shelfmark-result-card__facts" aria-label="{{ _('Shelfmark facts') }}">
                       {% for fact in result.facts %}
                         <span class="shelfmark-result-card__fact">{{ fact }}</span>
+                      {% endfor %}
+                    </p>
+                  {% endif %}
+                  {% if result.series_context and result.series_context.facts %}
+                    <p class="shelfmark-result-card__series-context" aria-label="{{ _('Library series context') }}">
+                      {% for fact in result.series_context.facts %}
+                        <span class="shelfmark-result-card__series-context-fact">{{ fact }}</span>
                       {% endfor %}
                     </p>
                   {% endif %}
@@ -373,7 +431,17 @@
             <span class="glyphicon glyphicon-filter" aria-hidden="true"></span>
           </div>
           <div class="shelfmark-empty-state__body">
-            <h4 class="shelfmark-empty-state__title">{{ _('No request-ready matches are visible on this page') }}</h4>
+            <h4 class="shelfmark-empty-state__title">
+              {% if shelfmark.selected_series_filter == 'next_missing' %}
+                {{ _('No next-missing owned-series matches are visible on this page') }}
+              {% elif shelfmark.selected_series_filter == 'owned' %}
+                {{ _('No owned-series matches are visible on this page') }}
+              {% elif shelfmark.filter_requestable %}
+                {{ _('No request-ready matches are visible on this page') }}
+              {% else %}
+                {{ _('No matching Shelfmark results are visible on this page') }}
+              {% endif %}
+            </h4>
             <p class="shelfmark-empty-state__message">
               {{ _('Shelfmark returned results for this page, but the current page filters hid them.') }}
             </p>

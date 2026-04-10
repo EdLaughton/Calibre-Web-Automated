@@ -5,14 +5,25 @@
   var DEFAULT_TIMEOUT_MS = 10000;
   var DETAIL_VIEW_PARAM = 'view';
   var DETAIL_VIEW_VALUE = 'modal';
+  var ACTIVITY_SNAPSHOT_TTL_MS = 30000;
   var STATUS_SETTLE_DELAY_MS = typeof window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS === 'number'
     ? window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS
     : 2600;
+  var STATUS_CHIP_CLASSES = [
+    'shelfmark-status-chip--available',
+    'shelfmark-status-chip--requested',
+    'shelfmark-status-chip--queue',
+    'shelfmark-status-chip--downloaded',
+    'shelfmark-status-chip--imported',
+    'shelfmark-status-chip--failed'
+  ];
   var statusTimers = new WeakMap();
   var boundActionNodes = new WeakSet();
   var boundDetailLinks = new WeakSet();
+  var boundBatchToolbars = new WeakSet();
   var activeDetailLink = null;
   var activeDetailRequest = null;
+  var activitySnapshotCache = new Map();
 
   function toArray(value) {
     return Array.prototype.slice.call(value || []);
@@ -31,6 +42,10 @@
 
   function stripTrailingSlash(value) {
     return (value || '').replace(/\/+$/, '');
+  }
+
+  function toOptionalText(value) {
+    return typeof value === 'string' && value.trim() ? value.trim() : '';
   }
 
   function isPlainLeftClick(event) {
@@ -234,6 +249,366 @@
     });
   }
 
+  function getActivitySnapshotCacheKey(baseUrl) {
+    return stripTrailingSlash(baseUrl || '');
+  }
+
+  function buildRequestPayloadMatchKey(requestPayload) {
+    var bookData = requestPayload && requestPayload.book_data ? requestPayload.book_data : {};
+    return buildStatusMatchKey(bookData.provider || 'hardcover', bookData.provider_id);
+  }
+
+  function invalidateActivitySnapshot(baseUrl) {
+    var cacheKey = getActivitySnapshotCacheKey(baseUrl);
+    if (!cacheKey) {
+      return;
+    }
+    activitySnapshotCache.delete(cacheKey);
+  }
+
+  function fetchActivitySnapshot(baseUrl) {
+    var cacheKey = getActivitySnapshotCacheKey(baseUrl);
+    var now = Date.now();
+    var cached = activitySnapshotCache.get(cacheKey);
+
+    if (cached && cached.data && now - cached.fetchedAt < ACTIVITY_SNAPSHOT_TTL_MS) {
+      return Promise.resolve(cached.data);
+    }
+    if (cached && cached.promise) {
+      return cached.promise;
+    }
+
+    var promise = fetchJson(cacheKey + '/api/activity/snapshot', {}, DEFAULT_TIMEOUT_MS)
+      .then(function (payload) {
+        var data = payload && typeof payload === 'object' ? payload : {};
+        activitySnapshotCache.set(cacheKey, {
+          fetchedAt: Date.now(),
+          data: data,
+          promise: null
+        });
+        return data;
+      })
+      .catch(function (error) {
+        activitySnapshotCache.delete(cacheKey);
+        throw error;
+      });
+
+    activitySnapshotCache.set(cacheKey, {
+      fetchedAt: cached && cached.fetchedAt ? cached.fetchedAt : 0,
+      data: cached && cached.data ? cached.data : null,
+      promise: promise
+    });
+
+    return promise;
+  }
+
+  function getStatusTargetNodes(scope) {
+    return toArray((scope || document).querySelectorAll('.js-shelfmark-status-target'));
+  }
+
+  function buildStatusMatchKey(provider, providerId) {
+    var normalizedProvider = toOptionalText(provider).toLowerCase();
+    var normalizedProviderId = toOptionalText(providerId);
+    if (!normalizedProvider || !normalizedProviderId) {
+      return '';
+    }
+    return normalizedProvider + ':' + normalizedProviderId;
+  }
+
+  function getTargetMatchKey(target) {
+    if (!target || !target.dataset) {
+      return '';
+    }
+    return buildStatusMatchKey(target.dataset.statusProvider, target.dataset.statusProviderId);
+  }
+
+  function parseStatusRecordBookData(record) {
+    if (!record || typeof record !== 'object' || !record.book_data || typeof record.book_data !== 'object') {
+      return {};
+    }
+    return record.book_data;
+  }
+
+  function buildRequestStatusIndex(requests) {
+    var index = new Map();
+    (Array.isArray(requests) ? requests : []).forEach(function (record) {
+      var bookData = parseStatusRecordBookData(record);
+      var matchKey = buildStatusMatchKey(bookData.provider || 'hardcover', bookData.provider_id);
+      if (!matchKey || index.has(matchKey)) {
+        return;
+      }
+      index.set(matchKey, record);
+    });
+    return index;
+  }
+
+  function selectStatusTimestamp(record) {
+    return toOptionalText(
+      record && (
+        record.delivery_updated_at
+        || record.reviewed_at
+        || record.updated_at
+        || record.created_at
+      )
+    );
+  }
+
+  function formatStatusTimestamp(value) {
+    var rawValue = toOptionalText(value);
+    if (!rawValue) {
+      return '';
+    }
+    var parsed = Date.parse(rawValue);
+    if (!Number.isFinite(parsed)) {
+      return rawValue;
+    }
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      }).format(new Date(parsed));
+    } catch (err) {
+      return new Date(parsed).toLocaleString();
+    }
+  }
+
+  function buildWorkflowState(config) {
+    return {
+      key: config.key,
+      label: config.label,
+      chipClass: config.chipClass,
+      timestamp: config.timestamp || '',
+      message: config.message || ''
+    };
+  }
+
+  function mapRequestRecordToWorkflowState(record) {
+    if (!record || typeof record !== 'object') {
+      return null;
+    }
+
+    var requestStatus = toOptionalText(record.status).toLowerCase();
+    var deliveryState = toOptionalText(record.delivery_state).toLowerCase();
+    var timestamp = selectStatusTimestamp(record);
+    var failureReason = toOptionalText(record.last_failure_reason) || toOptionalText(record.admin_note);
+
+    if (requestStatus === 'cancelled') {
+      return null;
+    }
+
+    if (requestStatus === 'rejected') {
+      return buildWorkflowState({
+        key: 'failed',
+        label: 'Failed',
+        chipClass: 'shelfmark-status-chip--failed',
+        timestamp: timestamp,
+        message: failureReason || 'Request was rejected in Shelfmark.'
+      });
+    }
+
+    if (requestStatus === 'pending') {
+      if (failureReason) {
+        return buildWorkflowState({
+          key: 'failed',
+          label: 'Failed',
+          chipClass: 'shelfmark-status-chip--failed',
+          timestamp: timestamp,
+          message: failureReason
+        });
+      }
+      return buildWorkflowState({
+        key: 'requested',
+        label: 'Requested',
+        chipClass: 'shelfmark-status-chip--requested',
+        timestamp: timestamp
+      });
+    }
+
+    if (requestStatus === 'fulfilled') {
+      if (deliveryState === 'complete') {
+        return buildWorkflowState({
+          key: 'downloaded',
+          label: 'Downloaded',
+          chipClass: 'shelfmark-status-chip--downloaded',
+          timestamp: timestamp
+        });
+      }
+      if (deliveryState === 'error' || deliveryState === 'cancelled') {
+        return buildWorkflowState({
+          key: 'failed',
+          label: 'Failed',
+          chipClass: 'shelfmark-status-chip--failed',
+          timestamp: timestamp,
+          message: failureReason || 'Delivery failed in Shelfmark.'
+        });
+      }
+      if (deliveryState === 'queued' || deliveryState === 'resolving' || deliveryState === 'locating' || deliveryState === 'downloading') {
+        return buildWorkflowState({
+          key: 'queue',
+          label: 'In queue',
+          chipClass: 'shelfmark-status-chip--queue',
+          timestamp: timestamp
+        });
+      }
+      return buildWorkflowState({
+        key: 'requested',
+        label: 'Requested',
+        chipClass: 'shelfmark-status-chip--requested',
+        timestamp: timestamp
+      });
+    }
+
+    return null;
+  }
+
+  function buildAvailableWorkflowState() {
+    return buildWorkflowState({
+      key: 'available',
+      label: 'Available to request',
+      chipClass: 'shelfmark-status-chip--available'
+    });
+  }
+
+  function buildImportedWorkflowState() {
+    return buildWorkflowState({
+      key: 'imported',
+      label: 'In library',
+      chipClass: 'shelfmark-status-chip--imported'
+    });
+  }
+
+  function setWorkflowState(target, workflowState) {
+    if (!target) {
+      return;
+    }
+
+    var chipNode = target.querySelector('.js-shelfmark-status-chip');
+    var timestampNode = target.querySelector('.js-shelfmark-status-timestamp');
+    var messageNode = target.querySelector('.js-shelfmark-status-message');
+
+    if (!chipNode) {
+      return;
+    }
+
+    STATUS_CHIP_CLASSES.forEach(function (className) {
+      chipNode.classList.remove(className);
+    });
+
+    if (!workflowState) {
+      chipNode.classList.add('is-hidden');
+      chipNode.textContent = '';
+      chipNode.dataset.statusKey = '';
+      if (timestampNode) {
+        timestampNode.textContent = '';
+        timestampNode.classList.add('is-hidden');
+      }
+      if (messageNode) {
+        messageNode.textContent = '';
+        messageNode.classList.add('is-hidden');
+      }
+      return;
+    }
+
+    chipNode.classList.remove('is-hidden');
+    chipNode.textContent = workflowState.label;
+    chipNode.dataset.statusKey = workflowState.key;
+    if (workflowState.chipClass) {
+      chipNode.classList.add(workflowState.chipClass);
+    }
+
+    if (timestampNode) {
+      var formattedTimestamp = formatStatusTimestamp(workflowState.timestamp);
+      if (formattedTimestamp) {
+        timestampNode.textContent = 'Updated ' + formattedTimestamp;
+        timestampNode.classList.remove('is-hidden');
+      } else {
+        timestampNode.textContent = '';
+        timestampNode.classList.add('is-hidden');
+      }
+    }
+
+    if (messageNode) {
+      if (workflowState.message) {
+        messageNode.textContent = workflowState.message;
+        messageNode.classList.remove('is-hidden');
+      } else {
+        messageNode.textContent = '';
+        messageNode.classList.add('is-hidden');
+      }
+    }
+  }
+
+  function getWorkflowStatusKey(target) {
+    if (!target) {
+      return '';
+    }
+    var chipNode = target.querySelector('.js-shelfmark-status-chip');
+    if (!chipNode || !chipNode.dataset) {
+      return '';
+    }
+    return toOptionalText(chipNode.dataset.statusKey).toLowerCase();
+  }
+
+  function resolveWorkflowStateForTarget(target, requestIndex) {
+    if (!target || !target.dataset) {
+      return null;
+    }
+
+    if (target.dataset.statusInLibrary === '1') {
+      return buildImportedWorkflowState();
+    }
+
+    var matchKey = getTargetMatchKey(target);
+    if (!matchKey) {
+      return null;
+    }
+
+    var matchedRequest = requestIndex ? requestIndex.get(matchKey) : null;
+    var mappedState = mapRequestRecordToWorkflowState(matchedRequest);
+    if (mappedState) {
+      return mappedState;
+    }
+
+    var actionNode = target.querySelector('.js-shelfmark-action');
+    if (actionNode && flow && flow.normalizeMode(actionNode.dataset.mode) === 'request') {
+      return buildAvailableWorkflowState();
+    }
+
+    return null;
+  }
+
+  function updateStatusTargets(scope, requestIndex) {
+    getStatusTargetNodes(scope).forEach(function (target) {
+      setWorkflowState(target, resolveWorkflowStateForTarget(target, requestIndex));
+    });
+    syncBatchUi(document);
+  }
+
+  function findRelatedStatusTargets(baseScope, requestPayload) {
+    var scope = baseScope || document;
+    var bookData = requestPayload && requestPayload.book_data ? requestPayload.book_data : {};
+    var matchKey = buildStatusMatchKey(bookData.provider || 'hardcover', bookData.provider_id);
+    if (!matchKey) {
+      return [];
+    }
+    return getStatusTargetNodes(scope).filter(function (target) {
+      return getTargetMatchKey(target) === matchKey;
+    });
+  }
+
+  function applyImmediateRequestedState(scope, requestPayload) {
+    var state = buildWorkflowState({
+      key: 'requested',
+      label: 'Requested',
+      chipClass: 'shelfmark-status-chip--requested',
+      timestamp: new Date().toISOString()
+    });
+    findRelatedStatusTargets(scope, requestPayload).forEach(function (target) {
+      setWorkflowState(target, state);
+    });
+    syncBatchUi(document);
+  }
+
   function applyActionState(actions, nextState) {
     actions.forEach(function (node) {
       if (!parseJson(node.dataset.requestPayload)) {
@@ -280,6 +655,320 @@
   function applyProbeOutcome(actions, outcome, statusNodes) {
     applyActionState(actions, outcome.actionState);
     setStatusText(statusNodes, outcome.bannerText, outcome.bannerLevel);
+    syncBatchUi(document);
+  }
+
+  function getBatchToolbars(scope) {
+    return toArray((scope || document).querySelectorAll('.js-shelfmark-batch-toolbar'));
+  }
+
+  function getBatchRows(scope) {
+    return toArray((scope || document).querySelectorAll('.js-shelfmark-batch-row'));
+  }
+
+  function getBatchToggleNode(row) {
+    return row ? row.querySelector('.js-shelfmark-batch-toggle') : null;
+  }
+
+  function getBatchSelectNode(row) {
+    return row ? row.querySelector('.js-shelfmark-batch-select') : null;
+  }
+
+  function getBatchActionNode(row) {
+    return row ? row.querySelector('.js-shelfmark-action') : null;
+  }
+
+  function getSelectedBatchRows(scope) {
+    return getBatchRows(scope).filter(function (row) {
+      var toggle = getBatchToggleNode(row);
+      return Boolean(toggle && toggle.checked && !toggle.disabled);
+    });
+  }
+
+  function formatBatchSelectedCount(count) {
+    return count === 1 ? '1 selected' : count + ' selected';
+  }
+
+  function formatBatchReadyCount(count) {
+    return count === 1 ? '1 ready on this page' : count + ' ready on this page';
+  }
+
+  function clearBatchMessage(toolbar) {
+    if (!toolbar) {
+      return;
+    }
+    var messageNode = toolbar.querySelector('.js-shelfmark-batch-message');
+    if (!messageNode) {
+      return;
+    }
+    messageNode.textContent = '';
+    messageNode.classList.add('is-hidden');
+    messageNode.classList.remove(
+      'shelfmark-batch-toolbar__message--success',
+      'shelfmark-batch-toolbar__message--warning',
+      'shelfmark-batch-toolbar__message--danger'
+    );
+  }
+
+  function setBatchMessage(toolbar, text, tone) {
+    if (!toolbar) {
+      return;
+    }
+    var messageNode = toolbar.querySelector('.js-shelfmark-batch-message');
+    if (!messageNode) {
+      return;
+    }
+    clearBatchMessage(toolbar);
+    if (!text) {
+      return;
+    }
+    messageNode.textContent = text;
+    messageNode.classList.remove('is-hidden');
+    if (tone === 'success') {
+      messageNode.classList.add('shelfmark-batch-toolbar__message--success');
+    } else if (tone === 'warning') {
+      messageNode.classList.add('shelfmark-batch-toolbar__message--warning');
+    } else if (tone === 'danger') {
+      messageNode.classList.add('shelfmark-batch-toolbar__message--danger');
+    }
+  }
+
+  function isBatchEligibleRow(row) {
+    if (!row) {
+      return false;
+    }
+    var actionNode = getBatchActionNode(row);
+    if (!actionNode || !parseJson(actionNode.dataset.requestPayload)) {
+      return false;
+    }
+    if (!flow || flow.normalizeMode(actionNode.dataset.mode) !== 'request') {
+      return false;
+    }
+    return getWorkflowStatusKey(row) === 'available';
+  }
+
+  function syncBatchUi(scope) {
+    var toolbar = getBatchToolbars(scope)[0];
+    var batchRows = getBatchRows(scope);
+    if (!toolbar) {
+      return;
+    }
+
+    var eligibleCount = 0;
+    var selectedCount = 0;
+
+    batchRows.forEach(function (row) {
+      var toggleNode = getBatchToggleNode(row);
+      var selectNode = getBatchSelectNode(row);
+      if (!toggleNode || !selectNode) {
+        return;
+      }
+
+      var isEligible = isBatchEligibleRow(row);
+      if (!isEligible) {
+        toggleNode.checked = false;
+      }
+
+      toggleNode.disabled = !isEligible;
+      selectNode.classList.toggle('is-hidden', !isEligible);
+      row.classList.toggle('is-batch-eligible', isEligible);
+      row.classList.toggle('is-batch-selected', isEligible && Boolean(toggleNode.checked));
+
+      if (isEligible) {
+        eligibleCount += 1;
+      }
+      if (isEligible && toggleNode.checked) {
+        selectedCount += 1;
+      }
+    });
+
+    var countNode = toolbar.querySelector('.js-shelfmark-batch-count');
+    var readyNode = toolbar.querySelector('.js-shelfmark-batch-ready');
+    var selectVisibleNode = toolbar.querySelector('.js-shelfmark-batch-select-visible');
+    var clearNode = toolbar.querySelector('.js-shelfmark-batch-clear');
+    var requestNode = toolbar.querySelector('.js-shelfmark-batch-request');
+    var hasMessage = Boolean(
+      toolbar.querySelector('.js-shelfmark-batch-message')
+      && !toolbar.querySelector('.js-shelfmark-batch-message').classList.contains('is-hidden')
+    );
+    var isPending = toolbar.dataset.pending === '1';
+
+    if (countNode) {
+      countNode.textContent = formatBatchSelectedCount(selectedCount);
+    }
+    if (readyNode) {
+      readyNode.textContent = formatBatchReadyCount(eligibleCount);
+    }
+    if (selectVisibleNode) {
+      selectVisibleNode.disabled = eligibleCount < 1 || isPending;
+    }
+    if (clearNode) {
+      clearNode.disabled = selectedCount < 1 || isPending;
+    }
+    if (requestNode) {
+      requestNode.disabled = selectedCount < 1 || isPending;
+    }
+
+    var shouldShowToolbar = batchRows.length > 0 && (eligibleCount > 0 || selectedCount > 0 || hasMessage);
+    toolbar.classList.toggle('is-hidden', !shouldShowToolbar);
+    toolbar.setAttribute('aria-hidden', shouldShowToolbar ? 'false' : 'true');
+  }
+
+  function setBatchPending(toolbar, isPending) {
+    if (!toolbar) {
+      return;
+    }
+    toolbar.dataset.pending = isPending ? '1' : '0';
+    var requestNode = toolbar.querySelector('.js-shelfmark-batch-request');
+    if (!requestNode) {
+      return;
+    }
+    if (!requestNode.dataset.defaultLabel) {
+      requestNode.dataset.defaultLabel = requestNode.textContent;
+    }
+    requestNode.textContent = isPending ? 'Requesting…' : requestNode.dataset.defaultLabel;
+  }
+
+  async function refreshWorkflowStatus(scope, baseUrl) {
+    if (!baseUrl || !flow || !flow.isDirectRequestViable(baseUrl, window.location.origin)) {
+      return;
+    }
+    try {
+      var snapshot = await fetchActivitySnapshot(baseUrl);
+      updateStatusTargets(scope, buildRequestStatusIndex(snapshot && snapshot.requests));
+    } catch (error) {
+      // Leave the current optimistic state in place when refresh is unavailable.
+    }
+  }
+
+  async function submitRequest(node, payload, openUrl, statusNodes, options) {
+    var settings = options || {};
+    var showStatusBanner = !settings.silentStatus;
+
+    setPending(node, true);
+    if (showStatusBanner) {
+      setStatusText(statusNodes, 'Creating request in Shelfmark…', 'alert-info', { persist: true });
+    }
+
+    try {
+      await fetchJson(stripTrailingSlash(node.dataset.baseUrl) + '/api/requests', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }, DEFAULT_TIMEOUT_MS);
+
+      var successOutcome = flow.resolveRequestOutcome({ success: true });
+      updateActionNode(node, successOutcome.actionState);
+      node.setAttribute('href', openUrl);
+      if (showStatusBanner) {
+        setStatusText(statusNodes, successOutcome.bannerText, successOutcome.bannerLevel);
+      }
+      invalidateActivitySnapshot(node.dataset.baseUrl);
+      applyImmediateRequestedState(document, payload);
+      return {
+        success: true,
+        outcome: successOutcome
+      };
+    } catch (error) {
+      var failureOutcome = flow.resolveRequestOutcome({ success: false, error: error });
+      updateActionNode(node, failureOutcome.actionState);
+      node.setAttribute('href', openUrl);
+      if (showStatusBanner) {
+        setStatusText(statusNodes, failureOutcome.bannerText, failureOutcome.bannerLevel);
+      }
+      return {
+        success: false,
+        error: error,
+        outcome: failureOutcome
+      };
+    } finally {
+      setPending(node, false);
+      syncBatchUi(document);
+    }
+  }
+
+  async function requestSelectedRows(toolbar) {
+    var selectedRows = getSelectedBatchRows(document);
+    if (!selectedRows.length || !flow) {
+      syncBatchUi(document);
+      return;
+    }
+
+    clearBatchMessage(toolbar);
+    setBatchPending(toolbar, true);
+    syncBatchUi(document);
+
+    var requestItems = [];
+    var seenKeys = new Set();
+    var baseUrl = '';
+
+    selectedRows.forEach(function (row) {
+      var actionNode = getBatchActionNode(row);
+      var payload = actionNode ? parseJson(actionNode.dataset.requestPayload) : null;
+      if (!actionNode || !payload) {
+        return;
+      }
+      var matchKey = buildRequestPayloadMatchKey(payload);
+      if (matchKey && seenKeys.has(matchKey)) {
+        return;
+      }
+      if (matchKey) {
+        seenKeys.add(matchKey);
+      }
+      if (!baseUrl) {
+        baseUrl = actionNode.dataset.baseUrl || '';
+      }
+      requestItems.push({
+        actionNode: actionNode,
+        payload: payload,
+        openUrl: actionNode.dataset.openUrl || actionNode.getAttribute('href') || ''
+      });
+    });
+
+    var successCount = 0;
+    var failureCount = 0;
+
+    for (var index = 0; index < requestItems.length; index += 1) {
+      var item = requestItems[index];
+      var response = await submitRequest(item.actionNode, item.payload, item.openUrl, [], {
+        silentStatus: true
+      });
+      if (response.success) {
+        successCount += 1;
+      } else {
+        failureCount += 1;
+      }
+    }
+
+    getBatchRows(document).forEach(function (row) {
+      var toggleNode = getBatchToggleNode(row);
+      if (toggleNode) {
+        toggleNode.checked = false;
+      }
+    });
+
+    if (successCount > 0 && baseUrl) {
+      await refreshWorkflowStatus(document, baseUrl);
+    }
+
+    setBatchPending(toolbar, false);
+
+    if (successCount > 0 && failureCount === 0) {
+      setBatchMessage(
+        toolbar,
+        successCount === 1 ? 'Requested 1 book.' : 'Requested ' + successCount + ' books.',
+        'success'
+      );
+    } else if (successCount > 0 && failureCount > 0) {
+      setBatchMessage(
+        toolbar,
+        'Requested ' + successCount + ' of ' + (successCount + failureCount) + '. Some rows still need attention.',
+        'warning'
+      );
+    } else {
+      setBatchMessage(toolbar, 'No Shelfmark requests were created.', 'danger');
+    }
+
+    syncBatchUi(document);
   }
 
   async function attachProbe(actions, baseUrl, statusNodes) {
@@ -328,6 +1017,7 @@
 
       if (perActionSummary.requestableCount > 0) {
         setStatusText(statusNodes, '');
+        syncBatchUi(document);
         return;
       }
 
@@ -336,6 +1026,7 @@
         'Open in Shelfmark is required for the visible results.',
         'alert-warning'
       );
+      syncBatchUi(document);
     } catch (error) {
       probeOutcome = flow.resolveProbeState({
         baseUrl: baseUrl,
@@ -343,6 +1034,27 @@
         error: error
       });
       applyProbeOutcome(actions, probeOutcome, statusNodes);
+    }
+  }
+
+  async function attachWorkflowStatus(scope, baseUrl, probePromise) {
+    var targets = getStatusTargetNodes(scope);
+    if (!targets.length || !flow || !flow.isDirectRequestViable(baseUrl, window.location.origin)) {
+      return;
+    }
+
+    try {
+      var snapshot = await fetchActivitySnapshot(baseUrl);
+      if (probePromise && typeof probePromise.then === 'function') {
+        try {
+          await probePromise;
+        } catch (err) {
+          // Keep the last known/default status if probe fails.
+        }
+      }
+      updateStatusTargets(scope, buildRequestStatusIndex(snapshot && snapshot.requests));
+    } catch (error) {
+      // Leave the default server-rendered state in place when status enrichment is unavailable.
     }
   }
 
@@ -358,27 +1070,8 @@
       }
 
       event.preventDefault();
-      setPending(node, true);
-      setStatusText(statusNodes, 'Creating request in Shelfmark…', 'alert-info', { persist: true });
-
-      try {
-        await fetchJson(stripTrailingSlash(node.dataset.baseUrl) + '/api/requests', {
-          method: 'POST',
-          body: JSON.stringify(payload)
-        }, DEFAULT_TIMEOUT_MS);
-
-        var successOutcome = flow.resolveRequestOutcome({ success: true });
-        updateActionNode(node, successOutcome.actionState);
-        node.setAttribute('href', openUrl);
-        setStatusText(statusNodes, successOutcome.bannerText, successOutcome.bannerLevel);
-      } catch (error) {
-        var failureOutcome = flow.resolveRequestOutcome({ success: false, error: error });
-        updateActionNode(node, failureOutcome.actionState);
-        node.setAttribute('href', openUrl);
-        setStatusText(statusNodes, failureOutcome.bannerText, failureOutcome.bannerLevel);
-      } finally {
-        setPending(node, false);
-      }
+      clearBatchMessage(getBatchToolbars(document)[0] || null);
+      await submitRequest(node, payload, openUrl, statusNodes, {});
     });
   }
 
@@ -481,7 +1174,8 @@
       }
     });
 
-    attachProbe(actions, baseUrl, statusNodes);
+    var probePromise = attachProbe(actions, baseUrl, statusNodes);
+    attachWorkflowStatus(scope, baseUrl, probePromise);
   }
 
   function initDetailModal(root) {
@@ -561,9 +1255,73 @@
     });
   }
 
+  function initBatchToolbar(root) {
+    var scope = root || document;
+    var toolbar = getBatchToolbars(scope)[0];
+    if (!toolbar || boundBatchToolbars.has(toolbar)) {
+      syncBatchUi(document);
+      return;
+    }
+    boundBatchToolbars.add(toolbar);
+
+    var selectVisibleNode = toolbar.querySelector('.js-shelfmark-batch-select-visible');
+    var clearNode = toolbar.querySelector('.js-shelfmark-batch-clear');
+    var requestNode = toolbar.querySelector('.js-shelfmark-batch-request');
+
+    getBatchRows(document).forEach(function (row) {
+      var toggleNode = getBatchToggleNode(row);
+      if (!toggleNode || toggleNode.dataset.batchBound === '1') {
+        return;
+      }
+      toggleNode.dataset.batchBound = '1';
+      toggleNode.addEventListener('change', function () {
+        clearBatchMessage(toolbar);
+        syncBatchUi(document);
+      });
+    });
+
+    if (selectVisibleNode) {
+      selectVisibleNode.addEventListener('click', function () {
+        clearBatchMessage(toolbar);
+        getBatchRows(document).forEach(function (row) {
+          var toggleNode = getBatchToggleNode(row);
+          if (toggleNode && !toggleNode.disabled) {
+            toggleNode.checked = true;
+          }
+        });
+        syncBatchUi(document);
+      });
+    }
+
+    if (clearNode) {
+      clearNode.addEventListener('click', function () {
+        clearBatchMessage(toolbar);
+        getBatchRows(document).forEach(function (row) {
+          var toggleNode = getBatchToggleNode(row);
+          if (toggleNode) {
+            toggleNode.checked = false;
+          }
+        });
+        syncBatchUi(document);
+      });
+    }
+
+    if (requestNode) {
+      requestNode.addEventListener('click', function () {
+        if (requestNode.disabled || toolbar.dataset.pending === '1') {
+          return;
+        }
+        requestSelectedRows(toolbar);
+      });
+    }
+
+    syncBatchUi(document);
+  }
+
   function init(root) {
     initActions(root);
     initDetailModal(root);
+    initBatchToolbar(root);
   }
 
   window.CwaShelfmarkExternalSearch = {

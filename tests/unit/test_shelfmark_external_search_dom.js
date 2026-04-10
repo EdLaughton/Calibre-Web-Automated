@@ -55,6 +55,8 @@ class FakeElement {
     this.classList = new FakeClassList(this);
     this._textContent = config.textContent || '';
     this.listeners = {};
+    this.checked = Boolean(config.checked);
+    this.disabled = Boolean(config.disabled);
 
     if (config.attributes) {
       Object.entries(config.attributes).forEach(([key, value]) => {
@@ -150,6 +152,10 @@ class FakeDocument {
     this.listeners = {};
   }
 
+  querySelector(selector) {
+    return this.root.querySelector(selector);
+  }
+
   querySelectorAll(selector) {
     return this.root.querySelectorAll(selector);
   }
@@ -160,7 +166,34 @@ class FakeDocument {
 }
 
 function createResultNode(options) {
-  const wrapper = new FakeElement('div', { className: 'shelfmark-result-card' });
+  const wrapper = new FakeElement('div', {
+    className: `shelfmark-result-card${options.statusTarget ? ' js-shelfmark-status-target' : ''}${options.batchToggle ? ' js-shelfmark-batch-row' : ''}`,
+    dataset: options.statusTarget ? {
+      statusProvider: options.statusProvider || 'hardcover',
+      statusProviderId: options.statusProviderId || '',
+      statusInLibrary: options.statusInLibrary ? '1' : '0'
+    } : {}
+  });
+  if (options.batchToggle) {
+    const select = wrapper.appendChild(new FakeElement('label', {
+      className: 'shelfmark-result-card__select shelfmark-batch-select js-shelfmark-batch-select is-hidden'
+    }));
+    select.appendChild(new FakeElement('input', {
+      className: 'js-shelfmark-batch-toggle',
+      disabled: true
+    }));
+  }
+  const header = wrapper.appendChild(new FakeElement('div', { className: 'shelfmark-result-card__header' }));
+  const badges = header.appendChild(new FakeElement('div', { className: 'shelfmark-result-card__badges' }));
+  if (options.statusTarget) {
+    badges.appendChild(new FakeElement('span', {
+      className: `label shelfmark-status-chip js-shelfmark-status-chip ${options.statusChipClass || ''}`.trim(),
+      textContent: options.statusChipText || '',
+      attributes: {
+        'data-status-key': options.statusChipKey || ''
+      }
+    }));
+  }
   const actionRow = wrapper.appendChild(new FakeElement('div', { className: 'btn-toolbar' }));
   const action = actionRow.appendChild(new FakeElement('a', {
     className: `btn btn-sm ${options.buttonClass} shelfmark-result-card__primary-action js-shelfmark-action`,
@@ -194,6 +227,45 @@ function createResultNode(options) {
 
 function createDom(options) {
   const root = new FakeElement('div', { className: 'page-root' });
+  let batchToolbar = null;
+  if (options.includeBatchToolbar) {
+    batchToolbar = root.appendChild(new FakeElement('div', {
+      className: 'shelfmark-batch-toolbar js-shelfmark-batch-toolbar is-hidden'
+    }));
+    const summary = batchToolbar.appendChild(new FakeElement('div', {
+      className: 'shelfmark-batch-toolbar__summary'
+    }));
+    summary.appendChild(new FakeElement('span', {
+      className: 'shelfmark-batch-toolbar__count js-shelfmark-batch-count',
+      textContent: '0 selected'
+    }));
+    summary.appendChild(new FakeElement('span', {
+      className: 'shelfmark-batch-toolbar__meta js-shelfmark-batch-ready',
+      textContent: '0 ready on this page'
+    }));
+    summary.appendChild(new FakeElement('span', {
+      className: 'shelfmark-batch-toolbar__message js-shelfmark-batch-message is-hidden'
+    }));
+
+    const actions = batchToolbar.appendChild(new FakeElement('div', {
+      className: 'shelfmark-batch-toolbar__actions'
+    }));
+    actions.appendChild(new FakeElement('button', {
+      className: 'js-shelfmark-batch-select-visible',
+      textContent: 'Select visible',
+      disabled: true
+    }));
+    actions.appendChild(new FakeElement('button', {
+      className: 'js-shelfmark-batch-clear',
+      textContent: 'Clear',
+      disabled: true
+    }));
+    actions.appendChild(new FakeElement('button', {
+      className: 'js-shelfmark-batch-request',
+      textContent: 'Request selected',
+      disabled: true
+    }));
+  }
   const status = root.appendChild(new FakeElement('div', {
     className: 'alert alert-info js-shelfmark-request-status',
     textContent: options.statusText || 'Request actions are verified in your browser against Shelfmark.',
@@ -208,14 +280,24 @@ function createDom(options) {
     label: options.label || 'Open in Shelfmark',
     hint: options.hint || 'Initial hint',
     buttonClass: options.buttonClass || 'btn-default',
-    iconClass: options.iconClass || 'glyphicon glyphicon-new-window'
+    iconClass: options.iconClass || 'glyphicon glyphicon-new-window',
+    statusTarget: options.statusTarget,
+    statusProviderId: options.statusProviderId,
+    statusInLibrary: options.statusInLibrary,
+    statusChipText: options.statusChipText,
+    statusChipKey: options.statusChipKey,
+    statusChipClass: options.statusChipClass,
+    batchToggle: options.batchToggle
   });
   root.appendChild(first.wrapper);
 
   return {
     document: new FakeDocument(root, 'complete'),
     status,
-    action: first.action
+    action: first.action,
+    batchToolbar,
+    batchToggle: first.wrapper.querySelector('.js-shelfmark-batch-toggle'),
+    batchSelect: first.wrapper.querySelector('.js-shelfmark-batch-select')
   };
 }
 
@@ -257,12 +339,16 @@ async function runScenario(options) {
   require(searchModulePath);
   await flush();
   await flush();
+  await flush();
+  await flush();
 
   return {
     dom,
     fetchCalls,
     async clickPrimaryAction() {
       dom.action.dispatchEvent('click');
+      await flush();
+      await flush();
       await flush();
       await flush();
     }
@@ -363,6 +449,210 @@ async function runScenario(options) {
     'Open in Shelfmark'
   );
   assert.match(releasePolicyFallback.dom.status.textContent, /Open in Shelfmark is required/i);
+
+  const enrichedStatus = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two',
+    requestPayload: {
+      book_data: { provider_id: '222', title: 'External Candidate' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    statusTarget: true,
+    statusProviderId: '222',
+    statusChipText: 'Available to request',
+    statusChipKey: 'available',
+    statusChipClass: 'shelfmark-status-chip--available',
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      {
+        payload: {
+          requests: [
+            {
+              id: 91,
+              status: 'fulfilled',
+              delivery_state: 'queued',
+              delivery_updated_at: '2026-04-09T21:45:00Z',
+              last_failure_reason: null,
+              book_data: { provider: 'hardcover', provider_id: '222' }
+            }
+          ]
+        }
+      },
+      { payload: { requests_enabled: true, defaults: { ebook: 'request_book' } } }
+    ]
+  });
+
+  assert.equal(enrichedStatus.fetchCalls.length, 3);
+  assert.equal(
+    enrichedStatus.dom.document.querySelector('.js-shelfmark-status-chip').textContent,
+    'In queue'
+  );
+  assert.equal(
+    enrichedStatus.dom.document.querySelector('.js-shelfmark-status-chip').dataset.statusKey,
+    'queue'
+  );
+
+  const importedStatus = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=Already+Present+Author+One&title=Already+Present&author=Author+One',
+    requestPayload: {
+      book_data: { provider_id: '999', title: 'Already Present' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    statusTarget: true,
+    statusProviderId: '999',
+    statusInLibrary: true,
+    statusChipText: 'In library',
+    statusChipKey: 'imported',
+    statusChipClass: 'shelfmark-status-chip--imported',
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      {
+        payload: {
+          requests: [
+            {
+              id: 92,
+              status: 'fulfilled',
+              delivery_state: 'complete',
+              delivery_updated_at: '2026-04-09T21:55:00Z',
+              book_data: { provider: 'hardcover', provider_id: '999' }
+            }
+          ]
+        }
+      },
+      { payload: { requests_enabled: true, defaults: { ebook: 'request_book' } } }
+    ]
+  });
+
+  assert.equal(
+    importedStatus.dom.document.querySelector('.js-shelfmark-status-chip').textContent,
+    'In library'
+  );
+  assert.equal(
+    importedStatus.dom.document.querySelector('.js-shelfmark-status-chip').dataset.statusKey,
+    'imported'
+  );
+
+  const batchReady = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two',
+    requestPayload: {
+      book_data: { provider: 'hardcover', provider_id: '222', title: 'External Candidate' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    mode: 'request',
+    statusTarget: true,
+    statusProviderId: '222',
+    statusChipText: 'Available to request',
+    statusChipKey: 'available',
+    statusChipClass: 'shelfmark-status-chip--available',
+    includeBatchToolbar: true,
+    batchToggle: true,
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      { payload: { requests: [] } },
+      { payload: { requests_enabled: true, defaults: { ebook: 'request_book' } } },
+      { payload: { success: true } },
+      {
+        payload: {
+          requests: [
+            {
+              id: 93,
+              status: 'pending',
+              created_at: '2026-04-10T09:30:00Z',
+              book_data: { provider: 'hardcover', provider_id: '222' }
+            }
+          ]
+        }
+      }
+    ]
+  });
+
+  const batchSelectVisible = batchReady.dom.batchToolbar.querySelector('.js-shelfmark-batch-select-visible');
+  const batchClear = batchReady.dom.batchToolbar.querySelector('.js-shelfmark-batch-clear');
+  const batchRequest = batchReady.dom.batchToolbar.querySelector('.js-shelfmark-batch-request');
+  const batchCount = batchReady.dom.batchToolbar.querySelector('.js-shelfmark-batch-count');
+  const batchReadyText = batchReady.dom.batchToolbar.querySelector('.js-shelfmark-batch-ready');
+  const batchMessage = batchReady.dom.batchToolbar.querySelector('.js-shelfmark-batch-message');
+
+  assert.equal(batchReady.dom.batchToolbar.classList.contains('is-hidden'), false);
+  assert.equal(batchReady.dom.batchSelect.classList.contains('is-hidden'), false);
+  assert.equal(batchReady.dom.batchToggle.disabled, false);
+  assert.equal(batchCount.textContent, '0 selected');
+  assert.equal(batchReadyText.textContent, '1 ready on this page');
+  assert.equal(batchSelectVisible.disabled, false);
+  assert.equal(batchRequest.disabled, true);
+
+  batchSelectVisible.dispatchEvent('click');
+  await flush();
+
+  assert.equal(batchReady.dom.batchToggle.checked, true);
+  assert.equal(batchCount.textContent, '1 selected');
+  assert.equal(batchClear.disabled, false);
+  assert.equal(batchRequest.disabled, false);
+
+  batchRequest.dispatchEvent('click');
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+
+  assert.equal(batchReady.fetchCalls.length, 5);
+  assert.equal(batchReady.fetchCalls[3].options.method, 'POST');
+  assert.equal(batchReady.dom.action.dataset.mode, 'open');
+  assert.equal(batchReady.dom.batchToggle.checked, false);
+  assert.equal(batchReady.dom.batchToggle.disabled, true);
+  assert.equal(batchCount.textContent, '0 selected');
+  assert.equal(batchReadyText.textContent, '0 ready on this page');
+  assert.equal(batchRequest.disabled, true);
+  assert.equal(batchMessage.textContent, 'Requested 1 book.');
+  assert.equal(batchMessage.classList.contains('is-hidden'), false);
+  assert.equal(
+    batchReady.dom.document.querySelector('.js-shelfmark-status-chip').textContent,
+    'Requested'
+  );
+
+  const batchBlocked = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two',
+    requestPayload: {
+      book_data: { provider: 'hardcover', provider_id: '222', title: 'External Candidate' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    mode: 'request',
+    statusTarget: true,
+    statusProviderId: '222',
+    statusChipText: 'Requested',
+    statusChipKey: 'requested',
+    statusChipClass: 'shelfmark-status-chip--requested',
+    includeBatchToolbar: true,
+    batchToggle: true,
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      {
+        payload: {
+          requests: [
+            {
+              id: 94,
+              status: 'pending',
+              created_at: '2026-04-10T09:35:00Z',
+              book_data: { provider: 'hardcover', provider_id: '222' }
+            }
+          ]
+        }
+      },
+      { payload: { requests_enabled: true, defaults: { ebook: 'request_book' } } }
+    ]
+  });
+
+  assert.equal(batchBlocked.dom.batchToolbar.classList.contains('is-hidden'), true);
+  assert.equal(batchBlocked.dom.batchSelect.classList.contains('is-hidden'), true);
+  assert.equal(batchBlocked.dom.batchToggle.disabled, true);
 
   console.log('test_shelfmark_external_search_dom.js: ok');
 })().catch((error) => {

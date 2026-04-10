@@ -149,6 +149,12 @@ def _base_context():
         "display_fields": [],
         "series_display": "Dune (1)",
         "facts": ["2024", "Dune (1)"],
+        "series_context": None,
+        "workflow_state": {
+            "key": "imported",
+            "label": "In library",
+            "chip_class": "shelfmark-status-chip--imported",
+        },
         "hardcover_id": "999",
         "already_in_library": True,
         "library_book_id": 7,
@@ -198,6 +204,23 @@ def _base_context():
         ],
         "series_display": "The Lord of the Rings (2)",
         "facts": ["4.3 ★", "5,900 ratings", "9,893 readers", "2025", "The Lord of the Rings (2)"],
+        "series_context": {
+            "matched": True,
+            "owned_series_name": "The Lord of the Rings",
+            "owned_book_count": 1,
+            "owned_max_position": 1.0,
+            "owned_contiguous_position": 1,
+            "is_continuation": True,
+            "is_next_missing": True,
+            "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
+            "facts": ["Next likely book in your library run", "1 book owned", "Owned through 1"],
+            "detail_value": "Next likely book in your library run · 1 book owned · Owned through 1",
+        },
+        "workflow_state": {
+            "key": "available",
+            "label": "Available to request",
+            "chip_class": "shelfmark-status-chip--available",
+        },
         "hardcover_id": "222",
         "already_in_library": False,
         "library_book_id": None,
@@ -244,6 +267,8 @@ def _base_context():
         "display_fields": [],
         "series_display": None,
         "facts": [],
+        "series_context": None,
+        "workflow_state": None,
         "hardcover_id": None,
         "already_in_library": False,
         "library_book_id": None,
@@ -292,10 +317,16 @@ def _base_context():
             "page": 1,
             "page_size": 12,
             "selected_sort": "relevance",
+            "selected_series_filter": "all",
             "sort_options": [
                 {"value": "relevance", "label": "Most relevant"},
                 {"value": "popularity", "label": "Most popular"},
                 {"value": "rating", "label": "Highest rated"},
+            ],
+            "series_filter_options": [
+                {"value": "all", "label": "All matches"},
+                {"value": "owned", "label": "Owned series"},
+                {"value": "next_missing", "label": "Next missing"},
             ],
             "page_size_options": [12, 24, 50, 100],
             "total_pages": 75,
@@ -387,9 +418,18 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "Jump to page" in html
     assert 'name="shelfmark_page_size"' in html
     assert 'name="shelfmark_sort"' in html
+    assert 'name="shelfmark_series_filter"' in html
+    assert "Owned series" in html
+    assert "Next missing" in html
+    assert "0 selected" in html
+    assert "0 ready on this page" in html
+    assert "Request selected" in html
+    assert "Select visible" in html
+    assert "js-shelfmark-batch-toolbar" in html
     assert "Request-capable" not in html
     assert "Has cover" in html
     assert "Focus on requestable" in html
+    assert "Available to request" in html
     assert 'href="/search/stored/?query=Dune&amp;shelfmark_page=2"' in html
     assert "CWA is previewing the first Shelfmark page here." not in html
     assert "Checking your browser for direct Shelfmark request availability." not in html
@@ -419,6 +459,9 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'rel="noopener noreferrer"' in html
     assert "js-shelfmark-action-icon" in html
     assert "js-shelfmark-action-label" in html
+    assert html.count("js-shelfmark-batch-row") == 1
+    assert html.count("js-shelfmark-batch-toggle") == 1
+    assert 'aria-label="Select External Candidate for batch request"' in html
     assert "shelfmark-result-card__secondary-action" in html
     assert "js-shelfmark-detail-link" in html
     assert 'data-detail-title="External Candidate"' in html
@@ -427,6 +470,8 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'class="modal fade shelfmark-detail-modal"' in html
     assert "4.3 ★" in html
     assert "The Lord of the Rings (2)" in html
+    assert "Next likely book in your library run" in html
+    assert "Owned through 1" in html
     assert "No cover" in html
     candidate_chunk = html[html.index("External Candidate"):html.index("No Hardcover ID")]
     duplicate_chunk = html[html.index("Already Present"):html.index("External Candidate")]
@@ -458,6 +503,19 @@ def test_search_template_omits_group_wrapper_chrome_for_external_results():
     assert "External Results Without Exact Hardcover ID" not in html
     assert "panel-heading shelfmark-group-panel__heading" not in html
     assert html.count('role="listitem"') == 3
+
+
+def test_search_template_limits_batch_selection_to_request_candidates():
+    app = _create_app()
+    with app.test_request_context("/search?query=Dune"):
+        g.shelves_access = []
+        g.config_authors_max = 0
+        html = render_template("search.html", **_base_context())
+
+    assert html.count("js-shelfmark-batch-toggle") == 1
+    assert 'aria-label="Select Already Present for batch request"' not in html
+    assert 'aria-label="Select External Candidate for batch request"' in html
+    assert 'aria-label="Select No Hardcover ID for batch request"' not in html
 
 
 def test_detail_template_renders_existing_book_jump_and_action_markup():
@@ -492,6 +550,8 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert "Open in Shelfmark" not in html
     assert "Open source page" not in html
     assert "Book details" in html
+    assert "In library" in html
+    assert 'class="shelfmark-detail-status"' in html
     assert 'class="btn btn-default btn-sm shelfmark-detail-page__back-action"' in html
     assert 'href="https://source.example.com/999"' in html
 
@@ -509,11 +569,13 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
             shelfmark_error=None,
         )
 
-    assert 'class="shelfmark-detail-pane shelfmark-detail-pane--modal"' in html
+    assert 'class="shelfmark-detail-pane shelfmark-detail-pane--modal js-shelfmark-status-target"' in html
     assert 'data-detail-title="External Candidate"' in html
     assert "Back to search results" not in html
     assert "Request in Shelfmark" in html
+    assert "Available to request" in html
     assert "<i>Shelfmark</i>" in html
+    assert "Next missing" in html
 
 
 def test_detail_template_hides_request_ready_browser_copy_for_requestable_result():
@@ -538,6 +600,8 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "No exact Hardcover ID match found in metadata.db." not in html
     assert "4.3 ★" in html
     assert "The Lord of the Rings (2)" in html
+    assert "Library series" in html
+    assert "Available to request" in html
 
 
 def test_detail_template_renders_sanitized_description_html():

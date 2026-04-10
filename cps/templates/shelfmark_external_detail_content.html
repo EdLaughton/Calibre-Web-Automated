@@ -1,6 +1,11 @@
 <div
-  class="shelfmark-detail-pane{% if modal_mode %} shelfmark-detail-pane--modal{% endif %}"
+  class="shelfmark-detail-pane{% if modal_mode %} shelfmark-detail-pane--modal{% endif %}{% if result and result.workflow_state %} js-shelfmark-status-target{% endif %}"
   {% if result and result.title %}data-detail-title="{{ result.title }}"{% endif %}
+  {% if result and result.workflow_state %}
+    data-status-provider="hardcover"
+    data-status-provider-id="{{ result.hardcover_id or '' }}"
+    data-status-in-library="{{ 1 if result.already_in_library else 0 }}"
+  {% endif %}
 >
   {% if shelfmark_error %}
     <div class="alert alert-warning">{{ shelfmark_error }}</div>
@@ -33,6 +38,11 @@
         <div class="shelfmark-detail-hero shelfmark-detail-hero--{{ result.library_state.row_class }}">
           <div class="shelfmark-detail-hero__body">
             <div class="shelfmark-detail-hero__badges">
+              {% if result.series_context and result.series_context.badges %}
+                {% for badge in result.series_context.badges %}
+                  <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
+                {% endfor %}
+              {% endif %}
               {% if result.library_state.label and result.library_state.badge_class %}
                 <span class="label {{ result.library_state.badge_class }}">
                   <span class="{{ result.library_state.icon_class }}" aria-hidden="true"></span>
@@ -50,6 +60,28 @@
                   <span class="shelfmark-detail-hero__fact">{{ fact }}</span>
                 {% endfor %}
               </p>
+            {% endif %}
+            {% if result.series_context and result.series_context.facts %}
+              <p class="shelfmark-detail-hero__series-context" aria-label="{{ _('Library series context') }}">
+                {% for fact in result.series_context.facts %}
+                  <span class="shelfmark-detail-hero__series-context-fact">{{ fact }}</span>
+                {% endfor %}
+              </p>
+            {% endif %}
+
+            {% if result.workflow_state %}
+              <div class="shelfmark-detail-status">
+                <div class="shelfmark-detail-status__row">
+                  <span
+                    class="label shelfmark-status-chip {{ result.workflow_state.chip_class }} js-shelfmark-status-chip"
+                    data-status-key="{{ result.workflow_state.key }}"
+                  >
+                    {{ result.workflow_state.label }}
+                  </span>
+                  <span class="shelfmark-detail-status__timestamp js-shelfmark-status-timestamp is-hidden" aria-live="polite"></span>
+                </div>
+                <p class="shelfmark-detail-status__message js-shelfmark-status-message is-hidden"></p>
+              </div>
             {% endif %}
 
             <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ result.shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
@@ -86,6 +118,10 @@
             {% if result.series_display %}
               <dt>{{ _("Series") }}</dt>
               <dd>{{ result.series_display }}</dd>
+            {% endif %}
+            {% if result.series_context and result.series_context.detail_value %}
+              <dt>{{ _("Library series") }}</dt>
+              <dd>{{ result.series_context.detail_value }}</dd>
             {% endif %}
             {% if result.publish_year %}
               <dt>{{ _("Published") }}</dt>

@@ -1,7 +1,8 @@
 from __future__ import annotations
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 import ipaddress
 import math
+import re
 import socket
 from time import monotonic
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -27,6 +28,7 @@ DEFAULT_SHELFMARK_SORT = "relevance"
 DEFAULT_SHELFMARK_PAGE = 1
 DEFAULT_SHELFMARK_FILTER_REQUESTABLE = True
 DEFAULT_SHELFMARK_FILTER_HAS_COVER = True
+DEFAULT_SHELFMARK_SERIES_FILTER = "all"
 SHELFMARK_PAGE_SIZE_OPTIONS = (12, 24, 50, 100)
 SHELFMARK_SORT_OPTIONS = (
     ("relevance", "Most relevant"),
@@ -34,6 +36,11 @@ SHELFMARK_SORT_OPTIONS = (
     ("rating", "Highest rated"),
     ("newest", "Newest"),
     ("oldest", "Oldest"),
+)
+SHELFMARK_SERIES_FILTER_OPTIONS = (
+    ("all", "All matches"),
+    ("owned", "Owned series"),
+    ("next_missing", "Next missing"),
 )
 SHELFMARK_METADATA_PROVIDER = "hardcover"
 SHELFMARK_CONTENT_TYPE = "ebook"
@@ -86,6 +93,37 @@ class ShelfmarkLibraryState:
 
 
 @dataclass(frozen=True)
+class ShelfmarkOwnedSeries:
+    key: str
+    series_name: str
+    book_count: int
+    owned_positions: tuple[float, ...]
+    max_position: float | None
+    contiguous_position: int | None
+
+
+@dataclass(frozen=True)
+class ShelfmarkSeriesContext:
+    matched: bool = False
+    owned_series_name: str | None = None
+    owned_book_count: int = 0
+    owned_max_position: float | None = None
+    owned_contiguous_position: int | None = None
+    is_continuation: bool = False
+    is_next_missing: bool = False
+    badges: tuple[dict[str, str], ...] = field(default_factory=tuple)
+    facts: tuple[str, ...] = field(default_factory=tuple)
+    detail_value: str | None = None
+
+
+@dataclass(frozen=True)
+class ShelfmarkWorkflowState:
+    key: str
+    label: str
+    chip_class: str
+
+
+@dataclass(frozen=True)
 class ShelfmarkResultView:
     provider: str
     provider_id: str
@@ -114,12 +152,17 @@ class ShelfmarkResultView:
     series_count: int | None = None
     series_display: str | None = None
     facts: tuple[str, ...] = field(default_factory=tuple)
+    series_context: ShelfmarkSeriesContext | None = None
+    workflow_state: ShelfmarkWorkflowState | None = None
 
     def to_template_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["authors"] = list(self.authors)
         payload["display_fields"] = list(self.display_fields)
         payload["facts"] = list(self.facts)
+        if self.series_context:
+            payload["series_context"]["badges"] = list(self.series_context.badges)
+            payload["series_context"]["facts"] = list(self.series_context.facts)
         payload["library_state"] = asdict(self.library_state)
         payload["action"] = asdict(self.action)
         return payload
@@ -174,6 +217,8 @@ class ShelfmarkSearchSection:
     page_size: int = DEFAULT_SHELFMARK_LIMIT
     selected_sort: str = DEFAULT_SHELFMARK_SORT
     sort_options: tuple[dict[str, str], ...] = field(default_factory=tuple)
+    selected_series_filter: str = DEFAULT_SHELFMARK_SERIES_FILTER
+    series_filter_options: tuple[dict[str, str], ...] = field(default_factory=tuple)
     page_size_options: tuple[int, ...] = SHELFMARK_PAGE_SIZE_OPTIONS
     total_pages: int = 0
     visible_start: int = 0
@@ -205,6 +250,8 @@ class ShelfmarkSearchSection:
             "page_size": self.page_size,
             "selected_sort": self.selected_sort,
             "sort_options": [dict(option) for option in self.sort_options],
+            "selected_series_filter": self.selected_series_filter,
+            "series_filter_options": [dict(option) for option in self.series_filter_options],
             "page_size_options": list(self.page_size_options),
             "total_pages": self.total_pages,
             "visible_start": self.visible_start,
@@ -459,6 +506,16 @@ def get_shelfmark_sort_options() -> tuple[dict[str, str], ...]:
     )
 
 
+def get_shelfmark_series_filter_options() -> tuple[dict[str, str], ...]:
+    return tuple(
+        {
+            "value": value,
+            "label": _(label),
+        }
+        for value, label in SHELFMARK_SERIES_FILTER_OPTIONS
+    )
+
+
 def _normalize_page_size(value: Any) -> int:
     normalized = _normalize_int(value) or DEFAULT_SHELFMARK_LIMIT
     if normalized in SHELFMARK_PAGE_SIZE_OPTIONS:
@@ -471,6 +528,13 @@ def _normalize_sort(value: Any) -> str:
     if normalized in {item[0] for item in SHELFMARK_SORT_OPTIONS}:
         return normalized
     return DEFAULT_SHELFMARK_SORT
+
+
+def _normalize_series_filter(value: Any) -> str:
+    normalized = (_normalize_text(value) or DEFAULT_SHELFMARK_SERIES_FILTER).lower()
+    if normalized in {item[0] for item in SHELFMARK_SERIES_FILTER_OPTIONS}:
+        return normalized
+    return DEFAULT_SHELFMARK_SERIES_FILTER
 
 
 def _normalize_flag(value: Any) -> bool:
@@ -611,6 +675,29 @@ def build_shelfmark_library_state(
     )
 
 
+def build_shelfmark_workflow_state(
+    *,
+    already_in_library: bool,
+    hardcover_id: str | None,
+    request_payload: Mapping[str, Any] | None,
+) -> ShelfmarkWorkflowState | None:
+    if already_in_library:
+        return ShelfmarkWorkflowState(
+            key="imported",
+            label=_("In library"),
+            chip_class="shelfmark-status-chip--imported",
+        )
+
+    if hardcover_id and request_payload is not None:
+        return ShelfmarkWorkflowState(
+            key="available",
+            label=_("Available to request"),
+            chip_class="shelfmark-status-chip--available",
+        )
+
+    return None
+
+
 def build_library_match_map(rows: Iterable[Mapping[str, Any]]) -> dict[str, ShelfmarkLibraryMatch]:
     matches: dict[str, ShelfmarkLibraryMatch] = {}
     for row in rows:
@@ -658,6 +745,247 @@ def lookup_visible_library_matches(hardcover_ids: Sequence[str]) -> dict[str, Sh
     )
 
 
+def _normalize_series_name_key(value: Any) -> str | None:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+    return re.sub(r"\s+", " ", normalized.casefold()).strip() or None
+
+
+def _largest_contiguous_series_prefix(positions: Sequence[float]) -> int | None:
+    normalized_positions = sorted(
+        {int(position) for position in positions if position > 0 and float(position).is_integer()}
+    )
+    if not normalized_positions:
+        return None
+
+    expected = 1
+    for position in normalized_positions:
+        if position != expected:
+            return expected - 1
+        expected += 1
+    return expected - 1
+
+
+def build_owned_series_map(rows: Iterable[Mapping[str, Any]]) -> dict[str, ShelfmarkOwnedSeries]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        series_name = _normalize_text(row.get("series_name"))
+        key = _normalize_series_name_key(series_name)
+        if not key:
+            continue
+
+        item = grouped.setdefault(
+            key,
+            {
+                "series_name": series_name or "",
+                "book_ids": set(),
+                "positions": [],
+            },
+        )
+        book_id = _normalize_int(row.get("book_id"))
+        if book_id is not None:
+            item["book_ids"].add(book_id)
+        series_position = _normalize_series_position(row.get("series_position"))
+        if series_position is not None:
+            item["positions"].append(series_position)
+
+    owned_series: dict[str, ShelfmarkOwnedSeries] = {}
+    for key, item in grouped.items():
+        owned_positions = tuple(sorted(set(item["positions"])))
+        max_position = owned_positions[-1] if owned_positions else None
+        owned_series[key] = ShelfmarkOwnedSeries(
+            key=key,
+            series_name=item["series_name"],
+            book_count=len(item["book_ids"]),
+            owned_positions=owned_positions,
+            max_position=max_position,
+            contiguous_position=_largest_contiguous_series_prefix(owned_positions),
+        )
+    return owned_series
+
+
+def lookup_visible_owned_series(series_names: Sequence[str]) -> dict[str, ShelfmarkOwnedSeries]:
+    normalized_names = {
+        value
+        for value in (_normalize_series_name_key(series_name) for series_name in series_names)
+        if value
+    }
+    if not normalized_names:
+        return {}
+
+    rows = (
+        calibre_db.session.query(
+            db.Series.name.label("series_name"),
+            db.Books.id.label("book_id"),
+            db.Books.series_index.label("series_position"),
+        )
+        .join(db.books_series_link, db.books_series_link.c.series == db.Series.id)
+        .join(db.Books, db.books_series_link.c.book == db.Books.id)
+        .filter(func.lower(db.Series.name).in_(tuple(normalized_names)))
+        .filter(calibre_db.common_filters())
+        .order_by(db.Series.name.asc(), db.Books.id.asc())
+        .all()
+    )
+
+    return build_owned_series_map(
+        {
+            "series_name": row.series_name,
+            "book_id": row.book_id,
+            "series_position": row.series_position,
+        }
+        for row in rows
+    )
+
+
+def _build_series_context_badges(
+    *,
+    matched: bool,
+    is_continuation: bool,
+    is_next_missing: bool,
+) -> tuple[dict[str, str], ...]:
+    if is_next_missing:
+        return ({"label": _("Next missing"), "badge_class": "label-primary"},)
+    if is_continuation:
+        return ({"label": _("Continue series"), "badge_class": "label-info"},)
+    if matched:
+        return ({"label": _("Owned series"), "badge_class": "label-default"},)
+    return tuple()
+
+
+def _build_series_context_facts(
+    *,
+    matched: bool,
+    owned_book_count: int,
+    owned_contiguous_position: int | None,
+    owned_max_position: float | None,
+    is_continuation: bool,
+    is_next_missing: bool,
+) -> tuple[str, ...]:
+    if not matched:
+        return tuple()
+
+    facts: list[str] = []
+    if is_next_missing:
+        facts.append(_("Next likely book in your library run"))
+    elif is_continuation:
+        facts.append(_("Later entry in an owned series"))
+    else:
+        facts.append(_("Series already in your library"))
+
+    if owned_book_count:
+        label = _("book") if owned_book_count == 1 else _("books")
+        facts.append(_("%(count)s %(label)s owned", count=owned_book_count, label=label))
+
+    if owned_contiguous_position and owned_contiguous_position > 0:
+        facts.append(_("Owned through %(position)s", position=owned_contiguous_position))
+    elif owned_max_position is not None:
+        facts.append(_("Highest owned %(position)s", position=_format_series_position(owned_max_position)))
+
+    return tuple(facts)
+
+
+def _build_series_context_detail_value(context: ShelfmarkSeriesContext) -> str | None:
+    if not context.matched:
+        return None
+    return " \u00b7 ".join(context.facts) if context.facts else _("Series already in your library")
+
+
+def build_shelfmark_series_contexts(
+    results: Sequence[ShelfmarkResultView],
+    owned_series: Mapping[str, ShelfmarkOwnedSeries],
+) -> tuple[ShelfmarkSeriesContext | None, ...]:
+    expected_next_positions: dict[str, int | None] = {}
+    for key, owned in owned_series.items():
+        if owned.contiguous_position is None:
+            expected_next_positions[key] = None
+        else:
+            expected_next_positions[key] = owned.contiguous_position + 1
+
+    contexts: list[ShelfmarkSeriesContext | None] = []
+    for result in results:
+        series_key = _normalize_series_name_key(result.series_name)
+        owned = owned_series.get(series_key or "")
+        if owned is None:
+            contexts.append(None)
+            continue
+
+        numeric_position = result.series_position
+        expected_next = expected_next_positions.get(owned.key)
+        is_next_missing = bool(
+            not result.already_in_library
+            and numeric_position is not None
+            and float(numeric_position).is_integer()
+            and expected_next is not None
+            and int(numeric_position) == expected_next
+        )
+        is_continuation = bool(
+            not result.already_in_library
+            and numeric_position is not None
+            and owned.max_position is not None
+            and numeric_position > owned.max_position
+        )
+        context = ShelfmarkSeriesContext(
+            matched=True,
+            owned_series_name=owned.series_name,
+            owned_book_count=owned.book_count,
+            owned_max_position=owned.max_position,
+            owned_contiguous_position=owned.contiguous_position,
+            is_continuation=is_continuation,
+            is_next_missing=is_next_missing,
+        )
+        context = replace(
+            context,
+            badges=_build_series_context_badges(
+                matched=context.matched,
+                is_continuation=context.is_continuation and not context.is_next_missing,
+                is_next_missing=context.is_next_missing,
+            ),
+        )
+        context = replace(
+            context,
+            facts=_build_series_context_facts(
+                matched=context.matched,
+                owned_book_count=context.owned_book_count,
+                owned_contiguous_position=context.owned_contiguous_position,
+                owned_max_position=context.owned_max_position,
+                is_continuation=context.is_continuation and not context.is_next_missing,
+                is_next_missing=context.is_next_missing,
+            ),
+        )
+        contexts.append(replace(context, detail_value=_build_series_context_detail_value(context)))
+
+    return tuple(contexts)
+
+
+def _series_rank_key(result: ShelfmarkResultView) -> tuple[int, int, int, float]:
+    context = result.series_context
+    if context and context.is_next_missing:
+        bucket = 0
+    elif context and context.is_continuation:
+        bucket = 1
+    elif context and context.matched:
+        bucket = 2
+    else:
+        bucket = 3
+
+    duplicate_rank = 1 if result.already_in_library else 0
+    request_rank = 0 if (result.hardcover_id and result.request_payload) else 1
+    series_position = result.series_position if result.series_position is not None else float("inf")
+    return bucket, duplicate_rank, request_rank, series_position
+
+
+def _rank_visible_results(results: Sequence[ShelfmarkResultView]) -> tuple[ShelfmarkResultView, ...]:
+    indexed_results = list(enumerate(results))
+    indexed_results.sort(
+        key=lambda item: (
+            *_series_rank_key(item[1]),
+            item[0],
+        )
+    )
+    return tuple(result for _, result in indexed_results)
+
+
 def build_shelfmark_result_view(
     book: Mapping[str, Any],
     *,
@@ -665,6 +993,7 @@ def build_shelfmark_result_view(
     detail_url: str | None,
     shelfmark_browser_base_url: str,
     probe_state: ShelfmarkProbeState | None = None,
+    series_context: ShelfmarkSeriesContext | None = None,
 ) -> ShelfmarkResultView:
     title = _resolve_shelfmark_title(book) or _("Unknown title")
     authors = tuple(_resolve_shelfmark_authors(book))
@@ -729,6 +1058,12 @@ def build_shelfmark_result_view(
         series_count=series_count,
         series_display=_format_series_display(series_name, series_position),
         facts=_build_result_facts(book, publish_year=publish_year),
+        series_context=series_context,
+        workflow_state=build_shelfmark_workflow_state(
+            already_in_library=library_match is not None,
+            hardcover_id=hardcover_id,
+            request_payload=request_payload,
+        ),
     )
 
 
@@ -937,6 +1272,7 @@ def _filter_visible_results(
     *,
     requestable_only: bool = False,
     has_cover_only: bool = False,
+    series_filter: str = DEFAULT_SHELFMARK_SERIES_FILTER,
 ) -> tuple[ShelfmarkResultView, ...]:
     filtered = tuple(results)
     if requestable_only:
@@ -947,6 +1283,18 @@ def _filter_visible_results(
         )
     if has_cover_only:
         filtered = tuple(result for result in filtered if result.cover_url)
+    if series_filter == "owned":
+        filtered = tuple(
+            result
+            for result in filtered
+            if result.series_context and result.series_context.matched
+        )
+    elif series_filter == "next_missing":
+        filtered = tuple(
+            result
+            for result in filtered
+            if result.series_context and result.series_context.is_next_missing
+        )
     return filtered
 
 
@@ -959,6 +1307,7 @@ def search_shelfmark_results(
     sort: str = DEFAULT_SHELFMARK_SORT,
     filter_requestable: bool = DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
     filter_has_cover: bool = DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+    series_filter: str = DEFAULT_SHELFMARK_SERIES_FILTER,
     query_label: str | None = None,
     context_hint: str | None = None,
     empty_message: str | None = None,
@@ -967,13 +1316,16 @@ def search_shelfmark_results(
     requested_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(page) or DEFAULT_SHELFMARK_PAGE)
     requested_page_size = _normalize_page_size(page_size)
     selected_sort = _normalize_sort(sort)
+    selected_series_filter = _normalize_series_filter(series_filter)
     requestable_only = bool(filter_requestable)
     has_cover_only = bool(filter_has_cover)
     filters_active = (
         requestable_only != DEFAULT_SHELFMARK_FILTER_REQUESTABLE
         or has_cover_only != DEFAULT_SHELFMARK_FILTER_HAS_COVER
+        or selected_series_filter != DEFAULT_SHELFMARK_SERIES_FILTER
     )
     sort_options = get_shelfmark_sort_options()
+    series_filter_options = get_shelfmark_series_filter_options()
     config_data = get_shelfmark_client_config()
     if not config_data.enabled:
         return ShelfmarkSearchSection(enabled=False, available=False, query=normalized_query or "")
@@ -987,6 +1339,8 @@ def search_shelfmark_results(
             page_size=requested_page_size,
             selected_sort=selected_sort,
             sort_options=sort_options,
+            selected_series_filter=selected_series_filter,
+            series_filter_options=series_filter_options,
             page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
             total_pages=0,
             visible_start=0,
@@ -1040,10 +1394,22 @@ def search_shelfmark_results(
             )
             for book in books
         )
+        owned_series = lookup_visible_owned_series(
+            [result.series_name for result in page_results if result.series_name]
+        )
+        page_results = tuple(
+            replace(result, series_context=context)
+            for result, context in zip(
+                page_results,
+                build_shelfmark_series_contexts(page_results, owned_series),
+            )
+        )
+        ranked_results = _rank_visible_results(page_results)
         results = _filter_visible_results(
-            page_results,
+            ranked_results,
             requestable_only=requestable_only,
             has_cover_only=has_cover_only,
+            series_filter=selected_series_filter,
         )
         summary = summarize_shelfmark_results(
             results,
@@ -1066,6 +1432,8 @@ def search_shelfmark_results(
             page_size=requested_page_size,
             selected_sort=selected_sort,
             sort_options=sort_options,
+            selected_series_filter=selected_series_filter,
+            series_filter_options=series_filter_options,
             page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
             total_pages=total_pages,
             visible_start=visible_start,
@@ -1122,13 +1490,16 @@ def fetch_shelfmark_detail(
     library_match = None
     if hardcover_id:
         library_match = lookup_visible_library_matches([hardcover_id]).get(hardcover_id)
-    return build_shelfmark_result_view(
+    result = build_shelfmark_result_view(
         book,
         library_match=library_match,
         detail_url=detail_url,
         shelfmark_browser_base_url=config_data.browser_base_url,
         probe_state=probe_state,
     )
+    owned_series = lookup_visible_owned_series([result.series_name] if result.series_name else [])
+    series_context = build_shelfmark_series_contexts((result,), owned_series)[0]
+    return replace(result, series_context=series_context)
 
 
 class ShelfmarkClient:

@@ -23,6 +23,7 @@ from .pagination import Pagination
 from .services.shelfmark_search import (
     DEFAULT_SHELFMARK_FILTER_HAS_COVER,
     DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+    DEFAULT_SHELFMARK_SERIES_FILTER,
     ShelfmarkIntegrationError,
     build_shelfmark_advanced_query,
     fetch_shelfmark_detail,
@@ -577,6 +578,10 @@ def _requested_shelfmark_sort():
     return (request.args.get("shelfmark_sort", "relevance") or "relevance").strip().lower()
 
 
+def _requested_shelfmark_series_filter():
+    return (request.args.get("shelfmark_series_filter", DEFAULT_SHELFMARK_SERIES_FILTER) or DEFAULT_SHELFMARK_SERIES_FILTER).strip().lower()
+
+
 def _requested_shelfmark_flag(name, default=False):
     values = request.args.getlist(name)
     if not values:
@@ -599,6 +604,7 @@ def _build_shelfmark_section(query, **kwargs):
         page=_requested_shelfmark_page(),
         page_size=_requested_shelfmark_page_size(),
         sort=_requested_shelfmark_sort(),
+        series_filter=_requested_shelfmark_series_filter(),
         filter_requestable=_requested_shelfmark_flag(
             "shelfmark_filter_requestable",
             default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
@@ -626,6 +632,7 @@ def _build_shelfmark_section(query, **kwargs):
     )
     section["clear_filters_url"] = _current_request_url_with(
         shelfmark_page=1,
+        shelfmark_series_filter=None,
         shelfmark_filter_requestable=None,
         shelfmark_filter_has_cover=None,
     )
