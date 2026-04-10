@@ -7,7 +7,7 @@
 import json
 from datetime import datetime
 
-from flask import Blueprint, request, redirect, url_for, flash
+from flask import Blueprint, request, redirect, render_template, url_for, flash
 from flask import session as flask_session
 from .cw_login import current_user
 from flask_babel import format_date
@@ -484,6 +484,7 @@ def render_search_results(term, offset=None, order=None, limit=None):
 def shelfmark_external_detail(provider, provider_id):
     query = (request.args.get("query") or "").strip()
     return_to = _safe_local_return_url(request.args.get("return_to"))
+    modal_view = (request.args.get("view") or "").strip().lower() == "modal"
     detail_url = url_for(
         "search.shelfmark_external_detail",
         provider=provider,
@@ -498,6 +499,13 @@ def shelfmark_external_detail(provider, provider_id):
             provider_id,
             detail_url=detail_url,
         ).to_template_dict()
+        if modal_view:
+            return render_template(
+                "shelfmark_external_detail_content.html",
+                result=result,
+                modal_mode=True,
+                shelfmark_error=None,
+            )
         return render_title_template(
             "shelfmark_external_detail.html",
             title=result.get("title") or _("Shelfmark External Result"),
@@ -505,9 +513,18 @@ def shelfmark_external_detail(provider, provider_id):
             result=result,
             search_query=query,
             return_to=return_to,
+            modal_mode=False,
         )
     except ShelfmarkIntegrationError as exc:
         flash(str(exc), category="error")
+        if modal_view:
+            return render_template(
+                "shelfmark_external_detail_content.html",
+                title=_("Shelfmark External Result"),
+                result=None,
+                modal_mode=True,
+                shelfmark_error=str(exc),
+            )
         return render_title_template(
             "shelfmark_external_detail.html",
             title=_("Shelfmark External Result"),
@@ -516,6 +533,7 @@ def shelfmark_external_detail(provider, provider_id):
             search_query=query,
             return_to=return_to,
             shelfmark_error=str(exc),
+            modal_mode=False,
         )
 
 

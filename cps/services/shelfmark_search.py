@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass, field
 import ipaddress
 import math
 import socket
+from time import monotonic
 from typing import Any, Callable, Iterable, Mapping, Sequence
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
@@ -38,6 +39,10 @@ SHELFMARK_METADATA_PROVIDER = "hardcover"
 SHELFMARK_CONTENT_TYPE = "ebook"
 SHELFMARK_REQUEST_MODE = "request_book"
 SHELFMARK_REQUEST_KIND = "book"
+SHELFMARK_DETAIL_CACHE_TTL_SECONDS = 300
+SHELFMARK_DETAIL_CACHE_MAX_ENTRIES = 256
+
+_SHELFMARK_DETAIL_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
 
 
 class ShelfmarkIntegrationError(RuntimeError):
@@ -240,6 +245,10 @@ class ShelfmarkSearchResponse:
     page: int = DEFAULT_SHELFMARK_PAGE
     total_found: int = 0
     has_more: bool = False
+
+
+def clear_shelfmark_detail_cache() -> None:
+    _SHELFMARK_DETAIL_CACHE.clear()
 
 
 def get_shelfmark_client_config() -> ShelfmarkClientConfig:
@@ -843,6 +852,54 @@ def _merge_book_details(
     return merged
 
 
+def _prune_shelfmark_detail_cache(now: float | None = None) -> None:
+    current_time = monotonic() if now is None else now
+    expired_keys = [
+        cache_key
+        for cache_key, (cached_at, _) in _SHELFMARK_DETAIL_CACHE.items()
+        if current_time - cached_at >= SHELFMARK_DETAIL_CACHE_TTL_SECONDS
+    ]
+    for cache_key in expired_keys:
+        _SHELFMARK_DETAIL_CACHE.pop(cache_key, None)
+
+    while len(_SHELFMARK_DETAIL_CACHE) > SHELFMARK_DETAIL_CACHE_MAX_ENTRIES:
+        oldest_key = next(iter(_SHELFMARK_DETAIL_CACHE))
+        _SHELFMARK_DETAIL_CACHE.pop(oldest_key, None)
+
+
+def _get_cached_shelfmark_detail_book(
+    base_url: str,
+    provider: str,
+    provider_id: str,
+) -> dict[str, Any] | None:
+    now = monotonic()
+    _prune_shelfmark_detail_cache(now)
+    cache_key = (base_url, provider, provider_id)
+    cached_entry = _SHELFMARK_DETAIL_CACHE.get(cache_key)
+    if not cached_entry:
+        return None
+
+    cached_at, cached_payload = cached_entry
+    if now - cached_at >= SHELFMARK_DETAIL_CACHE_TTL_SECONDS:
+        _SHELFMARK_DETAIL_CACHE.pop(cache_key, None)
+        return None
+    return dict(cached_payload)
+
+
+def _remember_shelfmark_detail_book(
+    base_url: str,
+    provider: str,
+    provider_id: str,
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    _prune_shelfmark_detail_cache()
+    cache_key = (base_url, provider, provider_id)
+    cached_payload = dict(payload)
+    _SHELFMARK_DETAIL_CACHE[cache_key] = (monotonic(), cached_payload)
+    _prune_shelfmark_detail_cache()
+    return dict(cached_payload)
+
+
 def _enrich_books_with_detail_covers(
     client: "ShelfmarkClient",
     books: Sequence[Mapping[str, Any]],
@@ -1128,6 +1185,14 @@ class ShelfmarkClient:
         )
 
     def fetch_book(self, provider: str, provider_id: str) -> dict[str, Any]:
+        cached_payload = _get_cached_shelfmark_detail_book(
+            self.config.base_url,
+            provider,
+            provider_id,
+        )
+        if cached_payload is not None:
+            return cached_payload
+
         self._ensure_authenticated()
         response = self._perform_request(
             "get",
@@ -1140,7 +1205,12 @@ class ShelfmarkClient:
         payload = self._parse_json_response(response, _("Shelfmark book details are unavailable."))
         if not isinstance(payload, dict):
             raise ShelfmarkIntegrationError(_("Shelfmark returned an invalid book detail payload."))
-        return payload
+        return _remember_shelfmark_detail_book(
+            self.config.base_url,
+            provider,
+            provider_id,
+            payload,
+        )
 
     def _ensure_authenticated(self) -> None:
         if self._authenticated:

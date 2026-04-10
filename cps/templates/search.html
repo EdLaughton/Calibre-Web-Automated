@@ -303,7 +303,7 @@
                       </a>
                     {% endif %}
                     {% if result.detail_url %}
-                      <a class="btn btn-default btn-sm shelfmark-result-card__secondary-action" href="{{ result.detail_url }}">
+                      <a class="btn btn-default btn-sm shelfmark-result-card__secondary-action js-shelfmark-detail-link" href="{{ result.detail_url }}" data-detail-title="{{ result.title }}">
                         <span class="glyphicon glyphicon-info-sign" aria-hidden="true"></span>
                         <span>{{ _('Details') }}</span>
                       </a>
@@ -471,6 +471,24 @@
     </div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block modal %}
+{% if shelfmark_has_external_results %}
+<div class="modal fade shelfmark-detail-modal" id="shelfmarkDetailModal" tabindex="-1" role="dialog" aria-labelledby="shelfmarkDetailModalLabel">
+  <div class="modal-dialog modal-lg shelfmark-detail-modal__dialog" role="document">
+    <div class="modal-content shelfmark-detail-modal__content">
+      <div class="modal-header shelfmark-detail-modal__header">
+        <button type="button" class="close shelfmark-detail-modal__close" data-dismiss="modal" aria-label="{{ _('Close') }}"><span aria-hidden="true">&times;</span></button>
+        <h4 class="modal-title shelfmark-detail-modal__title" id="shelfmarkDetailModalLabel">{{ _('Shelfmark Details') }}</h4>
+      </div>
+      <div class="modal-body shelfmark-detail-modal__body js-shelfmark-detail-modal-body" aria-live="polite" aria-busy="false">
+        <div class="shelfmark-detail-modal__loading js-shelfmark-detail-modal-loading is-hidden">{{ _('Loading Shelfmark details…') }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block js %}

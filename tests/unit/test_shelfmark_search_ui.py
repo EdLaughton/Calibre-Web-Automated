@@ -90,7 +90,7 @@ def _create_app():
                 {
                     "layout.html": (
                         "<!doctype html><html><head>{% block header %}{% endblock %}</head>"
-                        "<body>{% block body %}{% endblock %}{% block js %}{% endblock %}</body></html>"
+                        "<body>{% block body %}{% endblock %}{% block modal %}{% endblock %}{% block js %}{% endblock %}</body></html>"
                     ),
                     "image.html": (
                         "{% macro book_cover(book) %}"
@@ -420,6 +420,11 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "js-shelfmark-action-icon" in html
     assert "js-shelfmark-action-label" in html
     assert "shelfmark-result-card__secondary-action" in html
+    assert "js-shelfmark-detail-link" in html
+    assert 'data-detail-title="External Candidate"' in html
+    assert 'id="shelfmarkDetailModal"' in html
+    assert 'id="shelfmarkDetailModalLabel"' in html
+    assert 'class="modal fade shelfmark-detail-modal"' in html
     assert "4.3 ★" in html
     assert "The Lord of the Rings (2)" in html
     assert "No cover" in html
@@ -489,6 +494,26 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert "Book details" in html
     assert 'class="btn btn-default btn-sm shelfmark-detail-page__back-action"' in html
     assert 'href="https://source.example.com/999"' in html
+
+
+def test_detail_partial_renders_modal_ready_content_without_back_link():
+    app = _create_app()
+    context = _base_context()
+    result = context["shelfmark_section"]["results"][1]
+
+    with app.test_request_context("/search/external/shelfmark/hardcover/222?query=Dune&view=modal"):
+        html = render_template(
+            "shelfmark_external_detail_content.html",
+            result=result,
+            modal_mode=True,
+            shelfmark_error=None,
+        )
+
+    assert 'class="shelfmark-detail-pane shelfmark-detail-pane--modal"' in html
+    assert 'data-detail-title="External Candidate"' in html
+    assert "Back to search results" not in html
+    assert "Request in Shelfmark" in html
+    assert "<i>Shelfmark</i>" in html
 
 
 def test_detail_template_hides_request_ready_browser_copy_for_requestable_result():

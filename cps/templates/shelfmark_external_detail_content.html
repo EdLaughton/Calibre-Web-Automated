@@ -1,0 +1,124 @@
+<div
+  class="shelfmark-detail-pane{% if modal_mode %} shelfmark-detail-pane--modal{% endif %}"
+  {% if result and result.title %}data-detail-title="{{ result.title }}"{% endif %}
+>
+  {% if shelfmark_error %}
+    <div class="alert alert-warning">{{ shelfmark_error }}</div>
+  {% elif result %}
+    {% if modal_mode %}
+      <div class="shelfmark-detail-pane__lead">
+        {% if result.subtitle %}
+          <p class="shelfmark-detail-pane__subtitle">{{ result.subtitle }}</p>
+        {% endif %}
+        {% if result.authors %}
+          <p class="shelfmark-detail-pane__authorline">{{ result.authors|join(', ') }}</p>
+        {% endif %}
+      </div>
+    {% endif %}
+    <div class="shelfmark-detail-layout">
+      <aside class="shelfmark-detail-sidebar">
+        <div class="shelfmark-detail-cover-card">
+          {% if result.cover_url %}
+            <img src="{{ result.cover_url }}" alt="{{ result.title }}" class="img-responsive shelfmark-detail-hero__cover-image">
+          {% else %}
+            <div class="shelfmark-detail-hero__cover-fallback" aria-hidden="true">
+              <span class="glyphicon glyphicon-book shelfmark-detail-hero__cover-fallback-icon"></span>
+              <span class="shelfmark-detail-hero__cover-fallback-label">{{ _("No cover") }}</span>
+            </div>
+          {% endif %}
+        </div>
+      </aside>
+
+      <section class="shelfmark-detail-main">
+        <div class="shelfmark-detail-hero shelfmark-detail-hero--{{ result.library_state.row_class }}">
+          <div class="shelfmark-detail-hero__body">
+            <div class="shelfmark-detail-hero__badges">
+              {% if result.library_state.label and result.library_state.badge_class %}
+                <span class="label {{ result.library_state.badge_class }}">
+                  <span class="{{ result.library_state.icon_class }}" aria-hidden="true"></span>
+                  {{ result.library_state.label }}
+                </span>
+              {% endif %}
+              {% if result.hardcover_id %}
+                <span class="label label-default">{{ _("Hardcover ID") }} {{ result.hardcover_id }}</span>
+              {% endif %}
+            </div>
+
+            {% if result.facts %}
+              <p class="shelfmark-detail-hero__facts" aria-label="{{ _('Shelfmark facts') }}">
+                {% for fact in result.facts %}
+                  <span class="shelfmark-detail-hero__fact">{{ fact }}</span>
+                {% endfor %}
+              </p>
+            {% endif %}
+
+            <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ result.shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
+
+            <div class="btn-toolbar shelfmark-detail-hero__actions" role="toolbar">
+              {% if result.action.mode == 'view_library' and result.library_book_url %}
+                <a class="btn btn-sm {{ result.action.button_class }} shelfmark-detail-hero__primary-action" href="{{ result.library_book_url }}">
+                  <span class="{{ result.action.icon_class }}" aria-hidden="true"></span>
+                  <span>{{ result.action.label }}</span>
+                </a>
+              {% else %}
+                <a
+                  class="btn btn-sm {{ result.action.button_class }} shelfmark-detail-hero__primary-action js-shelfmark-action"
+                  href="{{ result.shelfmark_open_url }}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-base-url="{{ result.shelfmark_base_url }}"
+                  data-open-url="{{ result.shelfmark_open_url }}"
+                  data-request-payload='{{ result.request_payload|tojson if result.request_payload else "" }}'
+                  data-mode="{{ result.action.mode }}"
+                >
+                  <span class="{{ result.action.icon_class }} js-shelfmark-action-icon" aria-hidden="true"></span>
+                  <span class="js-shelfmark-action-label">{{ result.action.label }}</span>
+                </a>
+              {% endif %}
+            </div>
+            <p class="help-block js-shelfmark-action-hint shelfmark-detail-hero__action-hint{% if not result.action.hint %} is-hidden{% endif %}">{{ result.action.hint or '' }}</p>
+          </div>
+        </div>
+
+        <div class="shelfmark-detail-section">
+          <h3 class="shelfmark-detail-section__title">{{ _("Book details") }}</h3>
+          <dl class="shelfmark-detail-meta-list">
+            {% if result.series_display %}
+              <dt>{{ _("Series") }}</dt>
+              <dd>{{ result.series_display }}</dd>
+            {% endif %}
+            {% if result.publish_year %}
+              <dt>{{ _("Published") }}</dt>
+              <dd>{{ result.publish_year }}</dd>
+            {% endif %}
+            <dt>{{ _("Provider") }}</dt>
+            <dd>{{ result.provider }}</dd>
+            {% if result.provider_id %}
+              <dt>{{ _("Provider ID") }}</dt>
+              <dd>{{ result.provider_id }}</dd>
+            {% endif %}
+            {% if result.source_url %}
+              <dt>{{ _("Source URL") }}</dt>
+              <dd><a href="{{ result.source_url }}" target="_blank" rel="noopener noreferrer">{{ result.source_url }}</a></dd>
+            {% endif %}
+            {% for field in result.display_fields %}
+              {% if field.label not in ['Rating', 'Readers'] %}
+                <dt>{{ field.label }}</dt>
+                <dd>{{ field.value }}</dd>
+              {% endif %}
+            {% endfor %}
+          </dl>
+        </div>
+
+        {% if result.description_html %}
+          <div class="shelfmark-detail-section shelfmark-detail-section--description">
+            <h3 class="shelfmark-detail-section__title">{{ _("Description") }}</h3>
+            <div class="shelfmark-detail-section__copy shelfmark-detail-section__copy--description">{{ result.description_html|safe }}</div>
+          </div>
+        {% endif %}
+      </section>
+    </div>
+  {% else %}
+    <div class="alert alert-warning">{{ _("No Shelfmark result details are available.") }}</div>
+  {% endif %}
+</div>

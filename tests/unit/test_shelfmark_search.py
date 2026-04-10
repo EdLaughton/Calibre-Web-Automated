@@ -1220,3 +1220,34 @@ def test_search_results_return_info_message_when_advanced_query_is_not_clean(she
     assert section.results == ()
     assert section.message == "Add a title, author, or publisher filter to include Shelfmark external results in advanced search."
     assert section.query_label == "Advanced external query"
+
+
+def test_fetch_book_reuses_short_lived_detail_cache(shelfmark_module):
+    shelfmark_module.clear_shelfmark_detail_cache()
+
+    client = shelfmark_module.ShelfmarkClient(
+        shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+        session=mock.Mock(),
+    )
+
+    with mock.patch.object(client, "_ensure_authenticated") as ensure_authenticated, mock.patch.object(
+        client,
+        "_perform_request",
+        return_value=object(),
+    ) as perform_request, mock.patch.object(
+        client,
+        "_parse_json_response",
+        return_value={"provider": "hardcover", "provider_id": "222", "title": "External Candidate"},
+    ):
+        first = client.fetch_book("hardcover", "222")
+        second = client.fetch_book("hardcover", "222")
+
+    assert first == second
+    assert perform_request.call_count == 1
+    assert ensure_authenticated.call_count == 1

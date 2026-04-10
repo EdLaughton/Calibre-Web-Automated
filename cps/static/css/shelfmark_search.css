@@ -1040,6 +1040,29 @@
   color: var(--shelfmark-shell-text);
 }
 
+.shelfmark-detail-pane__lead {
+  margin: 0 0 16px;
+}
+
+.shelfmark-detail-pane__subtitle,
+.shelfmark-detail-pane__authorline {
+  margin: 0;
+}
+
+.shelfmark-detail-pane__subtitle {
+  color: var(--shelfmark-shell-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.shelfmark-detail-pane__authorline {
+  margin-top: 6px;
+  color: rgba(236, 243, 248, 0.92);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .shelfmark-detail-layout {
   display: grid;
   grid-template-columns: minmax(200px, 248px) minmax(0, 1fr);
@@ -1159,6 +1182,75 @@
 
 .shelfmark-detail-section__copy--description p:last-child {
   margin-bottom: 0;
+}
+
+.shelfmark-detail-modal__dialog {
+  width: min(980px, calc(100% - 24px));
+  max-width: 980px;
+  margin: 18px auto;
+}
+
+.shelfmark-detail-modal__content {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(13, 21, 29, 0.98) 0%, rgba(10, 16, 22, 0.98) 100%);
+  color: var(--shelfmark-shell-text);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.42);
+}
+
+.shelfmark-detail-modal__header {
+  padding: 14px 18px 12px;
+  border-bottom-color: var(--shelfmark-shell-soft-border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.shelfmark-detail-modal__title {
+  color: var(--shelfmark-shell-text);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.shelfmark-detail-modal__close {
+  color: rgba(245, 249, 252, 0.86);
+  opacity: 0.78;
+  text-shadow: none;
+}
+
+.shelfmark-detail-modal__close:hover,
+.shelfmark-detail-modal__close:focus {
+  color: #fff;
+  opacity: 1;
+}
+
+.shelfmark-detail-modal__body {
+  max-height: calc(100vh - 132px);
+  overflow-y: auto;
+  padding: 20px 24px 26px;
+}
+
+.shelfmark-detail-modal__loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--shelfmark-shell-muted);
+  font-size: 13px;
+}
+
+.shelfmark-detail-modal__loading.is-hidden {
+  display: none;
+}
+
+.shelfmark-detail-modal__loading::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.82);
+  border-radius: 50%;
+  animation: shelfmark-detail-spin 0.8s linear infinite;
+}
+
+.shelfmark-detail-pane--modal .shelfmark-detail-cover-card {
+  position: static;
 }
 
 .shelfmark-detail-meta-list {
@@ -1291,8 +1383,27 @@
     position: static;
   }
 
+  .shelfmark-detail-modal__dialog {
+    width: calc(100% - 12px);
+    margin: 6px auto;
+  }
+
+  .shelfmark-detail-modal__body {
+    max-height: calc(100vh - 82px);
+    padding: 16px 14px 20px;
+  }
+
   .shelfmark-detail-meta-list {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+}
+
+@keyframes shelfmark-detail-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
