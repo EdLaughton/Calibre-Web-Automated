@@ -143,6 +143,11 @@
                 item.element.setAttribute("aria-selected", isActive ? "true" : "false");
                 if (isActive) {
                     input.setAttribute("aria-activedescendant", item.element.id);
+                    if (typeof item.element.scrollIntoView === "function") {
+                        item.element.scrollIntoView({
+                            block: "nearest"
+                        });
+                    }
                 }
             });
             if (index === -1) {
