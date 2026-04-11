@@ -911,11 +911,8 @@ def test_search_results_promote_detail_series_facts_and_plain_description(shelfm
         "1937",
         "The Lord of the Rings (2)",
     )
-    assert result.detail_stats == (
-        {"label": "Rating", "value": "4.3 ★"},
-        {"label": "Ratings", "value": "5,900"},
-        {"label": "Readers", "value": "9,893"},
-    )
+    assert result.series_url == "https://hardcover.app/series/the-lord-of-the-rings"
+    assert result.detail_stats == ()
 
 
 def test_search_results_promote_detail_genres_pages_and_editions(shelfmark_module):
@@ -999,14 +996,11 @@ def test_search_results_promote_detail_genres_pages_and_editions(shelfmark_modul
     assert result.pages == 384
     assert result.editions_count == 57
     assert result.lists_count == 128
+    assert result.series_url == "https://hardcover.app/series/discworld"
     assert result.genres == ("Fantasy", "Humour", "Comedy")
     assert result.moods == ("Whimsical", "Wry")
     assert result.content_warnings == ("Violence", "Death")
     assert result.detail_stats == (
-        {"label": "Rating", "value": "4.2 ★"},
-        {"label": "Ratings", "value": "12,034"},
-        {"label": "Readers", "value": "22,221"},
-        {"label": "Pages", "value": "384"},
         {"label": "Editions", "value": "57"},
         {"label": "Lists", "value": "128"},
     )
@@ -1014,6 +1008,7 @@ def test_search_results_promote_detail_genres_pages_and_editions(shelfmark_modul
 
 def test_search_results_reuse_cached_detail_metadata_without_refetch(shelfmark_module):
     shelfmark_module.clear_shelfmark_detail_cache()
+    shelfmark_module.clear_shelfmark_scan_cache()
     fake_client = mock.Mock()
     fake_client.config = types.SimpleNamespace(base_url="https://shelfmark.example.com")
     fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
@@ -1094,6 +1089,187 @@ def test_search_results_reuse_cached_detail_metadata_without_refetch(shelfmark_m
     assert result.cover_url == (
         "https://library.example.com/shelfmark/api/covers/hardcover_222?url=detail"
     )
+
+
+def test_filtered_search_reuses_cached_raw_scan_pages(shelfmark_module):
+    shelfmark_module.clear_shelfmark_scan_cache()
+    fake_client = mock.Mock()
+    fake_client.config = types.SimpleNamespace(base_url="https://shelfmark.example.com")
+
+    first_page_books = tuple(
+        {
+            "provider": "hardcover",
+            "provider_id": str(index),
+            "title": f"Book {index}",
+            "authors": [f"Author {index}"],
+            "cover_url": f"/api/covers/hardcover_{index}?url={index}",
+            "description": "<p>Search synopsis.</p>",
+            "rating": 4.1,
+            "ratings_count": 1200,
+            "users_count": 2400,
+            "pages": 320,
+            "series_name": "Series",
+            "series_position": index,
+            "identifiers": {"hardcover-id": str(index)},
+        }
+        for index in range(1, 101)
+    )
+    second_page_books = (
+        {
+            "provider": "hardcover",
+            "provider_id": "101",
+            "title": "Book 101",
+            "authors": ["Author 101"],
+            "cover_url": "/api/covers/hardcover_101?url=101",
+            "description": "<p>Search synopsis.</p>",
+            "rating": 4.1,
+            "ratings_count": 1200,
+            "users_count": 2400,
+            "pages": 320,
+            "series_name": "Series",
+            "series_position": 101,
+            "identifiers": {"hardcover-id": "101"},
+        },
+    )
+
+    def search_books(query, limit, page, sort):
+        assert query == "candidate"
+        assert limit == 100
+        assert sort == "popularity"
+        if page == 1:
+            return shelfmark_module.ShelfmarkSearchResponse(
+                books=first_page_books,
+                page=1,
+                total_found=101,
+                has_more=True,
+            )
+        if page == 2:
+            return shelfmark_module.ShelfmarkSearchResponse(
+                books=second_page_books,
+                page=2,
+                total_found=101,
+                has_more=False,
+            )
+        raise AssertionError(f"unexpected raw page {page}")
+
+    fake_client.search_books.side_effect = search_books
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={},
+    ):
+        first_section = shelfmark_module.search_shelfmark_results(
+            "candidate",
+            detail_url_builder=lambda _: "/external/candidate",
+            page=1,
+        )
+        second_section = shelfmark_module.search_shelfmark_results(
+            "candidate",
+            detail_url_builder=lambda _: "/external/candidate",
+            page=1,
+        )
+
+    assert fake_client.search_books.call_count == 2
+    assert first_section.page_result_count == 12
+    assert second_section.page_result_count == 12
+
+
+def test_filtered_search_requestable_prefilter_skips_non_requestable_detail_fetch(shelfmark_module):
+    shelfmark_module.clear_shelfmark_detail_cache()
+    shelfmark_module.clear_shelfmark_scan_cache()
+    fake_client = mock.Mock()
+    fake_client.config = types.SimpleNamespace(base_url="https://shelfmark.example.com")
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=(
+            {
+                "provider": "other",
+                "provider_id": "111",
+                "title": "No Exact ID",
+                "authors": ["Author One"],
+                "description": "<p>Thin result.</p>",
+            },
+            {
+                "provider": "hardcover",
+                "provider_id": "222",
+                "title": "Request Ready",
+                "authors": ["Author Two"],
+                "identifiers": {"hardcover-id": "222"},
+            },
+        ),
+        page=1,
+        total_found=2,
+        has_more=False,
+    )
+
+    def fetch_book(provider, provider_id):
+        if provider_id != "222":
+            raise AssertionError("non-requestable result should not trigger detail enrichment")
+        return {
+            "provider": provider,
+            "provider_id": provider_id,
+            "title": "Request Ready",
+            "authors": ["Author Two"],
+            "cover_url": "/api/covers/hardcover_222?url=req",
+            "description": "<p>Detail synopsis.</p>",
+            "rating": 4.1,
+            "ratings_count": 1200,
+            "users_count": 4200,
+            "pages": 304,
+            "identifiers": {"hardcover-id": provider_id},
+        }
+
+    fake_client.fetch_book.side_effect = fetch_book
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={},
+    ):
+        section = shelfmark_module.search_shelfmark_results(
+            "request",
+            detail_url_builder=lambda _: "/external/request",
+            page=1,
+        )
+
+    assert fake_client.fetch_book.call_count == 1
+    assert [result.title for result in section.results] == ["Request Ready"]
 
 
 def test_search_results_default_to_requestable_with_covers(shelfmark_module):

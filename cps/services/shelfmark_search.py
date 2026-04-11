@@ -7,6 +7,7 @@ import re
 import socket
 from time import monotonic
 from typing import Any, Callable, Iterable, Mapping, Sequence
+import unicodedata
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
 from requests import RequestException
@@ -57,6 +58,8 @@ SHELFMARK_DETAIL_CACHE_TTL_SECONDS = 300
 SHELFMARK_DETAIL_CACHE_MAX_ENTRIES = 256
 SHELFMARK_COVER_CACHE_TTL_SECONDS = 300
 SHELFMARK_COVER_CACHE_MAX_ENTRIES = 512
+SHELFMARK_SCAN_CACHE_TTL_SECONDS = 120
+SHELFMARK_SCAN_CACHE_MAX_ENTRIES = 16
 SHELFMARK_SCAN_PAGE_SIZE = 100
 SHELFMARK_QUALITY_MIN_METADATA_SIGNALS = 5
 SHELFMARK_TRIAGE_MIN_RATINGS = 200
@@ -75,6 +78,10 @@ SHELFMARK_AUDIOBOOK_HINTS = (
 
 _SHELFMARK_DETAIL_CACHE: OrderedDict[tuple[str, str, str], tuple[float, dict[str, Any]]] = OrderedDict()
 _SHELFMARK_COVER_CACHE: OrderedDict[tuple[str, str], tuple[float, str]] = OrderedDict()
+_SHELFMARK_SCAN_CACHE: OrderedDict[
+    tuple[str, str, str],
+    tuple[float, tuple[dict[str, Any], ...], int],
+] = OrderedDict()
 
 
 class ShelfmarkIntegrationError(RuntimeError):
@@ -203,6 +210,7 @@ class ShelfmarkResultView:
     series_position: float | None = None
     series_count: int | None = None
     series_display: str | None = None
+    series_url: str | None = None
     facts: tuple[str, ...] = field(default_factory=tuple)
     detail_stats: tuple[dict[str, str], ...] = field(default_factory=tuple)
     genres: tuple[str, ...] = field(default_factory=tuple)
@@ -375,6 +383,10 @@ def clear_shelfmark_detail_cache() -> None:
 
 def clear_shelfmark_cover_cache() -> None:
     _SHELFMARK_COVER_CACHE.clear()
+
+
+def clear_shelfmark_scan_cache() -> None:
+    _SHELFMARK_SCAN_CACHE.clear()
 
 
 def get_shelfmark_client_config() -> ShelfmarkClientConfig:
@@ -1187,9 +1199,10 @@ def build_shelfmark_result_view(
         series_position=series_position,
         series_count=series_count,
         series_display=_format_series_display(series_name, series_position),
+        series_url=_resolve_series_url(book),
         facts=_build_result_facts(book, publish_year=publish_year),
         detail_stats=_build_detail_stats(book, publish_year=publish_year),
-        genres=_normalize_tag_list(book.get("genres"), limit=5),
+        genres=_resolve_genres(book),
         moods=_resolve_moods(book),
         content_warnings=_resolve_content_warnings(book),
         series_context=series_context,
@@ -1323,6 +1336,8 @@ def _merge_book_details(
         "display_fields",
         "genres",
         "series_id",
+        "series_url",
+        "series_slug",
         "series_name",
         "series_position",
         "series_count",
@@ -1423,6 +1438,20 @@ def _prune_shelfmark_cover_cache(now: float | None = None) -> None:
     )
 
 
+def _prune_shelfmark_scan_cache(now: float | None = None) -> None:
+    current_time = monotonic() if now is None else now
+    expired_keys = [
+        cache_key
+        for cache_key, (cached_at, _, _) in _SHELFMARK_SCAN_CACHE.items()
+        if current_time - cached_at >= SHELFMARK_SCAN_CACHE_TTL_SECONDS
+    ]
+    for cache_key in expired_keys:
+        _SHELFMARK_SCAN_CACHE.pop(cache_key, None)
+
+    while len(_SHELFMARK_SCAN_CACHE) > SHELFMARK_SCAN_CACHE_MAX_ENTRIES:
+        _SHELFMARK_SCAN_CACHE.popitem(last=False)
+
+
 def _get_cached_shelfmark_cover_url(base_url: str, cover_value: str) -> str | None:
     now = monotonic()
     _prune_shelfmark_cover_cache(now)
@@ -1446,6 +1475,44 @@ def _remember_shelfmark_cover_url(base_url: str, cover_value: str, resolved_url:
     _SHELFMARK_COVER_CACHE.move_to_end(cache_key)
     _prune_shelfmark_cover_cache()
     return resolved_url
+
+
+def _get_cached_shelfmark_scan(
+    base_url: str,
+    query: str,
+    sort: str,
+) -> tuple[tuple[dict[str, Any], ...], int] | None:
+    now = monotonic()
+    _prune_shelfmark_scan_cache(now)
+    cache_key = (base_url, query, sort)
+    cached_entry = _SHELFMARK_SCAN_CACHE.get(cache_key)
+    if not cached_entry:
+        return None
+
+    cached_at, cached_books, raw_total_available = cached_entry
+    if now - cached_at >= SHELFMARK_SCAN_CACHE_TTL_SECONDS:
+        _SHELFMARK_SCAN_CACHE.pop(cache_key, None)
+        return None
+
+    _SHELFMARK_SCAN_CACHE.move_to_end(cache_key)
+    return tuple(dict(book) for book in cached_books), raw_total_available
+
+
+def _remember_shelfmark_scan(
+    base_url: str,
+    query: str,
+    sort: str,
+    *,
+    raw_books: Sequence[Mapping[str, Any]],
+    raw_total_available: int,
+) -> tuple[tuple[dict[str, Any], ...], int]:
+    _prune_shelfmark_scan_cache()
+    cache_key = (base_url, query, sort)
+    cached_books = tuple(dict(book) for book in raw_books)
+    _SHELFMARK_SCAN_CACHE[cache_key] = (monotonic(), cached_books, int(raw_total_available))
+    _SHELFMARK_SCAN_CACHE.move_to_end(cache_key)
+    _prune_shelfmark_scan_cache()
+    return tuple(dict(book) for book in cached_books), int(raw_total_available)
 
 
 def _get_search_enrichment_detail_book(
@@ -1565,8 +1632,13 @@ def _build_ranked_shelfmark_results(
     *,
     detail_url_builder: Callable[[Mapping[str, Any]], str | None],
     shelfmark_browser_base_url: str,
+    requestable_only: bool = False,
 ) -> tuple[ShelfmarkResultView, ...]:
     request_books = tuple(book for book in books if not _is_audiobook_result(book))
+    if requestable_only:
+        request_books = tuple(
+            book for book in request_books if build_shelfmark_request_payload(book) is not None
+        )
     enriched_books = _enrich_books_with_detail_covers(client, request_books)
     enriched_books = tuple(book for book in enriched_books if not _is_audiobook_result(book))
     hardcover_ids = [value for value in (_extract_hardcover_id(book) for book in enriched_books) if value]
@@ -1620,29 +1692,42 @@ def _scan_filtered_shelfmark_results(
     detail_url_builder: Callable[[Mapping[str, Any]], str | None],
     shelfmark_browser_base_url: str,
 ) -> tuple[tuple[ShelfmarkResultView, ...], int]:
-    raw_page = DEFAULT_SHELFMARK_PAGE
-    raw_total_available = 0
-    raw_books: list[dict[str, Any]] = []
+    cached_scan = _get_cached_shelfmark_scan(client.config.base_url, query, sort)
+    if cached_scan is not None:
+        raw_books, raw_total_available = cached_scan
+    else:
+        raw_page = DEFAULT_SHELFMARK_PAGE
+        raw_total_available = 0
+        scanned_books: list[dict[str, Any]] = []
 
-    while True:
-        response = client.search_books(
+        while True:
+            response = client.search_books(
+                query,
+                limit=SHELFMARK_SCAN_PAGE_SIZE,
+                page=raw_page,
+                sort=sort,
+            )
+            if raw_page == DEFAULT_SHELFMARK_PAGE:
+                raw_total_available = response.total_found
+            scanned_books.extend(dict(book) for book in response.books)
+            if not response.has_more or not response.books:
+                break
+            raw_page += 1
+
+        raw_books, raw_total_available = _remember_shelfmark_scan(
+            client.config.base_url,
             query,
-            limit=SHELFMARK_SCAN_PAGE_SIZE,
-            page=raw_page,
-            sort=sort,
+            sort,
+            raw_books=scanned_books,
+            raw_total_available=raw_total_available,
         )
-        if raw_page == DEFAULT_SHELFMARK_PAGE:
-            raw_total_available = response.total_found
-        raw_books.extend(dict(book) for book in response.books)
-        if not response.has_more or not response.books:
-            break
-        raw_page += 1
 
     ranked_results = _build_ranked_shelfmark_results(
         client,
         tuple(raw_books),
         detail_url_builder=detail_url_builder,
         shelfmark_browser_base_url=shelfmark_browser_base_url,
+        requestable_only=requestable_only,
     )
     filtered_results = _filter_visible_results(
         ranked_results,
@@ -1835,6 +1920,7 @@ def search_shelfmark_results(
                 search_response.books,
                 detail_url_builder=detail_url_builder,
                 shelfmark_browser_base_url=config_data.browser_base_url,
+                requestable_only=requestable_only,
             )
             results = page_results
             filtered_total = search_response.total_found
@@ -2354,6 +2440,42 @@ def _format_series_display(series_name: str | None, series_position: float | Non
     return series_name
 
 
+def _slugify_hardcover_path_segment(value: str | None) -> str | None:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+    normalized = (
+        unicodedata.normalize("NFKD", normalized)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    normalized = normalized.casefold()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return normalized or None
+
+
+def _resolve_series_url(book: Mapping[str, Any]) -> str | None:
+    explicit_url = _normalize_text(book.get("series_url"))
+    if explicit_url:
+        return explicit_url
+
+    if (_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER) != SHELFMARK_METADATA_PROVIDER:
+        return None
+
+    series_slug = _normalize_text(book.get("series_slug"))
+    if not series_slug:
+        featured_series = book.get("featured_book_series")
+        if isinstance(featured_series, Mapping):
+            series_data = featured_series.get("series")
+            if isinstance(series_data, Mapping):
+                series_slug = _normalize_text(series_data.get("slug"))
+    if not series_slug:
+        series_slug = _slugify_hardcover_path_segment(_resolve_series_name(book))
+    if not series_slug:
+        return None
+    return f"https://hardcover.app/series/{series_slug}"
+
+
 def _normalize_tag_list(value: Any, *, limit: int | None = None) -> tuple[str, ...]:
     if isinstance(value, (str, bytes)):
         normalized = _normalize_text(value)
@@ -2395,6 +2517,21 @@ def _normalize_tag_list(value: Any, *, limit: int | None = None) -> tuple[str, .
         if limit and len(tags) >= limit:
             break
     return tuple(tags)
+
+
+def _resolve_genres(book: Mapping[str, Any]) -> tuple[str, ...]:
+    direct = _normalize_tag_list(book.get("genres"), limit=5)
+    if direct:
+        return direct
+
+    tag_fallback = _normalize_tag_list(book.get("tags"), limit=5)
+    if tag_fallback:
+        return tag_fallback
+
+    return _normalize_compact_values(
+        _lookup_display_field_value(book, "Genres", "Genre", "Tags", "Tag"),
+        limit=5,
+    )
 
 
 def _normalize_compact_values(value: Any, *, limit: int | None = None) -> tuple[str, ...]:
@@ -2634,24 +2771,12 @@ def _build_result_facts(book: Mapping[str, Any], *, publish_year: int | None) ->
 
 def _build_detail_stats(book: Mapping[str, Any], *, publish_year: int | None) -> tuple[dict[str, str], ...]:
     stats: list[dict[str, str]] = []
-    rating_value = _resolve_rating_value(book)
-    ratings_count = _resolve_ratings_count(book)
     reviews_count = _resolve_reviews_count(book)
-    readers_count = _resolve_readers_count(book)
-    pages = _resolve_pages(book)
     editions_count = _resolve_editions_count(book)
     lists_count = _resolve_lists_count(book)
 
-    if rating_value is not None:
-        stats.append({"label": _("Rating"), "value": f"{rating_value:.1f} \u2605"})
-    if ratings_count:
-        stats.append({"label": _("Ratings"), "value": f"{ratings_count:,}"})
     if reviews_count:
         stats.append({"label": _("Reviews"), "value": f"{reviews_count:,}"})
-    if readers_count:
-        stats.append({"label": _("Readers"), "value": f"{readers_count:,}"})
-    if pages:
-        stats.append({"label": _("Pages"), "value": f"{pages:,}"})
     if editions_count:
         stats.append({"label": _("Editions"), "value": f"{editions_count:,}"})
     if lists_count:

@@ -13,6 +13,9 @@ from datetime import datetime
 
 from tabulate import tabulate
 
+_DUPLICATE_GROUPS_CACHE_VERSION = None
+_DUPLICATE_GROUPS_CACHE_VALUE = None
+
 
 class CWA_DB:
     def __init__(self, verbose=False):
@@ -2410,6 +2413,7 @@ class CWA_DB:
     def get_duplicate_cache(self):
         """Get cached duplicate scan results"""
         import json
+        global _DUPLICATE_GROUPS_CACHE_VERSION, _DUPLICATE_GROUPS_CACHE_VALUE
         try:
             self.cur.execute("""
                 SELECT scan_timestamp, duplicate_groups_json, total_count, scan_pending, last_scanned_book_id
@@ -2418,9 +2422,16 @@ class CWA_DB:
             """)
             row = self.cur.fetchone()
             if row and row[1]:  # Has cached data
+                cache_version = (row[0], row[2], bool(row[3]), row[4])
+                if _DUPLICATE_GROUPS_CACHE_VERSION == cache_version and _DUPLICATE_GROUPS_CACHE_VALUE is not None:
+                    duplicate_groups = list(_DUPLICATE_GROUPS_CACHE_VALUE)
+                else:
+                    duplicate_groups = json.loads(row[1])
+                    _DUPLICATE_GROUPS_CACHE_VERSION = cache_version
+                    _DUPLICATE_GROUPS_CACHE_VALUE = list(duplicate_groups)
                 return {
                     'scan_timestamp': row[0],
-                    'duplicate_groups': json.loads(row[1]),
+                    'duplicate_groups': duplicate_groups,
                     'total_count': row[2],
                     'scan_pending': bool(row[3]),
                     'last_scanned_book_id': row[4]
