@@ -5,6 +5,10 @@
   var DEFAULT_TIMEOUT_MS = 10000;
   var DETAIL_VIEW_PARAM = 'view';
   var DETAIL_VIEW_VALUE = 'modal';
+  var DETAIL_STATE_PROVIDER_PARAM = 'shelfmark_detail_provider';
+  var DETAIL_STATE_ID_PARAM = 'shelfmark_detail_id';
+  var DETAIL_HTML_CACHE_TTL_MS = 300000;
+  var DETAIL_HTML_CACHE_MAX_ENTRIES = 64;
   var ACTIVITY_SNAPSHOT_TTL_MS = 30000;
   var STATUS_SETTLE_DELAY_MS = typeof window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS === 'number'
     ? window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS
@@ -23,7 +27,10 @@
   var boundBatchToolbars = new WeakSet();
   var activeDetailLink = null;
   var activeDetailRequest = null;
+  var detailHtmlCache = new Map();
   var activitySnapshotCache = new Map();
+  var detailHistoryBound = false;
+  var detailModalState = null;
 
   function toArray(value) {
     return Array.prototype.slice.call(value || []);
@@ -38,6 +45,56 @@
     } catch (err) {
       return null;
     }
+  }
+
+  function pruneTimedCache(cache, maxEntries, ttlMs) {
+    var now = Date.now();
+    Array.from(cache.entries()).forEach(function (entry) {
+      var key = entry[0];
+      var value = entry[1];
+      if (!value || typeof value.fetchedAt !== 'number' || now - value.fetchedAt >= ttlMs) {
+        cache.delete(key);
+      }
+    });
+    while (cache.size > maxEntries) {
+      cache.delete(cache.keys().next().value);
+    }
+  }
+
+  function getDetailHtmlCacheKey(provider, providerId) {
+    var normalizedProvider = toOptionalText(provider);
+    var normalizedProviderId = toOptionalText(providerId);
+    if (!normalizedProvider || !normalizedProviderId) {
+      return '';
+    }
+    return normalizedProvider + '::' + normalizedProviderId;
+  }
+
+  function getCachedDetailHtml(provider, providerId) {
+    var cacheKey = getDetailHtmlCacheKey(provider, providerId);
+    if (!cacheKey) {
+      return '';
+    }
+    pruneTimedCache(detailHtmlCache, DETAIL_HTML_CACHE_MAX_ENTRIES, DETAIL_HTML_CACHE_TTL_MS);
+    var cached = detailHtmlCache.get(cacheKey);
+    if (!cached || typeof cached.html !== 'string') {
+      return '';
+    }
+    detailHtmlCache.delete(cacheKey);
+    detailHtmlCache.set(cacheKey, cached);
+    return cached.html;
+  }
+
+  function rememberDetailHtml(provider, providerId, html) {
+    var cacheKey = getDetailHtmlCacheKey(provider, providerId);
+    if (!cacheKey || typeof html !== 'string' || !html) {
+      return;
+    }
+    detailHtmlCache.set(cacheKey, {
+      fetchedAt: Date.now(),
+      html: html
+    });
+    pruneTimedCache(detailHtmlCache, DETAIL_HTML_CACHE_MAX_ENTRIES, DETAIL_HTML_CACHE_TTL_MS);
   }
 
   function stripTrailingSlash(value) {
@@ -69,6 +126,82 @@
       var separator = href.indexOf('?') === -1 ? '?' : '&';
       return href + separator + DETAIL_VIEW_PARAM + '=' + DETAIL_VIEW_VALUE;
     }
+  }
+
+  function buildUrl(href) {
+    try {
+      return new URL(href, window.location.href);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function clearDetailStateParams(url) {
+    if (!url || !url.searchParams) {
+      return;
+    }
+    url.searchParams.delete(DETAIL_STATE_PROVIDER_PARAM);
+    url.searchParams.delete(DETAIL_STATE_ID_PARAM);
+  }
+
+  function buildSearchStateUrl(href) {
+    var url = buildUrl(href || window.location.href);
+    if (!url) {
+      return href || window.location.href;
+    }
+    clearDetailStateParams(url);
+    return url.toString();
+  }
+
+  function buildSearchStateUrlWithDetail(searchStateUrl, provider, providerId) {
+    var url = buildUrl(searchStateUrl || window.location.href);
+    if (!url) {
+      return searchStateUrl || window.location.href;
+    }
+    clearDetailStateParams(url);
+    if (provider) {
+      url.searchParams.set(DETAIL_STATE_PROVIDER_PARAM, provider);
+    }
+    if (providerId) {
+      url.searchParams.set(DETAIL_STATE_ID_PARAM, providerId);
+    }
+    return url.toString();
+  }
+
+  function parseDetailState(href) {
+    var url = buildUrl(href || window.location.href);
+    if (!url) {
+      return { provider: '', providerId: '' };
+    }
+    return {
+      provider: toOptionalText(url.searchParams.get(DETAIL_STATE_PROVIDER_PARAM)),
+      providerId: toOptionalText(url.searchParams.get(DETAIL_STATE_ID_PARAM))
+    };
+  }
+
+  function currentUrlHasDetailState() {
+    var state = parseDetailState(window.location.href);
+    return Boolean(state.provider && state.providerId);
+  }
+
+  function emitCustomEvent(node, name) {
+    if (!node || !name) {
+      return;
+    }
+    if (typeof node.dispatchEvent === 'function' && typeof window.Event === 'function') {
+      try {
+        node.dispatchEvent(new window.Event(name));
+        return;
+      } catch (err) {
+        // Fall through to simple listener invocation.
+      }
+    }
+    if (!node.listeners || !Array.isArray(node.listeners[name])) {
+      return;
+    }
+    node.listeners[name].forEach(function (handler) {
+      handler();
+    });
   }
 
   function clearStatusTimer(node) {
@@ -498,6 +631,10 @@
     if (!chipNode) {
       return;
     }
+
+    var statusKey = workflowState ? workflowState.key : '';
+    var isHandled = statusKey === 'requested' || statusKey === 'queue' || statusKey === 'downloaded' || statusKey === 'imported';
+    target.classList.toggle('is-shelfmark-handled', isHandled);
 
     STATUS_CHIP_CLASSES.forEach(function (className) {
       chipNode.classList.remove(className);
@@ -1123,6 +1260,7 @@
     if (document.body) {
       document.body.classList.remove('modal-open');
     }
+    emitCustomEvent(modalNode, 'cwa:modal-hidden');
   }
 
   function registerModalHiddenHandler(modalNode, handler) {
@@ -1158,6 +1296,25 @@
       activeDetailLink.focus();
     }
     activeDetailLink = null;
+    detailModalState = null;
+  }
+
+  function modalIsOpen(modalNode) {
+    return Boolean(modalNode && modalNode.classList && modalNode.classList.contains('in'));
+  }
+
+  function findMatchingDetailLink(detailLinks, provider, providerId) {
+    return (detailLinks || []).find(function (link) {
+      return (
+        toOptionalText(link.dataset.detailProvider) === provider &&
+        toOptionalText(link.dataset.detailProviderId) === providerId
+      );
+    }) || null;
+  }
+
+  function getModalSearchStateUrl(modalNode) {
+    var configured = toOptionalText(modalNode && modalNode.dataset ? modalNode.dataset.searchStateUrl : '');
+    return configured || buildSearchStateUrl(window.location.href);
   }
 
   function initActions(root) {
@@ -1209,8 +1366,150 @@
     }
 
     registerModalHiddenHandler(modalNode, function () {
+      var closingFromHistory = Boolean(detailModalState && detailModalState.closingFromHistory);
+      var restoreUrl = detailModalState && detailModalState.searchStateUrl;
+      var historyPushed = Boolean(detailModalState && detailModalState.historyPushed);
       resetDetailModal(modalBody, modalTitle);
+      if (closingFromHistory || !restoreUrl || !currentUrlHasDetailState()) {
+        return;
+      }
+      if (window.history && typeof window.history.back === 'function' && historyPushed) {
+        window.history.back();
+        return;
+      }
+      if (window.history && typeof window.history.replaceState === 'function') {
+        window.history.replaceState(window.history.state, '', restoreUrl);
+      }
     });
+
+    if (!detailHistoryBound && window && typeof window.addEventListener === 'function') {
+      detailHistoryBound = true;
+      window.addEventListener('popstate', function () {
+        var state = parseDetailState(window.location.href);
+        if (state.provider && state.providerId) {
+          if (modalIsOpen(modalNode)) {
+            return;
+          }
+          var matchingLink = findMatchingDetailLink(detailLinks, state.provider, state.providerId);
+          if (matchingLink) {
+            openDetailLink(matchingLink, {
+              pushHistory: false,
+              searchStateUrl: buildSearchStateUrl(window.location.href)
+            });
+          }
+          return;
+        }
+
+        if (modalIsOpen(modalNode)) {
+          if (!detailModalState) {
+            detailModalState = {};
+          }
+          detailModalState.closingFromHistory = true;
+          hideModal(modalNode);
+        }
+      });
+    }
+
+    function openDetailLink(link, options) {
+      var settings = options || {};
+      var provider = toOptionalText(link.dataset.detailProvider);
+      var providerId = toOptionalText(link.dataset.detailProviderId);
+      var searchStateUrl = settings.searchStateUrl || getModalSearchStateUrl(modalNode);
+      var detailStateUrl = buildSearchStateUrlWithDetail(searchStateUrl, provider, providerId);
+      var cachedHtml = getCachedDetailHtml(provider, providerId);
+
+      activeDetailLink = link;
+      abortActiveDetailRequest();
+      detailModalState = {
+        provider: provider,
+        providerId: providerId,
+        searchStateUrl: searchStateUrl,
+        detailStateUrl: detailStateUrl,
+        historyPushed: false,
+        closingFromHistory: false
+      };
+
+      if (settings.pushHistory !== false && window.history && typeof window.history.pushState === 'function') {
+        window.history.pushState(
+          {
+            shelfmarkDetail: {
+              provider: provider,
+              providerId: providerId
+            }
+          },
+          '',
+          detailStateUrl
+        );
+        detailModalState.historyPushed = true;
+      }
+
+      modalTitle.textContent = link.dataset.detailTitle || 'Shelfmark Details';
+      showModal(modalNode);
+
+      if (cachedHtml) {
+        modalBody.innerHTML = cachedHtml;
+        modalBody.setAttribute('aria-busy', 'false');
+        var cachedTitleSource = modalBody.querySelector('[data-detail-title]');
+        if (cachedTitleSource && cachedTitleSource.dataset && cachedTitleSource.dataset.detailTitle) {
+          modalTitle.textContent = cachedTitleSource.dataset.detailTitle;
+        }
+        initActions(modalBody);
+        return;
+      }
+
+      modalBody.innerHTML = '<div class="shelfmark-detail-modal__loading js-shelfmark-detail-modal-loading">Loading Shelfmark details…</div>';
+      modalBody.setAttribute('aria-busy', 'true');
+
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      activeDetailRequest = controller;
+
+      fetch(buildDetailModalUrl(link.href), {
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'text/html',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        signal: controller ? controller.signal : undefined
+      }).then(function (response) {
+        if (!response.ok) {
+          throw new Error('Shelfmark detail modal request failed.');
+        }
+        return response.text();
+      }).then(function (html) {
+        if (controller && controller !== activeDetailRequest) {
+          return;
+        }
+        rememberDetailHtml(provider, providerId, html);
+        modalBody.innerHTML = html;
+        modalBody.setAttribute('aria-busy', 'false');
+        var titleSource = modalBody.querySelector('[data-detail-title]');
+        if (titleSource && titleSource.dataset && titleSource.dataset.detailTitle) {
+          modalTitle.textContent = titleSource.dataset.detailTitle;
+        }
+        initActions(modalBody);
+      }).catch(function (error) {
+        if (error && error.name === 'AbortError') {
+          return;
+        }
+        if (detailModalState) {
+          detailModalState.closingFromHistory = true;
+          if (
+            detailModalState.searchStateUrl &&
+            currentUrlHasDetailState() &&
+            window.history &&
+            typeof window.history.replaceState === 'function'
+          ) {
+            window.history.replaceState(window.history.state, '', detailModalState.searchStateUrl);
+          }
+        }
+        hideModal(modalNode);
+        window.location.assign(link.href);
+      }).finally(function () {
+        if (!controller || activeDetailRequest === controller) {
+          activeDetailRequest = null;
+        }
+      });
+    }
 
     detailLinks.forEach(function (link) {
       if (boundDetailLinks.has(link)) {
@@ -1224,52 +1523,25 @@
         }
 
         event.preventDefault();
-        activeDetailLink = link;
-        abortActiveDetailRequest();
-        modalTitle.textContent = link.dataset.detailTitle || 'Shelfmark Details';
-        modalBody.innerHTML = '<div class="shelfmark-detail-modal__loading js-shelfmark-detail-modal-loading">Loading Shelfmark details…</div>';
-        modalBody.setAttribute('aria-busy', 'true');
-        showModal(modalNode);
-
-        var controller = typeof AbortController === 'function' ? new AbortController() : null;
-        activeDetailRequest = controller;
-
-        fetch(buildDetailModalUrl(link.href), {
-          credentials: 'same-origin',
-          headers: {
-            'Accept': 'text/html',
-            'X-Requested-With': 'XMLHttpRequest'
-          },
-          signal: controller ? controller.signal : undefined
-        }).then(function (response) {
-          if (!response.ok) {
-            throw new Error('Shelfmark detail modal request failed.');
-          }
-          return response.text();
-        }).then(function (html) {
-          if (controller && controller !== activeDetailRequest) {
-            return;
-          }
-          modalBody.innerHTML = html;
-          modalBody.setAttribute('aria-busy', 'false');
-          var titleSource = modalBody.querySelector('[data-detail-title]');
-          if (titleSource && titleSource.dataset && titleSource.dataset.detailTitle) {
-            modalTitle.textContent = titleSource.dataset.detailTitle;
-          }
-          initActions(modalBody);
-        }).catch(function (error) {
-          if (error && error.name === 'AbortError') {
-            return;
-          }
-          hideModal(modalNode);
-          window.location.assign(link.href);
-        }).finally(function () {
-          if (!controller || activeDetailRequest === controller) {
-            activeDetailRequest = null;
-          }
+        openDetailLink(link, {
+          pushHistory: true,
+          searchStateUrl: getModalSearchStateUrl(modalNode)
         });
       });
     });
+
+    var initialState = parseDetailState(window.location.href);
+    if (initialState.provider && initialState.providerId && !modalIsOpen(modalNode)) {
+      var initialLink = findMatchingDetailLink(detailLinks, initialState.provider, initialState.providerId);
+      if (initialLink) {
+        openDetailLink(initialLink, {
+          pushHistory: false,
+          searchStateUrl: buildSearchStateUrl(window.location.href)
+        });
+      } else if (window.history && typeof window.history.replaceState === 'function') {
+        window.history.replaceState(window.history.state, '', buildSearchStateUrl(window.location.href));
+      }
+    }
   }
 
   function initBatchToolbar(root) {

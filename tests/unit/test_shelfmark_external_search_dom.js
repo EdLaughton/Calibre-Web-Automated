@@ -492,6 +492,10 @@ async function runScenario(options) {
     enrichedStatus.dom.document.querySelector('.js-shelfmark-status-chip').dataset.statusKey,
     'queue'
   );
+  assert.equal(
+    enrichedStatus.dom.document.querySelector('.js-shelfmark-status-target').classList.contains('is-shelfmark-handled'),
+    true
+  );
 
   const importedStatus = await runScenario({
     currentOrigin: 'https://library.example.com',
@@ -533,6 +537,10 @@ async function runScenario(options) {
   assert.equal(
     importedStatus.dom.document.querySelector('.js-shelfmark-status-chip').dataset.statusKey,
     'imported'
+  );
+  assert.equal(
+    importedStatus.dom.document.querySelector('.js-shelfmark-status-target').classList.contains('is-shelfmark-handled'),
+    true
   );
 
   const batchReady = await runScenario({
@@ -618,6 +626,10 @@ async function runScenario(options) {
   assert.equal(
     batchReady.dom.document.querySelector('.js-shelfmark-status-chip').textContent,
     'Requested'
+  );
+  assert.equal(
+    batchReady.dom.document.querySelector('.js-shelfmark-status-target').classList.contains('is-shelfmark-handled'),
+    true
   );
 
   const batchBlocked = await runScenario({

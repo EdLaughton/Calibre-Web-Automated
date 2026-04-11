@@ -21,9 +21,11 @@ from .usermanagement import login_required_if_no_ano
 from .render_template import render_title_template
 from .pagination import Pagination
 from .services.shelfmark_search import (
+    DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE,
     DEFAULT_SHELFMARK_FILTER_HAS_COVER,
     DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
     DEFAULT_SHELFMARK_SERIES_FILTER,
+    DEFAULT_SHELFMARK_TRIAGE_FILTER,
     ShelfmarkIntegrationError,
     build_shelfmark_advanced_query,
     fetch_shelfmark_detail,
@@ -34,6 +36,11 @@ from .services.shelfmark_search import (
 search = Blueprint('search', __name__)
 
 log = logger.create()
+
+SHELFMARK_TRANSIENT_QUERY_KEYS = (
+    "shelfmark_detail_provider",
+    "shelfmark_detail_id",
+)
 
 
 @search.route("/search", methods=["GET"])
@@ -391,7 +398,7 @@ def render_adv_search_results(term, offset=None, order=None, limit=None):
         detail_url_builder=lambda book: _build_shelfmark_detail_url(
             book,
             query=shelfmark_query or search_term,
-            return_to=_current_request_path(),
+            return_to=_current_shelfmark_search_state_url(),
         ),
         query_label=_("Advanced external query"),
         context_hint=(
@@ -458,7 +465,7 @@ def render_search_results(term, offset=None, order=None, limit=None):
             detail_url_builder=lambda book: _build_shelfmark_detail_url(
                 book,
                 query=term,
-                return_to=_current_request_path(),
+                return_to=_current_shelfmark_search_state_url(),
             ),
             query_label=_("External lookup query"),
         )
@@ -552,10 +559,29 @@ def _build_shelfmark_detail_url(book, *, query, return_to=None):
     )
 
 
-def _current_request_path():
-    if not request.query_string:
-        return request.path
-    return request.full_path.rstrip("?")
+def _current_request_params(*, include_transient=True):
+    params = request.args.to_dict(flat=True)
+    if include_transient:
+        return params
+    for key in SHELFMARK_TRANSIENT_QUERY_KEYS:
+        params.pop(key, None)
+    return params
+
+
+def _request_url_for_params(params):
+    if not params:
+        return url_for(request.endpoint, **(request.view_args or {}))
+    return url_for(request.endpoint, **(request.view_args or {}), **params)
+
+
+def _current_request_path(*, include_transient=True):
+    return _request_url_for_params(
+        _current_request_params(include_transient=include_transient)
+    )
+
+
+def _current_shelfmark_search_state_url():
+    return _current_request_path(include_transient=False)
 
 
 def _requested_shelfmark_page():
@@ -582,6 +608,10 @@ def _requested_shelfmark_series_filter():
     return (request.args.get("shelfmark_series_filter", DEFAULT_SHELFMARK_SERIES_FILTER) or DEFAULT_SHELFMARK_SERIES_FILTER).strip().lower()
 
 
+def _requested_shelfmark_triage_filter():
+    return (request.args.get("shelfmark_triage_filter", DEFAULT_SHELFMARK_TRIAGE_FILTER) or DEFAULT_SHELFMARK_TRIAGE_FILTER).strip().lower()
+
+
 def _requested_shelfmark_flag(name, default=False):
     values = request.args.getlist(name)
     if not values:
@@ -590,12 +620,12 @@ def _requested_shelfmark_flag(name, default=False):
 
 
 def _current_request_url_with(**updates):
-    params = request.args.to_dict(flat=True)
+    params = _current_request_params(include_transient=False)
     params.update({key: str(value) for key, value in updates.items() if value not in (None, "")})
     for key, value in updates.items():
         if value in (None, ""):
             params.pop(key, None)
-    return url_for(request.endpoint, **(request.view_args or {}), **params)
+    return _request_url_for_params(params)
 
 
 def _build_shelfmark_section(query, **kwargs):
@@ -605,9 +635,14 @@ def _build_shelfmark_section(query, **kwargs):
         page_size=_requested_shelfmark_page_size(),
         sort=_requested_shelfmark_sort(),
         series_filter=_requested_shelfmark_series_filter(),
+        triage_filter=_requested_shelfmark_triage_filter(),
         filter_requestable=_requested_shelfmark_flag(
             "shelfmark_filter_requestable",
             default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+        ),
+        filter_high_confidence=_requested_shelfmark_flag(
+            "shelfmark_filter_high_confidence",
+            default=DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE,
         ),
         filter_has_cover=_requested_shelfmark_flag(
             "shelfmark_filter_has_cover",
@@ -617,6 +652,8 @@ def _build_shelfmark_section(query, **kwargs):
     ).to_template_dict()
     if not section.get("enabled"):
         return section
+
+    section["state_url"] = _current_shelfmark_search_state_url()
 
     previous_page = section.get("previous_page")
     next_page = section.get("next_page")
@@ -633,7 +670,9 @@ def _build_shelfmark_section(query, **kwargs):
     section["clear_filters_url"] = _current_request_url_with(
         shelfmark_page=1,
         shelfmark_series_filter=None,
+        shelfmark_triage_filter=None,
         shelfmark_filter_requestable=None,
+        shelfmark_filter_high_confidence=None,
         shelfmark_filter_has_cover=None,
     )
     section["requestable_toggle_url"] = _current_request_url_with(

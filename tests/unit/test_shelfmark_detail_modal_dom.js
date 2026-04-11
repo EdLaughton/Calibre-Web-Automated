@@ -51,6 +51,12 @@ class FakeElement {
     this.listeners[name].push(handler);
   }
 
+  dispatchEvent(event) {
+    const handlers = this.listeners[event.type] || [];
+    handlers.forEach((handler) => handler(event));
+    return true;
+  }
+
   setAttribute(name, value) {
     this.attributes[name] = String(value);
   }
@@ -158,14 +164,23 @@ function createDom() {
   const body = new FakeElement('body', { className: 'page-body' });
   const link = body.appendChild(new FakeElement('a', {
     className: 'btn btn-default btn-sm shelfmark-result-card__secondary-action js-shelfmark-detail-link',
-    dataset: { detailTitle: 'External Candidate' },
-    attributes: { href: '/search/external/shelfmark/hardcover/222?query=dune' },
+    dataset: {
+      detailTitle: 'External Candidate',
+      detailProvider: 'hardcover',
+      detailProviderId: '222'
+    },
+    attributes: {
+      href: '/search/external/shelfmark/hardcover/222?query=dune&return_to=%2Fsearch%3Fquery%3Ddune%26shelfmark_page%3D2'
+    },
     textContent: 'Details'
   }));
 
   const modal = body.appendChild(new FakeElement('div', {
     id: 'shelfmarkDetailModal',
-    className: 'modal fade shelfmark-detail-modal'
+    className: 'modal fade shelfmark-detail-modal',
+    dataset: {
+      searchStateUrl: '/search?query=dune&shelfmark_page=2'
+    }
   }));
   const modalDialog = modal.appendChild(new FakeElement('div', {
     className: 'modal-dialog modal-lg shelfmark-detail-modal__dialog'
@@ -197,21 +212,81 @@ function flush() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-async function runScenario(clickOptions) {
+function createWindow(initialHref) {
+  const listeners = {};
+  const assignedUrls = [];
+  const historyEntries = [initialHref];
+  let historyIndex = 0;
+
+  function resolveHref(value) {
+    return new URL(value, windowObject.location.href).toString();
+  }
+
+  function dispatch(eventName) {
+    (listeners[eventName] || []).forEach((handler) => handler({ type: eventName }));
+  }
+
+  const historyObject = {
+    state: null,
+    pushState(state, _title, url) {
+      historyIndex += 1;
+      historyEntries.splice(historyIndex, historyEntries.length - historyIndex, resolveHref(url));
+      windowObject.location.href = historyEntries[historyIndex];
+      historyObject.state = state;
+    },
+    replaceState(state, _title, url) {
+      historyEntries[historyIndex] = resolveHref(url);
+      windowObject.location.href = historyEntries[historyIndex];
+      historyObject.state = state;
+    },
+    back() {
+      if (historyIndex < 1) {
+        return;
+      }
+      historyIndex -= 1;
+      windowObject.location.href = historyEntries[historyIndex];
+      dispatch('popstate');
+    }
+  };
+
+  const windowObject = {
+    location: {
+      href: initialHref,
+      assign(value) {
+        const nextHref = resolveHref(value);
+        assignedUrls.push(nextHref);
+        this.href = nextHref;
+      }
+    },
+    history: historyObject,
+    Event: function Event(type) {
+      this.type = type;
+    },
+    addEventListener(name, handler) {
+      if (!listeners[name]) {
+        listeners[name] = [];
+      }
+      listeners[name].push(handler);
+    }
+  };
+
+  return {
+    windowObject,
+    assignedUrls
+  };
+}
+
+async function runScenario(options) {
+  const config = options || {};
   const dom = createDom();
   const fetchCalls = [];
-  const assignedUrls = [];
+  const windowState = createWindow(
+    config.initialHref || 'https://library.example.com/search?query=dune&shelfmark_page=2'
+  );
 
   delete require.cache[searchModulePath];
 
-  global.window = {
-    location: {
-      href: 'https://library.example.com/search?query=dune',
-      assign(value) {
-        assignedUrls.push(value);
-      }
-    }
-  };
+  global.window = windowState.windowObject;
   global.document = dom.document;
   global.fetch = (url, options) => {
     fetchCalls.push({ url, options: options || {} });
@@ -222,7 +297,8 @@ async function runScenario(clickOptions) {
   };
 
   require(searchModulePath);
-  const event = dom.link.dispatchClick(clickOptions);
+  const clickConfig = Object.prototype.hasOwnProperty.call(config, 'clickOptions') ? config.clickOptions : config;
+  const event = clickConfig === false ? null : dom.link.dispatchClick(clickConfig);
   await flush();
   await flush();
 
@@ -230,7 +306,8 @@ async function runScenario(clickOptions) {
     dom,
     event,
     fetchCalls,
-    assignedUrls
+    assignedUrls: windowState.assignedUrls,
+    window: windowState.windowObject
   };
 }
 
@@ -244,6 +321,24 @@ async function runScenario(clickOptions) {
   assert.equal(plainClick.dom.modalTitle.textContent, 'External Candidate');
   assert.match(plainClick.dom.modalBody.innerHTML, /shelfmark-detail-pane--modal/);
   assert.deepEqual(plainClick.assignedUrls, []);
+  assert.match(plainClick.window.location.href, /shelfmark_detail_provider=hardcover/);
+  assert.match(plainClick.window.location.href, /shelfmark_detail_id=222/);
+
+  plainClick.window.history.back();
+  await flush();
+  await flush();
+
+  assert.equal(plainClick.dom.modal.classList.contains('in'), false);
+  assert.equal(plainClick.window.location.href, 'https://library.example.com/search?query=dune&shelfmark_page=2');
+
+  const reopenEvent = plainClick.dom.link.dispatchClick();
+  await flush();
+  await flush();
+
+  assert.equal(reopenEvent.defaultPrevented, true);
+  assert.equal(plainClick.fetchCalls.length, 1);
+  assert.equal(plainClick.dom.modal.classList.contains('in'), true);
+  assert.match(plainClick.dom.modalBody.innerHTML, /shelfmark-detail-pane--modal/);
 
   const ctrlClick = await runScenario({ ctrlKey: true });
 
@@ -251,6 +346,21 @@ async function runScenario(clickOptions) {
   assert.equal(ctrlClick.fetchCalls.length, 0);
   assert.equal(ctrlClick.dom.modal.classList.contains('in'), false);
   assert.deepEqual(ctrlClick.assignedUrls, []);
+
+  const autoOpen = await runScenario({
+    initialHref: (
+      'https://library.example.com/search?query=dune&shelfmark_page=2'
+      + '&shelfmark_detail_provider=hardcover&shelfmark_detail_id=222'
+    ),
+    clickOptions: false
+  });
+
+  assert.equal(autoOpen.fetchCalls.length, 1);
+  assert.equal(autoOpen.dom.modal.classList.contains('in'), true);
+  assert.equal(
+    autoOpen.window.location.href,
+    'https://library.example.com/search?query=dune&shelfmark_page=2&shelfmark_detail_provider=hardcover&shelfmark_detail_id=222'
+  );
 
   console.log('test_shelfmark_detail_modal_dom.js: ok');
 })().catch((error) => {

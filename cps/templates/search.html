@@ -4,6 +4,59 @@
 {% set local_count = entries|length if entries is defined and entries else 0 %}
 {% set external_count = shelfmark.results|length if shelfmark and shelfmark.results is defined else 0 %}
 {% set shelfmark_has_external_results = shelfmark and shelfmark.enabled and external_count > 0 %}
+{% macro render_shelfmark_pagination(shelfmark, summary_text, jump_id) -%}
+  <div class="shelfmark-pagination-footer">
+    <div class="shelfmark-pagination-footer__summary">
+      {% if summary_text %}
+        <span>{{ summary_text }}</span>
+      {% endif %}
+      {% if shelfmark.total_available > 0 %}
+        <span>{{ _('%(count)s total on Shelfmark', count=shelfmark.total_available) }}</span>
+      {% endif %}
+      {% if shelfmark.total_pages > 0 %}
+        <span>{{ _('Page %(page)s of %(pages)s', page=shelfmark.page, pages=shelfmark.total_pages) }}</span>
+      {% endif %}
+      <span>{{ _('%(count)s per page', count=shelfmark.page_size) }}</span>
+    </div>
+    <div class="shelfmark-pagination-footer__controls">
+      <form class="shelfmark-pagination-footer__jump" method="get" action="{{ request.path }}">
+        {% for key, value in request.args.items() %}
+          {% if key not in ['shelfmark_page', 'shelfmark_detail_provider', 'shelfmark_detail_id'] %}
+            <input type="hidden" name="{{ key }}" value="{{ value }}">
+          {% endif %}
+        {% endfor %}
+        <label class="shelfmark-pagination-footer__jump-label" for="{{ jump_id }}">{{ _('Page') }}</label>
+        <input class="form-control input-sm shelfmark-pagination-footer__jump-input" id="{{ jump_id }}" type="number" name="shelfmark_page" min="1" {% if shelfmark.total_pages %}max="{{ shelfmark.total_pages }}"{% endif %} value="{{ shelfmark.page }}">
+        {% if shelfmark.total_pages > 0 %}
+          <span class="shelfmark-pagination-footer__jump-total">{{ _('of %(pages)s', pages=shelfmark.total_pages) }}</span>
+        {% endif %}
+        <button type="submit" class="btn btn-default btn-sm shelfmark-pagination-footer__jump-button">{{ _('Go') }}</button>
+      </form>
+      {% if shelfmark.previous_page_url %}
+        <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.previous_page_url }}">
+          <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
+          <span>{{ _('Previous page') }}</span>
+        </a>
+      {% else %}
+        <span class="btn btn-default btn-sm disabled shelfmark-pagination-footer__page-link" aria-disabled="true">
+          <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
+          <span>{{ _('Previous page') }}</span>
+        </span>
+      {% endif %}
+      {% if shelfmark.next_page_url %}
+        <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.next_page_url }}">
+          <span>{{ _('Next page') }}</span>
+          <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
+        </a>
+      {% else %}
+        <span class="btn btn-default btn-sm disabled shelfmark-pagination-footer__page-link" aria-disabled="true">
+          <span>{{ _('Next page') }}</span>
+          <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
+        </span>
+      {% endif %}
+    </div>
+  </div>
+{%- endmacro %}
 {% block header %}
 <link href="{{ url_for('static', filename='css/shelfmark_search.css') }}" rel="stylesheet" media="screen">
 {% endblock %}
@@ -155,6 +208,10 @@
                 {{ _('Likely next books in series you already own.') }}
               {% elif shelfmark.selected_series_filter == 'owned' %}
                 {{ _('Matches from series already in your library.') }}
+              {% elif shelfmark.filter_high_confidence %}
+                {{ _('Higher-confidence request candidates from Shelfmark.') }}
+              {% elif shelfmark.selected_triage_filter == 'strong' %}
+                {{ _('Stronger request candidates from Shelfmark.') }}
               {% elif shelfmark.filter_requestable %}
                 {{ _('Request-ready matches from Shelfmark.') }}
               {% else %}
@@ -186,12 +243,13 @@
         <div class="shelfmark-external-toolbar">
           <form class="shelfmark-external-controls form-inline" method="get" action="{{ request.path }}">
             {% for key, value in request.args.items() %}
-              {% if key not in ['shelfmark_page', 'shelfmark_page_size', 'shelfmark_sort', 'shelfmark_series_filter', 'shelfmark_filter_requestable', 'shelfmark_filter_has_cover'] %}
+              {% if key not in ['shelfmark_page', 'shelfmark_page_size', 'shelfmark_sort', 'shelfmark_series_filter', 'shelfmark_triage_filter', 'shelfmark_filter_requestable', 'shelfmark_filter_high_confidence', 'shelfmark_filter_has_cover', 'shelfmark_detail_provider', 'shelfmark_detail_id'] %}
                 <input type="hidden" name="{{ key }}" value="{{ value }}">
               {% endif %}
             {% endfor %}
             <input type="hidden" name="shelfmark_page" value="1">
             <input type="hidden" name="shelfmark_filter_requestable" value="{{ 1 if shelfmark.filter_requestable else 0 }}">
+            <input type="hidden" name="shelfmark_filter_high_confidence" value="0">
             <div class="form-group shelfmark-external-controls__group">
               <label class="shelfmark-external-controls__label" for="shelfmark_sort">{{ _('Sort') }}</label>
               <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_sort" name="shelfmark_sort">
@@ -209,6 +267,14 @@
               </select>
             </div>
             <div class="form-group shelfmark-external-controls__group">
+              <label class="shelfmark-external-controls__label" for="shelfmark_triage_filter">{{ _('Candidates') }}</label>
+              <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_triage_filter" name="shelfmark_triage_filter">
+                {% for option in shelfmark.triage_filter_options %}
+                  <option value="{{ option.value }}"{% if option.value == shelfmark.selected_triage_filter %} selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group shelfmark-external-controls__group">
               <label class="shelfmark-external-controls__label" for="shelfmark_page_size">{{ _('Per page') }}</label>
               <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_page_size" name="shelfmark_page_size">
                 {% for option in shelfmark.page_size_options %}
@@ -217,7 +283,11 @@
               </select>
             </div>
             <input type="hidden" name="shelfmark_filter_has_cover" value="0">
-            <label class="shelfmark-external-controls__toggle">
+            <label class="shelfmark-external-controls__checkbox-label">
+              <input class="shelfmark-external-controls__checkbox" type="checkbox" name="shelfmark_filter_high_confidence" value="1"{% if shelfmark.filter_high_confidence %} checked{% endif %}>
+              <span>{{ _('High confidence') }}</span>
+            </label>
+            <label class="shelfmark-external-controls__checkbox-label">
               <input class="shelfmark-external-controls__checkbox" type="checkbox" name="shelfmark_filter_has_cover" value="1"{% if shelfmark.filter_has_cover %} checked{% endif %}>
               <span>{{ _('Has cover') }}</span>
             </label>
@@ -303,6 +373,15 @@
                         {{ result.workflow_state.label }}
                       </span>
                     {% endif %}
+                    {% if result.triage_state and result.triage_state.strong_candidate %}
+                      <span class="label shelfmark-triage-chip shelfmark-triage-chip--strong">
+                        {{ _('Strong candidate') }}
+                      </span>
+                    {% elif result.quality_state and result.quality_state.high_confidence %}
+                      <span class="label shelfmark-quality-chip shelfmark-quality-chip--high">
+                        {{ _('High confidence') }}
+                      </span>
+                    {% endif %}
                     {% if result.series_context and result.series_context.badges %}
                       {% for badge in result.series_context.badges %}
                         <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
@@ -336,6 +415,19 @@
                       {% endfor %}
                     </p>
                   {% endif %}
+                  {% if result.quality_state and result.quality_state.facts %}
+                    <p class="shelfmark-result-card__triage" aria-label="{{ _('Request quality') }}">
+                      {% for fact in result.quality_state.facts %}
+                        <span class="shelfmark-result-card__triage-fact">{{ fact }}</span>
+                      {% endfor %}
+                    </p>
+                  {% elif result.triage_state and result.triage_state.facts %}
+                    <p class="shelfmark-result-card__triage" aria-label="{{ _('Request triage') }}">
+                      {% for fact in result.triage_state.facts %}
+                        <span class="shelfmark-result-card__triage-fact">{{ fact }}</span>
+                      {% endfor %}
+                    </p>
+                  {% endif %}
                   {% if result.description %}
                     <p class="shelfmark-result-card__description">
                       {{ result.description[:220] }}{% if result.description|length > 220 %}...{% endif %}
@@ -363,7 +455,13 @@
                       </a>
                     {% endif %}
                     {% if result.detail_url %}
-                      <a class="btn btn-default btn-sm shelfmark-result-card__secondary-action js-shelfmark-detail-link" href="{{ result.detail_url }}" data-detail-title="{{ result.title }}">
+                      <a
+                        class="btn btn-default btn-sm shelfmark-result-card__secondary-action js-shelfmark-detail-link"
+                        href="{{ result.detail_url }}"
+                        data-detail-title="{{ result.title }}"
+                        data-detail-provider="{{ result.provider }}"
+                        data-detail-provider-id="{{ result.provider_id }}"
+                      >
                         <span class="glyphicon glyphicon-info-sign" aria-hidden="true"></span>
                         <span>{{ _('Details') }}</span>
                       </a>
@@ -376,60 +474,11 @@
           {% endfor %}
         </div>
         {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.page_result_count > 0 %}
-          <div class="shelfmark-pagination-footer">
-            <div class="shelfmark-pagination-footer__summary">
-              {% if external_count > 0 %}
-                <span>{{ _('%(count)s shown on this page', count=external_count) }}</span>
-              {% elif shelfmark.page_result_count > 0 %}
-                <span>{{ _('No visible matches on this page') }}</span>
-              {% endif %}
-              {% if shelfmark.total_available > 0 %}
-                <span>{{ _('%(count)s total on Shelfmark', count=shelfmark.total_available) }}</span>
-              {% endif %}
-              {% if shelfmark.total_pages > 0 %}
-                <span>{{ _('Page %(page)s of %(pages)s', page=shelfmark.page, pages=shelfmark.total_pages) }}</span>
-              {% endif %}
-              <span>{{ _('%(count)s per page', count=shelfmark.page_size) }}</span>
-            </div>
-            <div class="shelfmark-pagination-footer__controls">
-              <form class="shelfmark-pagination-footer__jump" method="get" action="{{ request.path }}">
-                {% for key, value in request.args.items() %}
-                  {% if key != 'shelfmark_page' %}
-                    <input type="hidden" name="{{ key }}" value="{{ value }}">
-                  {% endif %}
-                {% endfor %}
-                <label class="shelfmark-pagination-footer__jump-label" for="shelfmark_page_jump">{{ _('Page') }}</label>
-                <input class="form-control input-sm shelfmark-pagination-footer__jump-input" id="shelfmark_page_jump" type="number" name="shelfmark_page" min="1" {% if shelfmark.total_pages %}max="{{ shelfmark.total_pages }}"{% endif %} value="{{ shelfmark.page }}">
-                {% if shelfmark.total_pages > 0 %}
-                  <span class="shelfmark-pagination-footer__jump-total">{{ _('of %(pages)s', pages=shelfmark.total_pages) }}</span>
-                {% endif %}
-                <button type="submit" class="btn btn-default btn-sm shelfmark-pagination-footer__jump-button">{{ _('Go') }}</button>
-              </form>
-              {% if shelfmark.previous_page_url %}
-                <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.previous_page_url }}">
-                  <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
-                  <span>{{ _('Previous page') }}</span>
-                </a>
-              {% else %}
-                <span class="btn btn-default btn-sm disabled shelfmark-pagination-footer__page-link" aria-disabled="true">
-                  <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
-                  <span>{{ _('Previous page') }}</span>
-                </span>
-              {% endif %}
-
-              {% if shelfmark.next_page_url %}
-                <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.next_page_url }}">
-                  <span>{{ _('Next page') }}</span>
-                  <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
-                </a>
-              {% else %}
-                <span class="btn btn-default btn-sm disabled shelfmark-pagination-footer__page-link" aria-disabled="true">
-                  <span>{{ _('Next page') }}</span>
-                  <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
-                </span>
-              {% endif %}
-            </div>
-          </div>
+          {{ render_shelfmark_pagination(
+            shelfmark,
+            _('%(count)s shown on this page', count=external_count) if external_count > 0 else _('No visible matches on this page'),
+            'shelfmark_page_jump'
+          ) }}
         {% endif %}
       {% elif shelfmark.available and shelfmark.filters_active and shelfmark.page_result_count > 0 %}
         <div class="shelfmark-empty-state shelfmark-empty-state--filtered">
@@ -442,6 +491,10 @@
                 {{ _('No next-missing owned-series matches are visible on this page') }}
               {% elif shelfmark.selected_series_filter == 'owned' %}
                 {{ _('No owned-series matches are visible on this page') }}
+              {% elif shelfmark.filter_high_confidence %}
+                {{ _('No high-confidence request candidates are visible on this page') }}
+              {% elif shelfmark.selected_triage_filter == 'strong' %}
+                {{ _('No strong request candidates are visible on this page') }}
               {% elif shelfmark.filter_requestable %}
                 {{ _('No request-ready matches are visible on this page') }}
               {% else %}
@@ -459,56 +512,7 @@
           </div>
         </div>
         {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.page_result_count > 0 %}
-          <div class="shelfmark-pagination-footer">
-            <div class="shelfmark-pagination-footer__summary">
-              <span>{{ _('No visible matches on this page') }}</span>
-              {% if shelfmark.total_available > 0 %}
-                <span>{{ _('%(count)s total on Shelfmark', count=shelfmark.total_available) }}</span>
-              {% endif %}
-              {% if shelfmark.total_pages > 0 %}
-                <span>{{ _('Page %(page)s of %(pages)s', page=shelfmark.page, pages=shelfmark.total_pages) }}</span>
-              {% endif %}
-              <span>{{ _('%(count)s per page', count=shelfmark.page_size) }}</span>
-            </div>
-            <div class="shelfmark-pagination-footer__controls">
-              <form class="shelfmark-pagination-footer__jump" method="get" action="{{ request.path }}">
-                {% for key, value in request.args.items() %}
-                  {% if key != 'shelfmark_page' %}
-                    <input type="hidden" name="{{ key }}" value="{{ value }}">
-                  {% endif %}
-                {% endfor %}
-                <label class="shelfmark-pagination-footer__jump-label" for="shelfmark_page_jump_empty">{{ _('Page') }}</label>
-                <input class="form-control input-sm shelfmark-pagination-footer__jump-input" id="shelfmark_page_jump_empty" type="number" name="shelfmark_page" min="1" {% if shelfmark.total_pages %}max="{{ shelfmark.total_pages }}"{% endif %} value="{{ shelfmark.page }}">
-                {% if shelfmark.total_pages > 0 %}
-                  <span class="shelfmark-pagination-footer__jump-total">{{ _('of %(pages)s', pages=shelfmark.total_pages) }}</span>
-                {% endif %}
-                <button type="submit" class="btn btn-default btn-sm shelfmark-pagination-footer__jump-button">{{ _('Go') }}</button>
-              </form>
-              {% if shelfmark.previous_page_url %}
-                <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.previous_page_url }}">
-                  <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
-                  <span>{{ _('Previous page') }}</span>
-                </a>
-              {% else %}
-                <span class="btn btn-default btn-sm disabled shelfmark-pagination-footer__page-link" aria-disabled="true">
-                  <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
-                  <span>{{ _('Previous page') }}</span>
-                </span>
-              {% endif %}
-
-              {% if shelfmark.next_page_url %}
-                <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.next_page_url }}">
-                  <span>{{ _('Next page') }}</span>
-                  <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
-                </a>
-              {% else %}
-                <span class="btn btn-default btn-sm disabled shelfmark-pagination-footer__page-link" aria-disabled="true">
-                  <span>{{ _('Next page') }}</span>
-                  <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
-                </span>
-              {% endif %}
-            </div>
-          </div>
+          {{ render_shelfmark_pagination(shelfmark, _('No visible matches on this page'), 'shelfmark_page_jump_empty') }}
         {% endif %}
       {% elif shelfmark.available and shelfmark.message %}
         <div class="alert alert-info">
@@ -552,7 +556,7 @@
 
 {% block modal %}
 {% if shelfmark_has_external_results %}
-<div class="modal fade shelfmark-detail-modal" id="shelfmarkDetailModal" tabindex="-1" role="dialog" aria-labelledby="shelfmarkDetailModalLabel">
+<div class="modal fade shelfmark-detail-modal" id="shelfmarkDetailModal" tabindex="-1" role="dialog" aria-labelledby="shelfmarkDetailModalLabel" data-search-state-url="{{ shelfmark.state_url or request.path }}">
   <div class="modal-dialog modal-lg shelfmark-detail-modal__dialog" role="document">
     <div class="modal-content shelfmark-detail-modal__content">
       <div class="modal-header shelfmark-detail-modal__header">
