@@ -9,6 +9,9 @@
   var DETAIL_STATE_ID_PARAM = 'shelfmark_detail_id';
   var DETAIL_HTML_CACHE_TTL_MS = 300000;
   var DETAIL_HTML_CACHE_MAX_ENTRIES = 64;
+  var ROW_ENRICH_TIMEOUT_MS = 12000;
+  var ROW_ENRICH_MAX_CONCURRENCY = 2;
+  var ROW_ENRICH_ROOT_MARGIN = '180px 0px';
   var ACTIVITY_SNAPSHOT_TTL_MS = 30000;
   var STATUS_SETTLE_DELAY_MS = typeof window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS === 'number'
     ? window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS
@@ -25,12 +28,16 @@
   var boundActionNodes = new WeakSet();
   var boundDetailLinks = new WeakSet();
   var boundBatchToolbars = new WeakSet();
+  var boundProgressiveRows = new WeakSet();
   var activeDetailLink = null;
   var activeDetailRequest = null;
   var detailHtmlCache = new Map();
   var activitySnapshotCache = new Map();
   var detailHistoryBound = false;
   var detailModalState = null;
+  var rowEnrichmentObserver = null;
+  var rowEnrichmentQueue = [];
+  var rowEnrichmentInFlight = 0;
 
   function toArray(value) {
     return Array.prototype.slice.call(value || []);
@@ -45,6 +52,14 @@
     } catch (err) {
       return null;
     }
+  }
+
+  function toOptionalNumber(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    var normalized = Number(value);
+    return Number.isFinite(normalized) ? normalized : null;
   }
 
   function pruneTimedCache(cache, maxEntries, ttlMs) {
@@ -436,7 +451,13 @@
   }
 
   function getStatusTargetNodes(scope) {
-    return toArray((scope || document).querySelectorAll('.js-shelfmark-status-target'));
+    return toArray((scope || document).querySelectorAll('.js-shelfmark-status-target')).filter(function (target) {
+      return !isFilterHiddenRow(target);
+    });
+  }
+
+  function isFilterHiddenRow(row) {
+    return Boolean(row && row.classList && row.classList.contains('is-shelfmark-filter-hidden'));
   }
 
   function buildStatusMatchKey(provider, providerId) {
@@ -817,7 +838,9 @@
   }
 
   function getBatchRows(scope) {
-    return toArray((scope || document).querySelectorAll('.js-shelfmark-batch-row'));
+    return toArray((scope || document).querySelectorAll('.js-shelfmark-batch-row')).filter(function (row) {
+      return !isFilterHiddenRow(row);
+    });
   }
 
   function getBatchToggleNode(row) {
@@ -1317,6 +1340,243 @@
     return configured || buildSearchStateUrl(window.location.href);
   }
 
+  function getProgressiveRows(scope) {
+    return toArray((scope || document).querySelectorAll('.js-shelfmark-progressive-row'));
+  }
+
+  function getVisibleResultRows(scope) {
+    return toArray((scope || document).querySelectorAll('.js-shelfmark-result-row')).filter(function (row) {
+      return !isFilterHiddenRow(row);
+    });
+  }
+
+  function getRowOrder(row) {
+    var parsed = toOptionalNumber(row && row.dataset ? row.dataset.rowIndex : null);
+    return parsed === null ? Number.MAX_SAFE_INTEGER : parsed;
+  }
+
+  function sortQueuedRows() {
+    rowEnrichmentQueue.sort(function (left, right) {
+      return getRowOrder(left) - getRowOrder(right);
+    });
+  }
+
+  function updateProgressiveCounts() {
+    var visibleCount = getVisibleResultRows(document).length;
+    var visibleCountNodes = toArray(document.querySelectorAll('.js-shelfmark-visible-count'));
+    var summaryNodes = toArray(document.querySelectorAll('.js-shelfmark-page-summary'));
+    var emptyState = document.querySelector('.js-shelfmark-progressive-empty-state');
+
+    visibleCountNodes.forEach(function (node) {
+      node.textContent = visibleCount === 1 ? '1 shown' : visibleCount + ' shown';
+    });
+    summaryNodes.forEach(function (node) {
+      node.textContent = visibleCount > 0
+        ? (visibleCount === 1 ? '1 shown on this page' : visibleCount + ' shown on this page')
+        : 'No visible results on this page';
+    });
+
+    if (emptyState) {
+      var showEmptyState = visibleCount < 1;
+      emptyState.classList.toggle('is-hidden', !showEmptyState);
+      emptyState.setAttribute('aria-hidden', showEmptyState ? 'false' : 'true');
+    }
+  }
+
+  function setProgressiveRowState(row, state) {
+    if (!row || !row.dataset) {
+      return;
+    }
+    row.dataset.rowEnrichmentState = state;
+  }
+
+  function getProgressiveRowState(row) {
+    if (!row || !row.dataset) {
+      return '';
+    }
+    return toOptionalText(row.dataset.rowEnrichmentState) || '';
+  }
+
+  function queueProgressiveRow(row, options) {
+    var settings = options || {};
+    if (!row || !row.dataset || !toOptionalText(row.dataset.rowEnrichUrl)) {
+      return;
+    }
+    if (isFilterHiddenRow(row)) {
+      return;
+    }
+    var state = getProgressiveRowState(row);
+    if (state === 'loading' || state === 'done' || state === 'failed') {
+      return;
+    }
+    if (rowEnrichmentQueue.indexOf(row) === -1) {
+      rowEnrichmentQueue.push(row);
+      sortQueuedRows();
+    }
+    setProgressiveRowState(row, 'queued');
+    if (!settings.deferDrain) {
+      drainProgressiveRowQueue();
+    }
+  }
+
+  function markProgressiveRowVisible(row) {
+    if (!row || !row.dataset) {
+      return;
+    }
+    row.dataset.rowVisible = '1';
+    queueProgressiveRow(row);
+  }
+
+  function getRowEnrichmentObserver() {
+    if (typeof window.IntersectionObserver !== 'function') {
+      return null;
+    }
+    if (!rowEnrichmentObserver) {
+      rowEnrichmentObserver = new window.IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry || !entry.target) {
+            return;
+          }
+          if (entry.isIntersecting || entry.intersectionRatio > 0) {
+            markProgressiveRowVisible(entry.target);
+          }
+        });
+      }, {
+        rootMargin: ROW_ENRICH_ROOT_MARGIN,
+        threshold: 0.01
+      });
+    }
+    return rowEnrichmentObserver;
+  }
+
+  function applyProgressiveRowAttrs(row, payload) {
+    if (!row || !payload) {
+      return;
+    }
+    if (payload.row_class_name) {
+      var preservedClasses = [
+        'is-batch-eligible',
+        'is-batch-selected',
+        'is-shelfmark-handled'
+      ].filter(function (className) {
+        return row.classList.contains(className);
+      });
+      row.className = payload.row_class_name;
+      preservedClasses.forEach(function (className) {
+        row.classList.add(className);
+      });
+    }
+
+    if (payload.row_status_provider) {
+      row.dataset.statusProvider = payload.row_status_provider;
+      row.dataset.statusProviderId = payload.row_status_provider_id || '';
+      row.dataset.statusInLibrary = payload.row_status_in_library || '0';
+    } else if (row.dataset) {
+      delete row.dataset.statusProvider;
+      delete row.dataset.statusProviderId;
+      delete row.dataset.statusInLibrary;
+    }
+  }
+
+  function handleProgressiveRowResponse(row, payload) {
+    if (!row || !payload || payload.ok !== true) {
+      throw new Error(payload && payload.message ? payload.message : 'Shelfmark row enrichment failed.');
+    }
+
+    applyProgressiveRowAttrs(row, payload);
+    if (typeof payload.html === 'string') {
+      row.innerHTML = payload.html;
+    }
+    if (payload.matches_filters === false) {
+      row.classList.add('is-shelfmark-filter-hidden');
+      row.setAttribute('aria-hidden', 'true');
+    } else {
+      row.classList.remove('is-shelfmark-filter-hidden');
+      row.removeAttribute('aria-hidden');
+    }
+
+    if (row.dataset) {
+      delete row.dataset.rowEnrichUrl;
+      delete row.dataset.rowVisible;
+    }
+    row.classList.remove('shelfmark-result-card--refining');
+    setProgressiveRowState(row, 'done');
+    initActions(row);
+    initDetailModal(row);
+    initBatchToolbar(row);
+    updateProgressiveCounts();
+    syncBatchUi(document);
+  }
+
+  function startProgressiveRowEnrichment(row) {
+    var url = toOptionalText(row && row.dataset ? row.dataset.rowEnrichUrl : '');
+    if (!row || !url) {
+      return Promise.resolve();
+    }
+
+    setProgressiveRowState(row, 'loading');
+    row.classList.add('shelfmark-result-card--refining');
+    rowEnrichmentInFlight += 1;
+
+    return fetchJson(url, {
+      method: 'GET',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    }, ROW_ENRICH_TIMEOUT_MS).then(function (payload) {
+      handleProgressiveRowResponse(row, payload);
+    }).catch(function () {
+      row.classList.remove('shelfmark-result-card--refining');
+      setProgressiveRowState(row, 'failed');
+    }).finally(function () {
+      rowEnrichmentInFlight = Math.max(0, rowEnrichmentInFlight - 1);
+      rowEnrichmentQueue = rowEnrichmentQueue.filter(function (queuedRow) {
+        return queuedRow !== row;
+      });
+      drainProgressiveRowQueue();
+    });
+  }
+
+  function drainProgressiveRowQueue() {
+    if (rowEnrichmentInFlight >= ROW_ENRICH_MAX_CONCURRENCY) {
+      return;
+    }
+    sortQueuedRows();
+    while (rowEnrichmentInFlight < ROW_ENRICH_MAX_CONCURRENCY && rowEnrichmentQueue.length) {
+      var nextRow = rowEnrichmentQueue.shift();
+      if (!nextRow || (typeof nextRow.isConnected === 'boolean' && !nextRow.isConnected) || isFilterHiddenRow(nextRow)) {
+        continue;
+      }
+      if (getProgressiveRowState(nextRow) === 'loading' || getProgressiveRowState(nextRow) === 'done') {
+        continue;
+      }
+      startProgressiveRowEnrichment(nextRow);
+    }
+  }
+
+  function initProgressiveEnrichment(root) {
+    var scope = root || document;
+    var observer = getRowEnrichmentObserver();
+
+    getProgressiveRows(scope).forEach(function (row) {
+      if (boundProgressiveRows.has(row)) {
+        return;
+      }
+      boundProgressiveRows.add(row);
+      setProgressiveRowState(row, 'pending');
+      if (observer) {
+        observer.observe(row);
+      } else {
+        queueProgressiveRow(row, { deferDrain: true });
+      }
+    });
+
+    if (!observer) {
+      drainProgressiveRowQueue();
+    }
+    updateProgressiveCounts();
+  }
+
   function initActions(root) {
     if (!flow) {
       return;
@@ -1610,6 +1870,7 @@
   function init(root) {
     initActions(root);
     initDetailModal(root);
+    initProgressiveEnrichment(root);
     initBatchToolbar(root);
   }
 

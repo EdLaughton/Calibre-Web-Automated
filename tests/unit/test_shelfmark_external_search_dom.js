@@ -301,6 +301,53 @@ function createDom(options) {
   };
 }
 
+function createProgressiveDom() {
+  const root = new FakeElement('div', { className: 'page-root' });
+  const visibleCount = root.appendChild(new FakeElement('span', {
+    className: 'js-shelfmark-visible-count',
+    textContent: '3 shown'
+  }));
+  const pageSummary = root.appendChild(new FakeElement('span', {
+    className: 'js-shelfmark-page-summary',
+    textContent: '3 shown on this page'
+  }));
+  const emptyState = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-progressive-empty-state is-hidden'
+  }));
+
+  function buildProgressiveRow(rowIndex) {
+    const row = createResultNode({
+      baseUrl: 'https://shelfmark.example.com',
+      openUrl: `https://shelfmark.example.com/book/${rowIndex}`,
+      mode: 'open',
+      label: 'Open in Shelfmark',
+      hint: '',
+      buttonClass: 'btn-default',
+      iconClass: 'glyphicon glyphicon-new-window',
+      statusTarget: false,
+      batchToggle: false
+    }).wrapper;
+    row.className += ' js-shelfmark-result-row js-shelfmark-progressive-row shelfmark-result-card--refining';
+    row.dataset.rowIndex = String(rowIndex);
+    row.dataset.rowEnrichUrl = `/row/${rowIndex}`;
+    return row;
+  }
+
+  const rows = {
+    2: root.appendChild(buildProgressiveRow(2)),
+    0: root.appendChild(buildProgressiveRow(0)),
+    1: root.appendChild(buildProgressiveRow(1))
+  };
+
+  return {
+    document: new FakeDocument(root, 'complete'),
+    rows,
+    visibleCount,
+    pageSummary,
+    emptyState
+  };
+}
+
 function flush() {
   return new Promise((resolve) => setImmediate(resolve));
 }
@@ -353,6 +400,69 @@ async function runScenario(options) {
       await flush();
     }
   };
+}
+
+async function runProgressiveScenario() {
+  const dom = createProgressiveDom();
+  const fetchCalls = [];
+  const responses = [
+    {
+      payload: {
+        ok: true,
+        matches_filters: true,
+        row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        html: ''
+      }
+    },
+    {
+      payload: {
+        ok: true,
+        matches_filters: true,
+        row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        html: ''
+      }
+    },
+    {
+      payload: {
+        ok: true,
+        matches_filters: false,
+        row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        html: ''
+      }
+    }
+  ];
+
+  delete require.cache[flowModulePath];
+  delete require.cache[searchModulePath];
+
+  global.window = {
+    location: { origin: 'https://library.example.com' },
+    CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS: 0,
+    CwaShelfmarkRequestFlow: require(flowModulePath)
+  };
+  global.document = dom.document;
+  global.fetch = (url, fetchOptions) => {
+    fetchCalls.push({ url, options: fetchOptions || {} });
+    const next = responses.shift();
+    if (!next) {
+      return Promise.reject(new Error(`Unexpected fetch call for ${url}`));
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => next.payload
+    });
+  };
+
+  require(searchModulePath);
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+
+  return { dom, fetchCalls };
 }
 
 (async function main() {
@@ -669,6 +779,19 @@ async function runScenario(options) {
   assert.equal(batchBlocked.dom.batchToolbar.classList.contains('is-hidden'), true);
   assert.equal(batchBlocked.dom.batchSelect.classList.contains('is-hidden'), true);
   assert.equal(batchBlocked.dom.batchToggle.disabled, true);
+
+  const progressive = await runProgressiveScenario();
+
+  assert.deepEqual(
+    progressive.fetchCalls.map((call) => call.url),
+    ['/row/0', '/row/1', '/row/2']
+  );
+  assert.equal(progressive.dom.rows[0].classList.contains('is-shelfmark-filter-hidden'), false);
+  assert.equal(progressive.dom.rows[1].classList.contains('is-shelfmark-filter-hidden'), false);
+  assert.equal(progressive.dom.rows[2].classList.contains('is-shelfmark-filter-hidden'), true);
+  assert.equal(progressive.dom.visibleCount.textContent, '2 shown');
+  assert.equal(progressive.dom.pageSummary.textContent, '2 shown on this page');
+  assert.equal(progressive.dom.emptyState.classList.contains('is-hidden'), true);
 
   console.log('test_shelfmark_external_search_dom.js: ok');
 })().catch((error) => {

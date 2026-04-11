@@ -163,6 +163,7 @@ def _base_context():
         "reviews_count": None,
         "readers_count": None,
         "series_display": "Dune (1)",
+        "series_url": "https://hardcover.app/series/dune",
         "facts": ["2024", "Dune (1)"],
         "detail_stats": [],
         "genres": ["Science Fiction"],
@@ -237,13 +238,10 @@ def _base_context():
         "reviews_count": 74,
         "readers_count": 9893,
         "series_display": "The Lord of the Rings (2)",
+        "series_url": "https://hardcover.app/series/the-lord-of-the-rings",
         "facts": ["4.3 ★", "5,900 ratings", "9,893 readers", "2025", "304 pages", "The Lord of the Rings (2)"],
         "detail_stats": [
-            {"label": "Rating", "value": "4.3 ★"},
-            {"label": "Ratings", "value": "5,900"},
             {"label": "Reviews", "value": "74"},
-            {"label": "Readers", "value": "9,893"},
-            {"label": "Pages", "value": "304"},
             {"label": "Editions", "value": "42"},
             {"label": "Lists", "value": "128"},
         ],
@@ -336,6 +334,7 @@ def _base_context():
         "reviews_count": None,
         "readers_count": None,
         "series_display": None,
+        "series_url": None,
         "facts": [],
         "detail_stats": [],
         "genres": [],
@@ -378,6 +377,55 @@ def _base_context():
             "icon_class": "glyphicon glyphicon-new-window",
         },
     }
+
+    duplicate_result.update(
+        {
+            "needs_progressive_enrichment": False,
+            "progressive_filter_pending": False,
+            "row_index": 0,
+            "row_class_name": "shelfmark-result-card js-shelfmark-result-row shelfmark-result-card--success",
+            "row_status_provider": "",
+            "row_status_provider_id": "",
+            "row_status_in_library": "1",
+            "row_enrichment_url": None,
+        }
+    )
+    candidate_result.update(
+        {
+            "needs_progressive_enrichment": True,
+            "progressive_filter_pending": True,
+            "row_index": 1,
+            "row_class_name": (
+                "shelfmark-result-card js-shelfmark-result-row shelfmark-result-card--info "
+                "js-shelfmark-status-target js-shelfmark-batch-row "
+                "js-shelfmark-progressive-row shelfmark-result-card--refining"
+            ),
+            "row_status_provider": "hardcover",
+            "row_status_provider_id": "222",
+            "row_status_in_library": "0",
+            "row_enrichment_url": (
+                "/search/external/shelfmark/hardcover/222/row?query=Dune"
+                "&shelfmark_page=2&shelfmark_page_size=24&shelfmark_sort=rating"
+                "&shelfmark_filter_requestable=1&shelfmark_filter_has_cover=1"
+                "&shelfmark_series_filter=owned&return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"
+                "%26shelfmark_page%3D2%26shelfmark_page_size%3D24%26shelfmark_sort%3Drating"
+                "%26shelfmark_filter_requestable%3D1%26shelfmark_filter_has_cover%3D1"
+                "%26shelfmark_series_filter%3Downed"
+            ),
+        }
+    )
+    unavailable_result.update(
+        {
+            "needs_progressive_enrichment": False,
+            "progressive_filter_pending": False,
+            "row_index": 2,
+            "row_class_name": "shelfmark-result-card js-shelfmark-result-row shelfmark-result-card--warning",
+            "row_status_provider": "",
+            "row_status_provider_id": "",
+            "row_status_in_library": "0",
+            "row_enrichment_url": None,
+        }
+    )
 
     return {
         "entries": [local_entry],
@@ -439,6 +487,11 @@ def _base_context():
             "context_hint": "Duplicate awareness remains exact hardcover-id matching only.",
             "message": None,
             "message_level": "info",
+            "pagination_mode": "shelfmark",
+            "progressive_refinement": True,
+            "progressive_refinement_note": (
+                "Totals and paging come directly from Shelfmark. Visible rows on this page refine as richer metadata loads."
+            ),
             "summary": {
                 "total_results": 3,
                 "total_available": 895,
@@ -540,7 +593,8 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "Duplicate awareness remains exact hardcover-id matching only." not in html
     assert "duplicate awareness stays exact" not in html
     assert "shelfmark-group-panel" not in html
-    assert 'class="shelfmark-results-list"' in html
+    assert 'class="shelfmark-results-list js-shelfmark-results-list"' in html
+    assert "Totals and paging come directly from Shelfmark." in html
     assert "Open existing CWA book" in html
     assert 'href="/book/7"' in html
     assert "Existing CWA book" not in html
@@ -562,6 +616,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'data-detail-title="External Candidate"' in html
     assert 'data-detail-provider="hardcover"' in html
     assert 'data-detail-provider-id="222"' in html
+    assert 'data-row-enrich-url="/search/external/shelfmark/hardcover/222/row?query=Dune' in html
     assert 'return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune%26shelfmark_page%3D2' in html
     assert 'id="shelfmarkDetailModal"' in html
     assert 'id="shelfmarkDetailModalLabel"' in html
@@ -710,15 +765,21 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
     assert "Back to search results" not in html
     assert "Request in Shelfmark" in html
     assert "Available to request" in html
-    assert "Strong candidate" in html
     assert "<i>Shelfmark</i>" in html
-    assert "Next missing" in html
+    assert "Strong candidate" not in html
+    assert "Next missing" not in html
+    assert "1 book owned in this series" in html
+    assert "Owned through 1" in html
     assert "Well rated" in html
     assert "Popular" in html
     assert "Reviews" in html
     assert "74" in html
-    assert "Pages" in html
-    assert "304" in html
+    assert "Rating</dt>" not in html
+    assert "Ratings</dt>" not in html
+    assert "Readers</dt>" not in html
+    assert 'href="https://hardcover.app/series/the-lord-of-the-rings"' in html
+    assert "The Lord of the Rings (2)" in html
+    assert 'class="shelfmark-detail-token-list shelfmark-detail-token-list--genres"' in html
     assert "Whimsical" in html
     assert "Lists" in html
     assert "128 lists" in html
@@ -751,7 +812,8 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "No exact Hardcover ID match found in metadata.db." not in html
     assert "4.3 ★" in html
     assert "The Lord of the Rings (2)" in html
-    assert "Strong candidate" in html
+    assert "Strong candidate" not in html
+    assert "Next missing" not in html
     assert "Library series" in html
     assert "Available to request" in html
     assert html.count("Hardcover ID") == 1
@@ -762,6 +824,9 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "Well rated" in html
     assert "Popular" in html
     assert "Complete metadata" in html
+    assert "Ratings</dt>" not in html
+    assert "Readers</dt>" not in html
+    assert 'href="https://hardcover.app/series/the-lord-of-the-rings"' in html
     assert "Genres" in html
     assert "Fantasy" in html
     assert "304" in html
@@ -799,10 +864,12 @@ def test_search_template_renders_intentional_zero_results_state():
         **context["shelfmark_section"],
         "has_more": False,
         "total_available": 0,
+        "raw_total_available": 0,
         "page_result_count": 0,
         "summary": {
             "total_results": 0,
             "total_available": 0,
+            "raw_total_available": 0,
             "has_more": False,
             "already_in_library": 0,
             "external_candidates": 0,
