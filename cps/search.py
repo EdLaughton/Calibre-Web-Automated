@@ -601,11 +601,14 @@ def _requested_shelfmark_page_size():
 
 
 def _requested_shelfmark_sort():
-    return (request.args.get("shelfmark_sort", "relevance") or "relevance").strip().lower()
+    return (request.args.get("shelfmark_sort", "popularity") or "popularity").strip().lower()
 
 
 def _requested_shelfmark_series_filter():
-    return (request.args.get("shelfmark_series_filter", DEFAULT_SHELFMARK_SERIES_FILTER) or DEFAULT_SHELFMARK_SERIES_FILTER).strip().lower()
+    values = request.args.getlist("shelfmark_series_filter")
+    if not values:
+        return DEFAULT_SHELFMARK_SERIES_FILTER
+    return (values[-1] or DEFAULT_SHELFMARK_SERIES_FILTER).strip().lower()
 
 
 def _requested_shelfmark_triage_filter():
@@ -653,7 +656,16 @@ def _build_shelfmark_section(query, **kwargs):
     if not section.get("enabled"):
         return section
 
-    section["state_url"] = _current_shelfmark_search_state_url()
+    section["state_url"] = _current_request_url_with(
+        shelfmark_page=section.get("page") or 1,
+        shelfmark_page_size=section.get("page_size") or 12,
+        shelfmark_sort=section.get("selected_sort"),
+        shelfmark_series_filter=section.get("selected_series_filter"),
+        shelfmark_triage_filter=section.get("selected_triage_filter"),
+        shelfmark_filter_requestable="1" if section.get("filter_requestable") else "0",
+        shelfmark_filter_high_confidence="1" if section.get("filter_high_confidence") else "0",
+        shelfmark_filter_has_cover="1" if section.get("filter_has_cover") else "0",
+    )
 
     previous_page = section.get("previous_page")
     next_page = section.get("next_page")

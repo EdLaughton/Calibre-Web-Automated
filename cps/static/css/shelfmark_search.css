@@ -253,10 +253,6 @@
   min-width: 146px;
 }
 
-#shelfmark_series_filter.shelfmark-external-controls__select {
-  min-width: 134px;
-}
-
 #shelfmark_triage_filter.shelfmark-external-controls__select {
   min-width: 146px;
 }
@@ -282,6 +278,10 @@
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
+}
+
+.shelfmark-external-controls__checkbox-label--series {
+  padding-right: 2px;
 }
 
 .shelfmark-external-controls__checkbox {
@@ -889,9 +889,9 @@
 }
 
 .shelfmark-result-card__secondary-action {
-  border-color: rgba(126, 160, 210, 0.24);
-  background: rgba(126, 160, 210, 0.08);
-  color: rgba(228, 238, 247, 0.96);
+  border-color: rgba(154, 178, 204, 0.22);
+  background: rgba(154, 178, 204, 0.1);
+  color: rgba(232, 239, 246, 0.96);
 }
 
 .shelfmark-result-card__secondary-action {
@@ -910,8 +910,8 @@
 .shelfmark-detail-hero__primary-action.btn-default:focus,
 .shelfmark-result-card__secondary-action:hover,
 .shelfmark-result-card__secondary-action:focus {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(184, 204, 224, 0.28);
+  background: rgba(184, 204, 224, 0.14);
   color: #fff;
 }
 
@@ -1083,10 +1083,14 @@
 }
 
 .shelfmark-pagination-footer__jump-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 38px;
   padding-left: 10px;
   padding-right: 10px;
   text-align: center;
+  line-height: 1;
 }
 
 .shelfmark-pagination-footer__page-link .glyphicon {

@@ -25,7 +25,7 @@ log = logger.create()
 
 DEFAULT_SHELFMARK_TIMEOUT_SECONDS = 15
 DEFAULT_SHELFMARK_LIMIT = 12
-DEFAULT_SHELFMARK_SORT = "relevance"
+DEFAULT_SHELFMARK_SORT = "popularity"
 DEFAULT_SHELFMARK_PAGE = 1
 DEFAULT_SHELFMARK_FILTER_REQUESTABLE = True
 DEFAULT_SHELFMARK_FILTER_HAS_COVER = True
@@ -34,8 +34,8 @@ DEFAULT_SHELFMARK_SERIES_FILTER = "all"
 DEFAULT_SHELFMARK_TRIAGE_FILTER = "all"
 SHELFMARK_PAGE_SIZE_OPTIONS = (12, 24, 50, 100)
 SHELFMARK_SORT_OPTIONS = (
-    ("relevance", "Most relevant"),
     ("popularity", "Most popular"),
+    ("relevance", "Most relevant"),
     ("rating", "Highest rated"),
     ("newest", "Newest"),
     ("oldest", "Oldest"),
@@ -57,11 +57,21 @@ SHELFMARK_DETAIL_CACHE_TTL_SECONDS = 300
 SHELFMARK_DETAIL_CACHE_MAX_ENTRIES = 256
 SHELFMARK_COVER_CACHE_TTL_SECONDS = 300
 SHELFMARK_COVER_CACHE_MAX_ENTRIES = 512
+SHELFMARK_SCAN_PAGE_SIZE = 100
 SHELFMARK_QUALITY_MIN_METADATA_SIGNALS = 5
 SHELFMARK_TRIAGE_MIN_RATINGS = 200
 SHELFMARK_TRIAGE_MIN_READERS = 1000
 SHELFMARK_TRIAGE_MIN_RATING = 4.0
 SHELFMARK_TRIAGE_MIN_RATING_COUNT = 50
+SHELFMARK_AUDIOBOOK_HINTS = (
+    "audiobook",
+    "audio book",
+    "audible audio",
+    "audio cd",
+    "audio-cd",
+    "m4b",
+    "cassette",
+)
 
 _SHELFMARK_DETAIL_CACHE: OrderedDict[tuple[str, str, str], tuple[float, dict[str, Any]]] = OrderedDict()
 _SHELFMARK_COVER_CACHE: OrderedDict[tuple[str, str], tuple[float, str]] = OrderedDict()
@@ -172,6 +182,7 @@ class ShelfmarkResultView:
     display_fields: tuple[dict[str, Any], ...]
     rating: float | None
     ratings_count: int | None
+    reviews_count: int | None
     readers_count: int | None
     hardcover_id: str | None
     already_in_library: bool
@@ -227,6 +238,7 @@ class ShelfmarkResultView:
 class ShelfmarkResultSummary:
     total_results: int = 0
     total_available: int = 0
+    raw_total_available: int = 0
     has_more: bool = False
     already_in_library: int = 0
     external_candidates: int = 0
@@ -285,6 +297,7 @@ class ShelfmarkSearchSection:
     next_page: int | None = None
     has_more: bool = False
     total_available: int = 0
+    raw_total_available: int = 0
     page_result_count: int = 0
     filter_requestable: bool = DEFAULT_SHELFMARK_FILTER_REQUESTABLE
     filter_has_cover: bool = DEFAULT_SHELFMARK_FILTER_HAS_COVER
@@ -321,6 +334,7 @@ class ShelfmarkSearchSection:
             "next_page": self.next_page,
             "has_more": self.has_more,
             "total_available": self.total_available,
+            "raw_total_available": self.raw_total_available,
             "page_result_count": self.page_result_count,
             "filter_requestable": self.filter_requestable,
             "filter_has_cover": self.filter_has_cover,
@@ -950,7 +964,9 @@ def _build_series_context_facts(
     facts: list[str] = []
     if owned_book_count:
         label = _("book") if owned_book_count == 1 else _("books")
-        facts.append(_("%(count)s %(label)s owned", count=owned_book_count, label=label))
+        facts.append(
+            _("%(count)s %(label)s owned in this series", count=owned_book_count, label=label)
+        )
 
     if owned_contiguous_position and owned_contiguous_position > 0:
         facts.append(_("Owned through %(position)s", position=owned_contiguous_position))
@@ -1105,6 +1121,7 @@ def build_shelfmark_result_view(
     series_count = _resolve_series_count(book)
     rating = _resolve_rating_value(book)
     ratings_count = _resolve_ratings_count(book)
+    reviews_count = _resolve_reviews_count(book)
     readers_count = _resolve_readers_count(book)
     pages = _resolve_pages(book)
     editions_count = _resolve_editions_count(book)
@@ -1132,7 +1149,7 @@ def build_shelfmark_result_view(
         provider=_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER,
         provider_id=_normalize_text(book.get("provider_id")) or "",
         title=title,
-        subtitle=_normalize_text(book.get("subtitle")),
+        subtitle=_resolve_shelfmark_subtitle(book),
         authors=authors,
         cover_url=_normalize_shelfmark_cover_url(
             shelfmark_browser_base_url,
@@ -1144,6 +1161,7 @@ def build_shelfmark_result_view(
         display_fields=_normalize_display_fields(book.get("display_fields")),
         rating=rating,
         ratings_count=ratings_count,
+        reviews_count=reviews_count,
         readers_count=readers_count,
         hardcover_id=hardcover_id,
         already_in_library=library_match is not None,
@@ -1187,6 +1205,7 @@ def summarize_shelfmark_results(
     results: Sequence[ShelfmarkResultView],
     *,
     total_available: int | None = None,
+    raw_total_available: int | None = None,
     has_more: bool = False,
 ) -> ShelfmarkResultSummary:
     total_results = len(results)
@@ -1198,6 +1217,7 @@ def summarize_shelfmark_results(
     return ShelfmarkResultSummary(
         total_results=total_results,
         total_available=max(total_results, int(total_available or 0)),
+        raw_total_available=max(int(raw_total_available or 0), int(total_available or 0), total_results),
         has_more=bool(has_more),
         already_in_library=already_in_library,
         external_candidates=external_candidates,
@@ -1265,6 +1285,7 @@ def _needs_detail_enrichment(book: Mapping[str, Any]) -> bool:
         or _resolve_rating_value(book) is None
         or _resolve_ratings_count(book) is None
         or _resolve_readers_count(book) is None
+        or _resolve_pages(book) is None
         or incomplete_series_metadata
     )
 
@@ -1307,9 +1328,14 @@ def _merge_book_details(
         "series_count",
         "rating",
         "ratings_count",
+        "reviews_count",
         "users_count",
         "pages",
         "editions_count",
+        "lists_count",
+        "moods",
+        "content_warnings",
+        "warnings",
         "provider_display_name",
         "cover_url",
         "preview",
@@ -1479,9 +1505,154 @@ def _enrich_books_with_detail_covers(
             continue
 
         detail_book = _get_search_enrichment_detail_book(client, normalized_book, detail_cache)
-        enriched.append(_merge_book_details(normalized_book, detail_book))
+        merged_book = _merge_book_details(normalized_book, detail_book)
+        provider = _normalize_text(merged_book.get("provider")) or SHELFMARK_METADATA_PROVIDER
+        provider_id = _normalize_text(merged_book.get("provider_id")) or ""
+        if provider_id:
+            _remember_shelfmark_detail_book(
+                client.config.base_url,
+                provider,
+                provider_id,
+                merged_book,
+            )
+        enriched.append(merged_book)
 
     return tuple(enriched)
+
+
+def _result_filters_affect_pagination(
+    *,
+    requestable_only: bool,
+    has_cover_only: bool,
+    high_confidence_only: bool,
+    series_filter: str,
+    triage_filter: str,
+) -> bool:
+    return bool(
+        requestable_only
+        or has_cover_only
+        or high_confidence_only
+        or series_filter != DEFAULT_SHELFMARK_SERIES_FILTER
+        or triage_filter != DEFAULT_SHELFMARK_TRIAGE_FILTER
+    )
+
+
+def _iter_request_media_signals(book: Mapping[str, Any]) -> tuple[str, ...]:
+    values: list[str] = []
+    for key in ("content_type", "format", "edition_format", "media_type"):
+        normalized = _normalize_text(book.get(key))
+        if normalized:
+            values.append(normalized.casefold())
+    for label in ("Format", "Edition format", "Media", "Medium"):
+        display_value = _lookup_display_field_value(book, label)
+        if display_value:
+            values.append(display_value.casefold())
+    return tuple(values)
+
+
+def _is_audiobook_result(book: Mapping[str, Any]) -> bool:
+    for value in _iter_request_media_signals(book):
+        if value == "audiobook":
+            return True
+        if any(hint in value for hint in SHELFMARK_AUDIOBOOK_HINTS):
+            return True
+    return False
+
+
+def _build_ranked_shelfmark_results(
+    client: "ShelfmarkClient",
+    books: Sequence[Mapping[str, Any]],
+    *,
+    detail_url_builder: Callable[[Mapping[str, Any]], str | None],
+    shelfmark_browser_base_url: str,
+) -> tuple[ShelfmarkResultView, ...]:
+    request_books = tuple(book for book in books if not _is_audiobook_result(book))
+    enriched_books = _enrich_books_with_detail_covers(client, request_books)
+    enriched_books = tuple(book for book in enriched_books if not _is_audiobook_result(book))
+    hardcover_ids = [value for value in (_extract_hardcover_id(book) for book in enriched_books) if value]
+    library_matches = lookup_visible_library_matches(hardcover_ids)
+    results = tuple(
+        build_shelfmark_result_view(
+            book,
+            library_match=library_matches.get(_extract_hardcover_id(book) or ""),
+            detail_url=detail_url_builder(book),
+            shelfmark_browser_base_url=shelfmark_browser_base_url,
+        )
+        for book in enriched_books
+    )
+    owned_series = lookup_visible_owned_series(
+        [result.series_name for result in results if result.series_name]
+    )
+    results = tuple(
+        replace(result, series_context=context)
+        for result, context in zip(
+            results,
+            build_shelfmark_series_contexts(results, owned_series),
+        )
+    )
+    results = tuple(
+        replace(result, quality_state=build_shelfmark_quality_state(result))
+        for result in results
+    )
+    results = tuple(
+        replace(
+            result,
+            triage_state=build_shelfmark_triage_state(
+                result,
+                quality_state=result.quality_state,
+            ),
+        )
+        for result in results
+    )
+    return _rank_visible_results(results)
+
+
+def _scan_filtered_shelfmark_results(
+    client: "ShelfmarkClient",
+    query: str,
+    *,
+    sort: str,
+    requestable_only: bool,
+    has_cover_only: bool,
+    high_confidence_only: bool,
+    series_filter: str,
+    triage_filter: str,
+    detail_url_builder: Callable[[Mapping[str, Any]], str | None],
+    shelfmark_browser_base_url: str,
+) -> tuple[tuple[ShelfmarkResultView, ...], int]:
+    raw_page = DEFAULT_SHELFMARK_PAGE
+    raw_total_available = 0
+    raw_books: list[dict[str, Any]] = []
+
+    while True:
+        response = client.search_books(
+            query,
+            limit=SHELFMARK_SCAN_PAGE_SIZE,
+            page=raw_page,
+            sort=sort,
+        )
+        if raw_page == DEFAULT_SHELFMARK_PAGE:
+            raw_total_available = response.total_found
+        raw_books.extend(dict(book) for book in response.books)
+        if not response.has_more or not response.books:
+            break
+        raw_page += 1
+
+    ranked_results = _build_ranked_shelfmark_results(
+        client,
+        tuple(raw_books),
+        detail_url_builder=detail_url_builder,
+        shelfmark_browser_base_url=shelfmark_browser_base_url,
+    )
+    filtered_results = _filter_visible_results(
+        ranked_results,
+        requestable_only=requestable_only,
+        has_cover_only=has_cover_only,
+        high_confidence_only=high_confidence_only,
+        series_filter=series_filter,
+        triage_filter=triage_filter,
+    )
+    return filtered_results, raw_total_available
 
 
 def _filter_visible_results(
@@ -1590,6 +1761,7 @@ def search_shelfmark_results(
             next_page=None,
             has_more=False,
             total_available=0,
+            raw_total_available=0,
             page_result_count=0,
             filter_requestable=requestable_only,
             filter_has_cover=has_cover_only,
@@ -1617,70 +1789,71 @@ def search_shelfmark_results(
 
     client = ShelfmarkClient(config_data)
     try:
-        search_response = client.search_books(
-            normalized_query,
-            limit=requested_page_size,
-            page=requested_page,
-            sort=selected_sort,
-        )
-        books = _enrich_books_with_detail_covers(client, search_response.books)
-        hardcover_ids = [value for value in (_extract_hardcover_id(book) for book in books) if value]
-        library_matches = lookup_visible_library_matches(hardcover_ids)
-        page_results = tuple(
-            build_shelfmark_result_view(
-                book,
-                library_match=library_matches.get(_extract_hardcover_id(book) or ""),
-                detail_url=detail_url_builder(book),
-                shelfmark_browser_base_url=config_data.browser_base_url,
-            )
-            for book in books
-        )
-        owned_series = lookup_visible_owned_series(
-            [result.series_name for result in page_results if result.series_name]
-        )
-        page_results = tuple(
-            replace(result, series_context=context)
-            for result, context in zip(
-                page_results,
-                build_shelfmark_series_contexts(page_results, owned_series),
-            )
-        )
-        page_results = tuple(
-            replace(result, quality_state=build_shelfmark_quality_state(result))
-            for result in page_results
-        )
-        page_results = tuple(
-            replace(
-                result,
-                triage_state=build_shelfmark_triage_state(
-                    result,
-                    quality_state=result.quality_state,
-                ),
-            )
-            for result in page_results
-        )
-        ranked_results = _rank_visible_results(page_results)
-        results = _filter_visible_results(
-            ranked_results,
+        filtered_pagination = _result_filters_affect_pagination(
             requestable_only=requestable_only,
             has_cover_only=has_cover_only,
             high_confidence_only=high_confidence_only,
             series_filter=selected_series_filter,
             triage_filter=selected_triage_filter,
         )
-        summary = summarize_shelfmark_results(
-            results,
-            total_available=search_response.total_found,
-            has_more=search_response.has_more,
-        )
-        current_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(search_response.page) or requested_page)
-        total_pages = (
-            max(1, math.ceil(summary.total_available / requested_page_size))
-            if summary.total_available
-            else 0
-        )
-        visible_start = ((current_page - 1) * requested_page_size) + 1 if page_results else 0
-        visible_end = visible_start + len(page_results) - 1 if page_results else 0
+        if filtered_pagination:
+            filtered_results, raw_total_available = _scan_filtered_shelfmark_results(
+                client,
+                normalized_query,
+                sort=selected_sort,
+                requestable_only=requestable_only,
+                has_cover_only=has_cover_only,
+                high_confidence_only=high_confidence_only,
+                series_filter=selected_series_filter,
+                triage_filter=selected_triage_filter,
+                detail_url_builder=detail_url_builder,
+                shelfmark_browser_base_url=config_data.browser_base_url,
+            )
+            filtered_total = len(filtered_results)
+            total_pages = max(1, math.ceil(filtered_total / requested_page_size)) if filtered_total else 0
+            current_page = min(requested_page, total_pages) if total_pages else DEFAULT_SHELFMARK_PAGE
+            page_start = (current_page - 1) * requested_page_size if filtered_total else 0
+            results = filtered_results[page_start:page_start + requested_page_size]
+            visible_start = page_start + 1 if results else 0
+            visible_end = page_start + len(results) if results else 0
+            has_more = bool(total_pages and current_page < total_pages)
+            summary = summarize_shelfmark_results(
+                results,
+                total_available=filtered_total,
+                raw_total_available=raw_total_available,
+                has_more=has_more,
+            )
+        else:
+            search_response = client.search_books(
+                normalized_query,
+                limit=requested_page_size,
+                page=requested_page,
+                sort=selected_sort,
+            )
+            page_results = _build_ranked_shelfmark_results(
+                client,
+                search_response.books,
+                detail_url_builder=detail_url_builder,
+                shelfmark_browser_base_url=config_data.browser_base_url,
+            )
+            results = page_results
+            filtered_total = search_response.total_found
+            raw_total_available = search_response.total_found
+            current_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(search_response.page) or requested_page)
+            total_pages = (
+                max(1, math.ceil(filtered_total / requested_page_size))
+                if filtered_total
+                else 0
+            )
+            visible_start = ((current_page - 1) * requested_page_size) + 1 if results else 0
+            visible_end = visible_start + len(results) - 1 if results else 0
+            has_more = search_response.has_more
+            summary = summarize_shelfmark_results(
+                results,
+                total_available=filtered_total,
+                raw_total_available=raw_total_available,
+                has_more=has_more,
+            )
         return ShelfmarkSearchSection(
             enabled=True,
             available=True,
@@ -1699,10 +1872,11 @@ def search_shelfmark_results(
             visible_end=visible_end,
             has_previous=current_page > DEFAULT_SHELFMARK_PAGE,
             previous_page=current_page - 1 if current_page > DEFAULT_SHELFMARK_PAGE else None,
-            next_page=current_page + 1 if search_response.has_more else None,
-            has_more=search_response.has_more,
+            next_page=current_page + 1 if has_more else None,
+            has_more=has_more,
             total_available=summary.total_available,
-            page_result_count=len(page_results),
+            raw_total_available=summary.raw_total_available,
+            page_result_count=len(results),
             filter_requestable=requestable_only,
             filter_has_cover=has_cover_only,
             filter_high_confidence=high_confidence_only,
@@ -2107,6 +2281,21 @@ def _resolve_lists_count(book: Mapping[str, Any]) -> int | None:
     return _normalize_int(re.sub(r"[^\d]", "", display_value))
 
 
+def _resolve_reviews_count(book: Mapping[str, Any]) -> int | None:
+    reviews_count = _normalize_int(book.get("reviews_count"))
+    if reviews_count is not None:
+        return reviews_count
+
+    review_count = _normalize_int(book.get("review_count"))
+    if review_count is not None:
+        return review_count
+
+    display_value = _lookup_display_field_value(book, "Reviews", "Review count", "Reviews count")
+    if not display_value:
+        return None
+    return _normalize_int(re.sub(r"[^\d]", "", display_value))
+
+
 def _resolve_rating_value(book: Mapping[str, Any]) -> float | None:
     rating_value = _normalize_float(book.get("rating"))
     if rating_value is not None:
@@ -2148,6 +2337,12 @@ def _resolve_readers_count(book: Mapping[str, Any]) -> int | None:
     if not display_value:
         return None
     return _normalize_int(re.sub(r"[^\d]", "", display_value))
+
+
+def _resolve_shelfmark_subtitle(book: Mapping[str, Any]) -> str | None:
+    # Shelfmark/Hardcover subtitles frequently surface edition-localized or
+    # otherwise noisy secondary titles. Prefer omission over misleading copy.
+    return None
 
 
 def _format_series_display(series_name: str | None, series_position: float | None) -> str | None:
@@ -2412,6 +2607,7 @@ def _build_result_facts(book: Mapping[str, Any], *, publish_year: int | None) ->
     rating_value = _resolve_rating_value(book)
     ratings_count = _resolve_ratings_count(book)
     readers_count = _resolve_readers_count(book)
+    pages = _resolve_pages(book)
     series_display = _format_series_display(
         _resolve_series_name(book),
         _resolve_series_position(book),
@@ -2427,6 +2623,9 @@ def _build_result_facts(book: Mapping[str, Any], *, publish_year: int | None) ->
         facts.append(f"{readers_count:,} {label}")
     if publish_year:
         facts.append(str(publish_year))
+    if pages:
+        label = _("page") if pages == 1 else _("pages")
+        facts.append(f"{pages:,} {label}")
     if series_display:
         facts.append(series_display)
 
@@ -2437,6 +2636,7 @@ def _build_detail_stats(book: Mapping[str, Any], *, publish_year: int | None) ->
     stats: list[dict[str, str]] = []
     rating_value = _resolve_rating_value(book)
     ratings_count = _resolve_ratings_count(book)
+    reviews_count = _resolve_reviews_count(book)
     readers_count = _resolve_readers_count(book)
     pages = _resolve_pages(book)
     editions_count = _resolve_editions_count(book)
@@ -2446,6 +2646,8 @@ def _build_detail_stats(book: Mapping[str, Any], *, publish_year: int | None) ->
         stats.append({"label": _("Rating"), "value": f"{rating_value:.1f} \u2605"})
     if ratings_count:
         stats.append({"label": _("Ratings"), "value": f"{ratings_count:,}"})
+    if reviews_count:
+        stats.append({"label": _("Reviews"), "value": f"{reviews_count:,}"})
     if readers_count:
         stats.append({"label": _("Readers"), "value": f"{readers_count:,}"})
     if pages:

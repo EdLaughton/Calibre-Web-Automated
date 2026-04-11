@@ -11,7 +11,12 @@
         <span>{{ summary_text }}</span>
       {% endif %}
       {% if shelfmark.total_available > 0 %}
-        <span>{{ _('%(count)s total on Shelfmark', count=shelfmark.total_available) }}</span>
+        {% if shelfmark.raw_total_available and shelfmark.raw_total_available > shelfmark.total_available %}
+          <span>{{ _('%(count)s matching current filters', count=shelfmark.total_available) }}</span>
+          <span>{{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available) }}</span>
+        {% else %}
+          <span>{{ _('%(count)s total on Shelfmark', count=shelfmark.total_available) }}</span>
+        {% endif %}
       {% endif %}
       {% if shelfmark.total_pages > 0 %}
         <span>{{ _('Page %(page)s of %(pages)s', page=shelfmark.page, pages=shelfmark.total_pages) }}</span>
@@ -223,23 +228,15 @@
             {% if external_count > 0 %}
               {{ _('%(count)s shown', count=external_count) }}
               {% if shelfmark.total_available > external_count %}
-                · {{ _('%(count)s total', count=shelfmark.total_available) }}
+                · {{ _('%(count)s matching', count=shelfmark.total_available) }}
               {% endif %}
-            {% elif shelfmark.page_result_count > 0 %}
-              {{ _('No visible matches') }}
-            {% elif external_count == 0 %}
-              {{ _('No matches') }}
+            {% elif shelfmark.total_available > 0 %}
+              {{ _('%(count)s matching', count=shelfmark.total_available) }}
             {% else %}
-              {{ _('%(count)s total results', count=shelfmark.total_available) }}
+              {{ _('No matches') }}
             {% endif %}
           </div>
         </div>
-        {% if shelfmark.query %}
-          <p class="shelfmark-external-header__query">
-            <strong>{{ shelfmark.query_label or _('External lookup query') }}:</strong>
-            <code>{{ shelfmark.query }}</code>
-          </p>
-        {% endif %}
         <div class="shelfmark-external-toolbar">
           <form class="shelfmark-external-controls form-inline" method="get" action="{{ request.path }}">
             {% for key, value in request.args.items() %}
@@ -259,12 +256,11 @@
               </select>
             </div>
             <div class="form-group shelfmark-external-controls__group">
-              <label class="shelfmark-external-controls__label" for="shelfmark_series_filter">{{ _('Series') }}</label>
-              <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_series_filter" name="shelfmark_series_filter">
-                {% for option in shelfmark.series_filter_options %}
-                  <option value="{{ option.value }}"{% if option.value == shelfmark.selected_series_filter %} selected{% endif %}>{{ option.label }}</option>
-                {% endfor %}
-              </select>
+              <input type="hidden" name="shelfmark_series_filter" value="all">
+              <label class="shelfmark-external-controls__checkbox-label shelfmark-external-controls__checkbox-label--series" for="shelfmark_series_filter_owned">
+                <input class="shelfmark-external-controls__checkbox" id="shelfmark_series_filter_owned" type="checkbox" name="shelfmark_series_filter" value="owned"{% if shelfmark.selected_series_filter != 'all' %} checked{% endif %}>
+                <span>{{ _('Owned series') }}</span>
+              </label>
             </div>
             <div class="form-group shelfmark-external-controls__group">
               <label class="shelfmark-external-controls__label" for="shelfmark_triage_filter">{{ _('Candidates') }}</label>
@@ -393,9 +389,6 @@
                         {{ result.library_state.label }}
                       </span>
                     {% endif %}
-                    {% if result.hardcover_id %}
-                        <span class="label label-default">{{ _('Hardcover ID') }} {{ result.hardcover_id }}</span>
-                    {% endif %}
                     </div>
                   </div>
                   {% if result.authors %}
@@ -476,11 +469,11 @@
         {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.page_result_count > 0 %}
           {{ render_shelfmark_pagination(
             shelfmark,
-            _('%(count)s shown on this page', count=external_count) if external_count > 0 else _('No visible matches on this page'),
+            _('%(count)s shown on this page', count=external_count) if external_count > 0 else _('No matching results'),
             'shelfmark_page_jump'
           ) }}
         {% endif %}
-      {% elif shelfmark.available and shelfmark.filters_active and shelfmark.page_result_count > 0 %}
+      {% elif shelfmark.available and shelfmark.filters_active and shelfmark.raw_total_available > 0 %}
         <div class="shelfmark-empty-state shelfmark-empty-state--filtered">
           <div class="shelfmark-empty-state__icon">
             <span class="glyphicon glyphicon-filter" aria-hidden="true"></span>
@@ -488,21 +481,21 @@
           <div class="shelfmark-empty-state__body">
             <h4 class="shelfmark-empty-state__title">
               {% if shelfmark.selected_series_filter == 'next_missing' %}
-                {{ _('No next-missing owned-series matches are visible on this page') }}
+                {{ _('No next-missing owned-series matches') }}
               {% elif shelfmark.selected_series_filter == 'owned' %}
-                {{ _('No owned-series matches are visible on this page') }}
+                {{ _('No owned-series matches') }}
               {% elif shelfmark.filter_high_confidence %}
-                {{ _('No high-confidence request candidates are visible on this page') }}
+                {{ _('No high-confidence request candidates') }}
               {% elif shelfmark.selected_triage_filter == 'strong' %}
-                {{ _('No strong request candidates are visible on this page') }}
+                {{ _('No strong request candidates') }}
               {% elif shelfmark.filter_requestable %}
-                {{ _('No request-ready matches are visible on this page') }}
+                {{ _('No request-ready matches') }}
               {% else %}
-                {{ _('No matching Shelfmark results are visible on this page') }}
+                {{ _('No matching Shelfmark results') }}
               {% endif %}
             </h4>
             <p class="shelfmark-empty-state__message">
-              {{ _('Shelfmark returned results for this page, but the current page filters hid them.') }}
+              {{ _('The current request filters removed every Shelfmark match for this search.') }}
             </p>
             {% if shelfmark.clear_filters_url %}
               <p class="shelfmark-empty-state__actions">
@@ -511,9 +504,6 @@
             {% endif %}
           </div>
         </div>
-        {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.page_result_count > 0 %}
-          {{ render_shelfmark_pagination(shelfmark, _('No visible matches on this page'), 'shelfmark_page_jump_empty') }}
-        {% endif %}
       {% elif shelfmark.available and shelfmark.message %}
         <div class="alert alert-info">
           {{ shelfmark.message }}
@@ -528,12 +518,6 @@
             <p class="shelfmark-empty-state__message">
               {{ _('Shelfmark search completed for this query but did not return any external matches.') }}
             </p>
-            {% if shelfmark.query %}
-              <p class="shelfmark-empty-state__query">
-                <strong>{{ shelfmark.query_label or _('External lookup query') }}:</strong>
-                <code>{{ shelfmark.query }}</code>
-              </p>
-            {% endif %}
             {% if shelfmark.open_search_url %}
               <p class="shelfmark-empty-state__actions">
                 <a class="btn btn-default btn-sm" href="{{ shelfmark.open_search_url }}" target="_blank" rel="noopener noreferrer">

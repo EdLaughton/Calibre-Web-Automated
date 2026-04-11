@@ -299,7 +299,7 @@ def test_build_open_url_uses_title_author_query_not_hardcover_id_syntax(shelfmar
     )
 
     assert url == (
-        "https://shelfmark.example.com/?content_type=ebook&sort=relevance"
+        "https://shelfmark.example.com/?content_type=ebook&sort=popularity"
         "&query=The+Churn+James+S.+A.+Corey&title=The+Churn&author=James+S.+A.+Corey"
     )
     assert "hardcover-id%3A948974" not in url
@@ -433,6 +433,24 @@ def test_build_request_payload_uses_search_field_fallbacks_when_authors_array_is
     assert payload["book_data"]["author"] == "Fallback Author"
 
 
+def test_build_result_view_omits_unreliable_subtitle_from_presentation(shelfmark_module):
+    result = shelfmark_module.build_shelfmark_result_view(
+        {
+            "provider": "hardcover",
+            "provider_id": "444",
+            "title": "Mort",
+            "subtitle": "Trois soeurcières",
+            "authors": ["Terry Pratchett"],
+            "identifiers": {"hardcover-id": "444"},
+        },
+        library_match=None,
+        detail_url="/external/444",
+        shelfmark_browser_base_url="https://library.example.com/shelfmark",
+    )
+
+    assert result.subtitle is None
+
+
 def test_build_owned_series_map_tracks_counts_and_contiguous_run(shelfmark_module):
     owned_series = shelfmark_module.build_owned_series_map(
         (
@@ -537,14 +555,14 @@ def test_series_context_flags_next_missing_and_owned_series(shelfmark_module):
     assert contexts[0] is not None
     assert contexts[0].is_next_missing is True
     assert contexts[0].badges[0]["label"] == "Next missing"
-    assert "3 books owned" in contexts[0].facts
+    assert "3 books owned in this series" in contexts[0].facts
     assert "Owned through 1" in contexts[0].facts
-    assert contexts[0].detail_value == "Next missing · 3 books owned · Owned through 1"
+    assert contexts[0].detail_value == "Next missing · 3 books owned in this series · Owned through 1"
     assert contexts[1] is not None
     assert contexts[1].is_continuation is True
     assert contexts[1].is_next_missing is False
     assert contexts[1].badges[0]["label"] == "Continue series"
-    assert contexts[1].detail_value == "Continue series · 3 books owned · Owned through 1"
+    assert contexts[1].detail_value == "Continue series · 3 books owned in this series · Owned through 1"
     assert contexts[2] is None
 
 
@@ -677,7 +695,7 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
     assert section.previous_page is None
     assert section.next_page == 2
     assert section.open_search_url == (
-        "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance"
+        "https://library.example.com/shelfmark/?content_type=ebook&sort=popularity"
         "&limit=12&page=1&query=dune"
     )
     assert [group.key for group in section.groups] == [
@@ -970,6 +988,14 @@ def test_search_results_promote_detail_genres_pages_and_editions(shelfmark_modul
         )
 
     result = section.results[0]
+    assert result.facts == (
+        "4.2 ★",
+        "12,034 ratings",
+        "22,221 readers",
+        "1989",
+        "384 pages",
+        "Discworld (8)",
+    )
     assert result.pages == 384
     assert result.editions_count == 57
     assert result.lists_count == 128
@@ -1180,9 +1206,9 @@ def test_search_results_apply_sort_page_size_and_visible_filters(shelfmark_modul
                 "identifiers": {"hardcover-id": "333"},
             },
         ),
-        page=4,
-        total_found=3221,
-        has_more=True,
+        page=1,
+        total_found=2,
+        has_more=False,
     )
     fake_client.fetch_book.side_effect = lambda provider, provider_id: {
         "provider": provider,
@@ -1230,22 +1256,94 @@ def test_search_results_apply_sort_page_size_and_visible_filters(shelfmark_modul
             filter_has_cover=True,
         )
 
-    fake_client.search_books.assert_called_once_with("hell", limit=50, page=4, sort="rating")
-    assert section.page == 4
+    fake_client.search_books.assert_called_once_with("hell", limit=100, page=1, sort="rating")
+    assert section.page == 1
     assert section.page_size == 50
     assert section.selected_sort == "rating"
     assert section.filter_requestable is True
     assert section.filter_has_cover is True
     assert section.filters_active is False
-    assert section.page_result_count == 2
+    assert section.page_result_count == 1
     assert [result.title for result in section.results] == ["Request Ready"]
-    assert section.total_pages == 65
-    assert section.visible_start == 151
-    assert section.visible_end == 152
+    assert section.total_pages == 1
+    assert section.visible_start == 1
+    assert section.visible_end == 1
     assert section.open_search_url == (
         "https://library.example.com/shelfmark/?content_type=ebook&sort=rating"
-        "&limit=50&page=4&query=hell"
+        "&limit=50&page=1&query=hell"
     )
+
+
+def test_search_results_exclude_explicit_audiobook_results(shelfmark_module):
+    fake_client = mock.Mock()
+    books = (
+        {
+            "provider": "hardcover",
+            "provider_id": "111",
+            "title": "Mort",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/hardcover_111?url=mort",
+            "description": "<p>Discworld novel</p>",
+            "rating": 4.1,
+            "ratings_count": 1295,
+            "users_count": 2298,
+            "publish_year": 1987,
+            "pages": 317,
+            "identifiers": {"hardcover-id": "111"},
+        },
+        {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "Mort Audiobook",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/hardcover_222?url=mort-audio",
+            "description": "<p>Audio edition</p>",
+            "content_type": "audiobook",
+            "identifiers": {"hardcover-id": "222"},
+        },
+    )
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=books,
+        page=1,
+        total_found=2,
+        has_more=False,
+    )
+    fake_client.fetch_book.side_effect = lambda provider, provider_id: next(
+        book for book in books if book["provider_id"] == provider_id
+    )
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={},
+    ):
+        section = shelfmark_module.search_shelfmark_results(
+            "mort",
+            detail_url_builder=lambda _: "/external/mort",
+            page=1,
+            filter_requestable=False,
+            filter_has_cover=False,
+        )
+
+    assert [result.title for result in section.results] == ["Mort"]
 
 
 def test_search_results_rank_next_missing_owned_series_above_generic_matches(shelfmark_module):
@@ -1681,6 +1779,7 @@ def test_grouping_omits_zero_count_unavailable_bucket(shelfmark_module):
             display_fields=(),
             rating=None,
             ratings_count=None,
+            reviews_count=None,
             readers_count=None,
             hardcover_id="1",
             already_in_library=True,
@@ -1690,7 +1789,7 @@ def test_grouping_omits_zero_count_unavailable_bucket(shelfmark_module):
             detail_url="/external/1",
             shelfmark_base_url="https://shelfmark.example.com",
             shelfmark_open_url=(
-                "https://shelfmark.example.com/?content_type=ebook&sort=relevance"
+                "https://shelfmark.example.com/?content_type=ebook&sort=popularity"
                 "&query=Already+Present+Author+One&title=Already+Present&author=Author+One"
             ),
             request_payload=None,
@@ -1719,6 +1818,7 @@ def test_grouping_omits_zero_count_unavailable_bucket(shelfmark_module):
             display_fields=(),
             rating=None,
             ratings_count=None,
+            reviews_count=None,
             readers_count=None,
             hardcover_id="2",
             already_in_library=False,
@@ -1728,7 +1828,7 @@ def test_grouping_omits_zero_count_unavailable_bucket(shelfmark_module):
             detail_url="/external/2",
             shelfmark_base_url="https://shelfmark.example.com",
             shelfmark_open_url=(
-                "https://shelfmark.example.com/?content_type=ebook&sort=relevance"
+                "https://shelfmark.example.com/?content_type=ebook&sort=popularity"
                 "&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two"
             ),
             request_payload={"book_data": {"provider_id": "2"}},

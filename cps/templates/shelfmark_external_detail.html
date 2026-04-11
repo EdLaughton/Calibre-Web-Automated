@@ -8,9 +8,6 @@
     <div class="shelfmark-detail-page__header">
       <div class="shelfmark-detail-page__header-main">
         <h2 class="shelfmark-detail-page__title">{{ result.title if result else _("Shelfmark Result") }}</h2>
-        {% if result and result.subtitle %}
-          <p class="shelfmark-detail-page__subtitle">{{ result.subtitle }}</p>
-        {% endif %}
         {% if result and result.authors %}
           <p class="shelfmark-detail-page__authorline">{{ result.authors|join(', ') }}</p>
         {% endif %}

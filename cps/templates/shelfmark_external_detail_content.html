@@ -12,9 +12,6 @@
   {% elif result %}
     {% if modal_mode %}
       <div class="shelfmark-detail-pane__lead">
-        {% if result.subtitle %}
-          <p class="shelfmark-detail-pane__subtitle">{{ result.subtitle }}</p>
-        {% endif %}
         {% if result.authors %}
           <p class="shelfmark-detail-pane__authorline">{{ result.authors|join(', ') }}</p>
         {% endif %}
@@ -57,9 +54,6 @@
                   <span class="{{ result.library_state.icon_class }}" aria-hidden="true"></span>
                   {{ result.library_state.label }}
                 </span>
-              {% endif %}
-              {% if result.hardcover_id %}
-                <span class="label label-default">{{ _("Hardcover ID") }} {{ result.hardcover_id }}</span>
               {% endif %}
             </div>
 
@@ -152,6 +146,10 @@
               <dt>{{ _("Library series") }}</dt>
               <dd>{{ result.series_context.detail_value }}</dd>
             {% endif %}
+            {% if result.hardcover_id %}
+              <dt>{{ _("Hardcover ID") }}</dt>
+              <dd>{{ result.hardcover_id }}</dd>
+            {% endif %}
             {% if result.series_count %}
               <dt>{{ _("Series size") }}</dt>
               <dd>{{ _('%(count)s books', count=result.series_count) }}</dd>
@@ -178,7 +176,7 @@
             {% endif %}
             <dt>{{ _("Provider") }}</dt>
             <dd>{{ result.provider }}</dd>
-            {% if result.provider_id %}
+            {% if result.provider_id and not (result.provider == 'hardcover' and result.hardcover_id and result.provider_id == result.hardcover_id) %}
               <dt>{{ _("Provider ID") }}</dt>
               <dd>{{ result.provider_id }}</dd>
             {% endif %}
@@ -187,7 +185,7 @@
               <dd><a href="{{ result.source_url }}" target="_blank" rel="noopener noreferrer">{{ result.source_url }}</a></dd>
             {% endif %}
             {% for field in result.display_fields %}
-              {% if field.label not in ['Rating', 'Readers', 'Pages', 'Editions', 'Lists', 'Moods', 'Mood', 'Content warnings', 'Content warning', 'Warnings', 'Genres', 'Genre', 'Tags', 'Tag'] %}
+              {% if field.label not in ['Rating', 'Ratings', 'Reviews', 'Readers', 'Pages', 'Editions', 'Lists', 'Moods', 'Mood', 'Content warnings', 'Content warning', 'Warnings', 'Genres', 'Genre', 'Tags', 'Tag'] %}
                 <dt>{{ field.label }}</dt>
                 <dd>{{ field.value }}</dd>
               {% endif %}
