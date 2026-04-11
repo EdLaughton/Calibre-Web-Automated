@@ -48,6 +48,7 @@ class FakeElement {
         this.parentNode = null;
         this.value = "";
         this._innerHTML = "";
+        this.scrollIntoViewCalls = [];
     }
 
     appendChild(child) {
@@ -97,6 +98,10 @@ class FakeElement {
         if (value === "") {
             this.children = [];
         }
+    }
+
+    scrollIntoView(options) {
+        this.scrollIntoViewCalls.push(options || null);
     }
 }
 
@@ -258,9 +263,33 @@ async function run() {
     assert.ok(env.menu.children[0].innerHTML.includes("Author"));
     assert.ok(env.menu.children[0].innerHTML.includes("James S. A."));
     assert.ok(env.menu.children[0].innerHTML.includes("cwa-autocomplete-match"));
+    assert.strictEqual(env.input.getAttribute("aria-activedescendant"), null);
+
+    const keydownState = {
+        prevented: false
+    };
+    env.input.dispatch("keydown", {
+        key: "ArrowDown",
+        preventDefault() {
+            keydownState.prevented = true;
+        }
+    });
+    assert.strictEqual(keydownState.prevented, true);
+    assert.strictEqual(env.input.getAttribute("aria-activedescendant"), "cwa-autocomplete-item-0");
+    assert.strictEqual(env.menu.children[0].classList.contains("is-active"), true);
+    assert.deepStrictEqual(env.menu.children[0].scrollIntoViewCalls, [{block: "nearest"}]);
+
+    env.input.dispatch("keydown", {
+        key: "Enter",
+        preventDefault() {
+            keydownState.enterPrevented = true;
+        }
+    });
+    assert.strictEqual(keydownState.enterPrevented, true);
+    assert.deepStrictEqual(env.locationCalls, ["/author/7"]);
 
     env.menu.children[0].dispatch("click");
-    assert.deepStrictEqual(env.locationCalls, ["/author/7"]);
+    assert.deepStrictEqual(env.locationCalls, ["/author/7", "/author/7"]);
 
     instance.renderPayload({
         query: "nomatch",
