@@ -34,28 +34,14 @@
       <section class="shelfmark-detail-main">
         <div class="shelfmark-detail-hero shelfmark-detail-hero--{{ result.library_state.row_class }}">
           <div class="shelfmark-detail-hero__body">
-            <div class="shelfmark-detail-hero__badges">
-              {% if result.triage_state and result.triage_state.strong_candidate %}
-                <span class="label shelfmark-triage-chip shelfmark-triage-chip--strong">
-                  {{ _("Strong candidate") }}
-                </span>
-              {% elif result.quality_state and result.quality_state.high_confidence %}
-                <span class="label shelfmark-quality-chip shelfmark-quality-chip--high">
-                  {{ _("High confidence") }}
-                </span>
-              {% endif %}
-              {% if result.series_context and result.series_context.badges %}
-                {% for badge in result.series_context.badges %}
-                  <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
-                {% endfor %}
-              {% endif %}
-              {% if result.library_state.label and result.library_state.badge_class %}
+            {% if result.library_state.label and result.library_state.badge_class %}
+              <div class="shelfmark-detail-hero__badges">
                 <span class="label {{ result.library_state.badge_class }}">
                   <span class="{{ result.library_state.icon_class }}" aria-hidden="true"></span>
                   {{ result.library_state.label }}
                 </span>
-              {% endif %}
-            </div>
+              </div>
+            {% endif %}
 
             {% if result.facts %}
               <p class="shelfmark-detail-hero__facts" aria-label="{{ _('Shelfmark facts') }}">
@@ -142,9 +128,27 @@
         <div class="shelfmark-detail-section">
           <h3 class="shelfmark-detail-section__title">{{ _("Book details") }}</h3>
           <dl class="shelfmark-detail-meta-list">
-            {% if result.series_context and result.series_context.detail_value %}
+            {% if result.series_context and (result.series_context.facts or result.series_context.detail_value) %}
               <dt>{{ _("Library series") }}</dt>
-              <dd>{{ result.series_context.detail_value }}</dd>
+              <dd>
+                {% if result.series_context.facts %}
+                  {% for fact in result.series_context.facts %}
+                    <span class="shelfmark-detail-meta-list__inline-fact">{{ fact }}</span>
+                  {% endfor %}
+                {% else %}
+                  {{ result.series_context.detail_value }}
+                {% endif %}
+              </dd>
+            {% endif %}
+            {% if result.series_display %}
+              <dt>{{ _("Series") }}</dt>
+              <dd>
+                {% if result.series_url %}
+                  <a class="shelfmark-detail-meta-list__link" href="{{ result.series_url }}" target="_blank" rel="noopener noreferrer">{{ result.series_display }}</a>
+                {% else %}
+                  {{ result.series_display }}
+                {% endif %}
+              </dd>
             {% endif %}
             {% if result.hardcover_id %}
               <dt>{{ _("Hardcover ID") }}</dt>
@@ -156,15 +160,33 @@
             {% endif %}
             {% if result.genres %}
               <dt>{{ _("Genres") }}</dt>
-              <dd>{{ result.genres|join(' · ') }}</dd>
+              <dd>
+                <span class="shelfmark-detail-token-list shelfmark-detail-token-list--genres">
+                  {% for value in result.genres %}
+                    <span class="shelfmark-detail-token">{{ value }}</span>
+                  {% endfor %}
+                </span>
+              </dd>
             {% endif %}
             {% if result.moods %}
               <dt>{{ _("Moods") }}</dt>
-              <dd>{{ result.moods|join(' · ') }}</dd>
+              <dd>
+                <span class="shelfmark-detail-token-list shelfmark-detail-token-list--moods">
+                  {% for value in result.moods %}
+                    <span class="shelfmark-detail-token">{{ value }}</span>
+                  {% endfor %}
+                </span>
+              </dd>
             {% endif %}
             {% if result.content_warnings %}
               <dt>{{ _("Content notes") }}</dt>
-              <dd>{{ result.content_warnings|join(' · ') }}</dd>
+              <dd>
+                <span class="shelfmark-detail-token-list shelfmark-detail-token-list--warnings">
+                  {% for value in result.content_warnings %}
+                    <span class="shelfmark-detail-token">{{ value }}</span>
+                  {% endfor %}
+                </span>
+              </dd>
             {% endif %}
             {% if result.lists_count %}
               <dt>{{ _("Lists") }}</dt>
@@ -185,7 +207,7 @@
               <dd><a href="{{ result.source_url }}" target="_blank" rel="noopener noreferrer">{{ result.source_url }}</a></dd>
             {% endif %}
             {% for field in result.display_fields %}
-              {% if field.label not in ['Rating', 'Ratings', 'Reviews', 'Readers', 'Pages', 'Editions', 'Lists', 'Moods', 'Mood', 'Content warnings', 'Content warning', 'Warnings', 'Genres', 'Genre', 'Tags', 'Tag'] %}
+              {% if field.label not in ['Rating', 'Ratings', 'Reviews', 'Readers', 'Pages', 'Editions', 'Lists', 'Moods', 'Mood', 'Content warnings', 'Content warning', 'Warnings', 'Genres', 'Genre', 'Tags', 'Tag', 'Series', 'Series size'] %}
                 <dt>{{ field.label }}</dt>
                 <dd>{{ field.value }}</dd>
               {% endif %}

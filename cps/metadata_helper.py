@@ -9,11 +9,60 @@ import json
 
 from cps import logger, db
 from cps.search_metadata import cl as metadata_providers
+from cps.utils.shelfmark_import_provenance import select_exact_hardcover_result
 import sys
 sys.path.insert(1, '/app/calibre-web-automated/scripts/')
 from cwa_db import CWA_DB
 
 log = logger.create()
+
+
+def _get_book_identifier_map(book) -> dict[str, str]:
+    identifiers: dict[str, str] = {}
+    for identifier in getattr(book, 'identifiers', []) or []:
+        identifier_type = getattr(identifier, 'type', None)
+        identifier_value = getattr(identifier, 'val', None)
+        if identifier_type and identifier_value:
+            identifiers[str(identifier_type)] = str(identifier_value)
+    return identifiers
+
+
+def _find_metadata_provider(provider_id: str):
+    for provider in metadata_providers:
+        if getattr(provider, '__id__', None) == provider_id:
+            return provider
+    return None
+
+
+def _fetch_exact_hardcover_metadata(book, provider_hierarchy, enabled_map):
+    """Fetch metadata through the exact Hardcover path when stable identifiers exist.
+
+    `hardcover-id` is the lookup key. If the ingest sidecar also attached
+    `hardcover-edition` or `hardcover-slug`, those identifiers are used to pick the
+    exact returned Hardcover result rather than falling back to a fuzzy first match.
+    """
+    existing_identifiers = _get_book_identifier_map(book)
+    hardcover_id = existing_identifiers.get('hardcover-id')
+    if not hardcover_id:
+        return None
+
+    if 'hardcover' not in provider_hierarchy:
+        return None
+
+    if not enabled_map.get('hardcover', True):
+        return None
+
+    provider = _find_metadata_provider('hardcover')
+    if not provider or not provider.active:
+        return None
+
+    try:
+        results = provider.search(f"hardcover-id:{hardcover_id}", "", "en") or []
+    except Exception as e:
+        log.warning(f"Exact Hardcover metadata lookup failed for book {getattr(book, 'id', 'unknown')}: {e}")
+        return None
+
+    return select_exact_hardcover_result(results, existing_identifiers)
 
 def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
     """
@@ -46,7 +95,7 @@ def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
             log.error(f"Book with ID {book_id} not found")
             return False
             
-        # Create search query from book title and author
+        # Create fuzzy fallback search query from book title and author.
         search_query = book.title
         if book.authors:
             author_names = [author.name for author in book.authors]
@@ -64,9 +113,32 @@ def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
         enabled_map = _parse_metadata_providers_enabled(
             cwa_settings.get('metadata_providers_enabled', '{}')
         )
-            
-        # Try each provider in order
+
         metadata_found = False
+
+        exact_hardcover_metadata = _fetch_exact_hardcover_metadata(
+            book,
+            provider_hierarchy=provider_hierarchy,
+            enabled_map=enabled_map,
+        )
+        if exact_hardcover_metadata is not None:
+            existing_identifiers = _get_book_identifier_map(book)
+            log.info(
+                "Fetching metadata via exact Hardcover provenance for book %s: "
+                "hardcover-id=%s, hardcover-edition=%s, hardcover-slug=%s",
+                book.id,
+                existing_identifiers.get('hardcover-id'),
+                existing_identifiers.get('hardcover-edition'),
+                existing_identifiers.get('hardcover-slug'),
+            )
+            if _apply_metadata_to_book(book, exact_hardcover_metadata, calibre_db_instance):
+                log.info(f"Successfully applied exact Hardcover metadata for book: {book.title}")
+                metadata_found = True
+
+        if metadata_found:
+            calibre_db_instance.session.close()
+            return True
+
         for provider_id in provider_hierarchy:
             # Check if explicitly disabled (default is enabled if not specified)
             is_enabled = enabled_map.get(provider_id, True)
@@ -75,11 +147,7 @@ def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
                 continue
             try:
                 # Find the provider
-                provider = None
-                for p in metadata_providers:
-                    if p.__id__ == provider_id:
-                        provider = p
-                        break
+                provider = _find_metadata_provider(provider_id)
                         
                 if not provider or not provider.active:
                     continue

@@ -246,7 +246,7 @@
     <div class="form-group">
       <input type="checkbox" id="config_shelfmark_search" name="config_shelfmark_search" data-control="shelfmark-search-settings" {% if config.config_shelfmark_search %}checked{% endif %}>
       <label for="config_shelfmark_search">{{_('Enable Shelfmark External Search')}}</label>
-      <div class="help-block">{{_('Adds Shelfmark external results alongside library search. Duplicate awareness is exact metadata.db hardcover-id matching only, and request attribution stays on the Shelfmark/browser side. Advanced search only sends title, author, and publisher metadata to Shelfmark; all other advanced filters stay local to CWA. The UI groups exact duplicates, external candidates, and results without exact Hardcover IDs separately. Direct Request in Shelfmark works best when CWA and Shelfmark are served from the same browser origin via a reverse proxy. If Shelfmark is configured to sync/auth users from the mounted CWA app.db, those synced users can log into Shelfmark in the browser and requests will be attributed there as that same user.')}}</div>
+      <div class="help-block">{{_('Optionally shows Shelfmark results beside library search. Duplicate checks stay exact: metadata.db plus exact Hardcover ID only. Direct Request in Shelfmark remains a browser-side upgrade, so it depends on a same-origin or reverse-proxied Shelfmark Browser URL, a live Shelfmark login in that browser, and Shelfmark policy allowing a direct book request. When those conditions are not met, CWA falls back to Open in Shelfmark.')}}</div>
     </div>
     <div data-related="shelfmark-search-settings">
       <div class="form-group">

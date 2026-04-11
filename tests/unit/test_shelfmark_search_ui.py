@@ -482,6 +482,10 @@ def _base_context():
             "clear_filters_url": "/search/stored/?query=Dune&shelfmark_page=1",
             "requestable_toggle_url": "/search/stored/?query=Dune&shelfmark_page=1&shelfmark_filter_requestable=1",
             "requestable_toggle_label": "Focus on requestable",
+            "top_up_url": (
+                "/search/external/shelfmark/topup?query=Dune&shelfmark_page=1&shelfmark_page_size=12"
+                "&shelfmark_sort=popularity&return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"
+            ),
             "state_url": saved_state_url,
             "query_label": "External lookup query",
             "context_hint": "Duplicate awareness remains exact hardcover-id matching only.",
@@ -490,7 +494,7 @@ def _base_context():
             "pagination_mode": "shelfmark",
             "progressive_refinement": True,
             "progressive_refinement_note": (
-                "Totals and paging come directly from Shelfmark. Visible rows on this page refine as richer metadata loads."
+                "Totals and paging come directly from Shelfmark. Visible rows on this page refine as richer metadata loads, then top up from later Shelfmark pages when needed."
             ),
             "summary": {
                 "total_results": 3,
@@ -582,6 +586,8 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "CWA is previewing the first Shelfmark page here." not in html
     assert "Checking your browser for direct Shelfmark request availability." not in html
     assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
+    assert 'data-top-up-url="/search/external/shelfmark/topup?query=Dune&amp;shelfmark_page=1&amp;shelfmark_page_size=12&amp;shelfmark_sort=popularity&amp;return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"' in html
+    assert 'data-page-size="12"' in html
     assert html.index("Open search in Shelfmark") < html.index("External Candidate")
     assert 'href="https://library.example.com/shelfmark/?content_type=ebook&amp;sort=popularity&amp;limit=12&amp;page=1&amp;query=Dune"' in html
     assert "shelfmark_request_flow.js" in html
@@ -595,6 +601,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "shelfmark-group-panel" not in html
     assert 'class="shelfmark-results-list js-shelfmark-results-list"' in html
     assert "Totals and paging come directly from Shelfmark." in html
+    assert "top up from later Shelfmark pages when needed" in html
     assert "Open existing CWA book" in html
     assert 'href="/book/7"' in html
     assert "Existing CWA book" not in html
@@ -618,6 +625,9 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'data-detail-provider-id="222"' in html
     assert 'data-row-enrich-url="/search/external/shelfmark/hardcover/222/row?query=Dune' in html
     assert 'return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune%26shelfmark_page%3D2' in html
+    assert "No Shelfmark rows remain visible on this page" in html
+    assert ">Go<" not in html
+    assert "shelfmark-pagination-footer__jump" not in html
     assert 'id="shelfmarkDetailModal"' in html
     assert 'id="shelfmarkDetailModalLabel"' in html
     assert 'class="modal fade shelfmark-detail-modal"' in html
@@ -765,6 +775,8 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
     assert "Back to search results" not in html
     assert "Request in Shelfmark" in html
     assert "Available to request" in html
+    assert "5,900 ratings" in html
+    assert "9,893 readers" in html
     assert "<i>Shelfmark</i>" in html
     assert "Strong candidate" not in html
     assert "Next missing" not in html
@@ -811,6 +823,8 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "Not in your library" not in html
     assert "No exact Hardcover ID match found in metadata.db." not in html
     assert "4.3 ★" in html
+    assert "5,900 ratings" in html
+    assert "9,893 readers" in html
     assert "The Lord of the Rings (2)" in html
     assert "Strong candidate" not in html
     assert "Next missing" not in html
@@ -893,7 +907,7 @@ def test_search_template_renders_intentional_zero_results_state():
     assert "Open search in Shelfmark" in html
 
 
-def test_search_template_renders_filter_toolbar_and_page_jump_state():
+def test_search_template_renders_filter_toolbar_and_footer_state():
     app = _create_app()
     context = _base_context()
     context["shelfmark_section"] = {
@@ -925,8 +939,9 @@ def test_search_template_renders_filter_toolbar_and_page_jump_state():
     assert 'name="shelfmark_filter_has_cover" value="1" checked' in html
     assert "Show all matches" in html
     assert "Clear filters" not in html
-    assert "Page" in html
-    assert "of 75" in html
+    assert "Page 2 of 75" in html
+    assert ">Go<" not in html
+    assert "shelfmark-pagination-footer__jump" not in html
 
 
 def test_search_template_renders_high_confidence_filter_state():

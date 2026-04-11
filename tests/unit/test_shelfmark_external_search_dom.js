@@ -152,6 +152,10 @@ class FakeDocument {
     this.listeners = {};
   }
 
+  createElement(tagName) {
+    return new FakeElement(tagName);
+  }
+
   querySelector(selector) {
     return this.root.querySelector(selector);
   }
@@ -314,6 +318,14 @@ function createProgressiveDom() {
   const emptyState = root.appendChild(new FakeElement('div', {
     className: 'js-shelfmark-progressive-empty-state is-hidden'
   }));
+  const resultsList = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-results-list',
+    dataset: {
+      pageSize: '3',
+      nextPage: '2',
+      topUpUrl: '/search/external/shelfmark/topup?query=terry+pratchett'
+    }
+  }));
 
   function buildProgressiveRow(rowIndex) {
     const row = createResultNode({
@@ -329,14 +341,16 @@ function createProgressiveDom() {
     }).wrapper;
     row.className += ' js-shelfmark-result-row js-shelfmark-progressive-row shelfmark-result-card--refining';
     row.dataset.rowIndex = String(rowIndex);
+    row.dataset.provider = 'hardcover';
+    row.dataset.providerId = String(rowIndex);
     row.dataset.rowEnrichUrl = `/row/${rowIndex}`;
     return row;
   }
 
   const rows = {
-    2: root.appendChild(buildProgressiveRow(2)),
-    0: root.appendChild(buildProgressiveRow(0)),
-    1: root.appendChild(buildProgressiveRow(1))
+    2: resultsList.appendChild(buildProgressiveRow(2)),
+    0: resultsList.appendChild(buildProgressiveRow(0)),
+    1: resultsList.appendChild(buildProgressiveRow(1))
   };
 
   return {
@@ -344,7 +358,8 @@ function createProgressiveDom() {
     rows,
     visibleCount,
     pageSummary,
-    emptyState
+    emptyState,
+    resultsList
   };
 }
 
@@ -361,7 +376,10 @@ async function runScenario(options) {
   delete require.cache[searchModulePath];
 
   global.window = {
-    location: { origin: options.currentOrigin },
+    location: {
+      origin: options.currentOrigin,
+      href: `${options.currentOrigin}/search/stored/?query=test`
+    },
     CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS: 0,
     CwaShelfmarkRequestFlow: require(flowModulePath)
   };
@@ -429,6 +447,24 @@ async function runProgressiveScenario() {
         row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
         html: ''
       }
+    },
+    {
+      payload: {
+        ok: true,
+        next_page: null,
+        rows: [
+          {
+            provider: 'hardcover',
+            provider_id: '99',
+            row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+            row_status_provider: '',
+            row_status_provider_id: '',
+            row_status_in_library: '0',
+            row_enrichment_url: '',
+            html: ''
+          }
+        ]
+      }
     }
   ];
 
@@ -436,7 +472,10 @@ async function runProgressiveScenario() {
   delete require.cache[searchModulePath];
 
   global.window = {
-    location: { origin: 'https://library.example.com' },
+    location: {
+      origin: 'https://library.example.com',
+      href: 'https://library.example.com/search/stored/?query=terry+pratchett'
+    },
     CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS: 0,
     CwaShelfmarkRequestFlow: require(flowModulePath)
   };
@@ -784,14 +823,20 @@ async function runProgressiveScenario() {
 
   assert.deepEqual(
     progressive.fetchCalls.map((call) => call.url),
-    ['/row/0', '/row/1', '/row/2']
+    [
+      '/row/0',
+      '/row/1',
+      '/row/2',
+      'https://library.example.com/search/external/shelfmark/topup?query=terry+pratchett&shelfmark_source_page=2'
+    ]
   );
   assert.equal(progressive.dom.rows[0].classList.contains('is-shelfmark-filter-hidden'), false);
   assert.equal(progressive.dom.rows[1].classList.contains('is-shelfmark-filter-hidden'), false);
   assert.equal(progressive.dom.rows[2].classList.contains('is-shelfmark-filter-hidden'), true);
-  assert.equal(progressive.dom.visibleCount.textContent, '2 shown');
-  assert.equal(progressive.dom.pageSummary.textContent, '2 shown on this page');
+  assert.equal(progressive.dom.visibleCount.textContent, '3 shown');
+  assert.equal(progressive.dom.pageSummary.textContent, '3 shown on this page');
   assert.equal(progressive.dom.emptyState.classList.contains('is-hidden'), true);
+  assert.equal(progressive.dom.resultsList.children.length, 4);
 
   console.log('test_shelfmark_external_search_dom.js: ok');
 })().catch((error) => {

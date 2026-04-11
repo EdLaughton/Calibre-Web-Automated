@@ -75,6 +75,33 @@ SHELFMARK_AUDIOBOOK_HINTS = (
     "m4b",
     "cassette",
 )
+SHELFMARK_EBOOK_HINTS = (
+    "ebook",
+    "e-book",
+    "epub",
+    "digital",
+    "kindle",
+)
+SHELFMARK_PHYSICAL_HINTS = (
+    "physical",
+    "physical book",
+    "hardcover",
+    "paperback",
+    "softcover",
+    "mass market paperback",
+    "board book",
+    "print",
+)
+SHELFMARK_GENRE_CATEGORY_HINTS = ("genre", "genres")
+SHELFMARK_MOOD_CATEGORY_HINTS = ("mood", "moods")
+SHELFMARK_CONTENT_WARNING_CATEGORY_HINTS = (
+    "content warning",
+    "content warnings",
+    "warning",
+    "warnings",
+    "trigger warning",
+    "trigger warnings",
+)
 
 _SHELFMARK_DETAIL_CACHE: OrderedDict[tuple[str, str, str], tuple[float, dict[str, Any]]] = OrderedDict()
 _SHELFMARK_COVER_CACHE: OrderedDict[tuple[str, str], tuple[float, str]] = OrderedDict()
@@ -1134,7 +1161,7 @@ def build_shelfmark_result_view(
     title = _resolve_shelfmark_title(book) or _("Unknown title")
     authors = tuple(_resolve_shelfmark_authors(book))
     hardcover_id = _extract_hardcover_id(book)
-    publish_year = _normalize_int(book.get("publish_year"))
+    publish_year = _resolve_publish_year(book)
     description_html = _sanitize_description_html(book.get("description"))
     series_name = _resolve_series_name(book)
     series_position = _resolve_series_position(book)
@@ -1177,7 +1204,7 @@ def build_shelfmark_result_view(
         ),
         description=_plain_text_from_html(description_html),
         publish_year=publish_year,
-        source_url=_normalize_text(book.get("source_url")),
+        source_url=_resolve_source_url(book),
         display_fields=_normalize_display_fields(book.get("display_fields")),
         rating=rating,
         ratings_count=ratings_count,
@@ -1340,7 +1367,12 @@ def _merge_book_details(
         "search_author",
         "description",
         "publish_year",
+        "release_year",
+        "release_date",
         "source_url",
+        "slug",
+        "canonical",
+        "canonical_id",
         "display_fields",
         "genres",
         "series_id",
@@ -1349,16 +1381,42 @@ def _merge_book_details(
         "series_name",
         "series_position",
         "series_count",
+        "featured_book_series",
+        "featured_book_series_id",
+        "book_series",
         "rating",
         "ratings_count",
         "reviews_count",
         "users_count",
+        "users_read_count",
         "pages",
         "editions_count",
+        "editions",
+        "editions_aggregate",
         "lists_count",
         "moods",
         "content_warnings",
         "warnings",
+        "taggings",
+        "cached_tags",
+        "cached_featured_series",
+        "default_audio_edition",
+        "default_audio_edition_id",
+        "default_cover_edition",
+        "default_cover_edition_id",
+        "default_ebook_edition",
+        "default_ebook_edition_id",
+        "default_physical_edition",
+        "default_physical_edition_id",
+        "edition",
+        "edition_id",
+        "content_type",
+        "format",
+        "edition_format",
+        "media_type",
+        "physical_format",
+        "object_type",
+        "reading_format",
         "provider_display_name",
         "cover_url",
         "preview",
@@ -1651,10 +1709,9 @@ def _enrich_books_with_detail_covers(
 
 def _iter_request_media_signals(book: Mapping[str, Any]) -> tuple[str, ...]:
     values: list[str] = []
-    for key in ("content_type", "format", "edition_format", "media_type"):
-        normalized = _normalize_text(book.get(key))
-        if normalized:
-            values.append(normalized.casefold())
+    for record in (book, _resolve_display_edition(book), _select_edition_by_kind(book, "audio")):
+        if isinstance(record, Mapping):
+            values.extend(_iter_media_signals(record))
     for label in ("Format", "Edition format", "Media", "Medium"):
         display_value = _lookup_display_field_value(book, label)
         if display_value:
@@ -1663,6 +1720,12 @@ def _iter_request_media_signals(book: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _is_audiobook_result(book: Mapping[str, Any]) -> bool:
+    primary_content_type = _resolve_primary_content_type(book)
+    if primary_content_type == "audio":
+        return True
+    if primary_content_type in {"ebook", "physical"}:
+        return False
+
     for value in _iter_request_media_signals(book):
         if value == "audiobook":
             return True
@@ -2072,7 +2135,7 @@ def search_shelfmark_results(
             progressive_refinement=progressive_refinement,
             progressive_refinement_note=(
                 _(
-                    "Totals and paging come directly from Shelfmark. Visible rows on this page refine as richer metadata loads."
+                    "Totals and paging come directly from Shelfmark. Visible rows on this page refine as richer metadata loads, then top up from later Shelfmark pages when needed."
                 )
                 if progressive_refinement
                 else None
@@ -2353,8 +2416,23 @@ def _normalize_authors(value: Any) -> list[str]:
     return authors
 
 
+def _iter_mapping_items(value: Any) -> tuple[Mapping[str, Any], ...]:
+    if isinstance(value, Mapping):
+        return (value,)
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return tuple()
+    return tuple(item for item in value if isinstance(item, Mapping))
+
+
 def _resolve_shelfmark_title(book: Mapping[str, Any]) -> str | None:
-    return _normalize_text(book.get("title")) or _normalize_text(book.get("search_title"))
+    direct_title = _normalize_text(book.get("title")) or _normalize_text(book.get("search_title"))
+    if direct_title:
+        return direct_title
+
+    canonical = book.get("canonical")
+    if isinstance(canonical, Mapping):
+        return _normalize_text(canonical.get("title"))
+    return None
 
 
 def _resolve_shelfmark_authors(book: Mapping[str, Any]) -> list[str]:
@@ -2370,11 +2448,314 @@ def _resolve_shelfmark_authors(book: Mapping[str, Any]) -> list[str]:
     return []
 
 
+def _normalize_cover_candidate(value: Any) -> str | None:
+    if isinstance(value, Mapping):
+        for key in ("url", "href", "src"):
+            normalized = _normalize_text(value.get(key))
+            if normalized:
+                return normalized
+        return None
+    return _normalize_text(value)
+
+
+def _normalize_year_from_value(value: Any) -> int | None:
+    direct_year = _normalize_int(value)
+    if direct_year is not None:
+        return direct_year
+
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+
+    match = re.search(r"\b(1[89]\d{2}|20\d{2}|21\d{2})\b", normalized)
+    if not match:
+        return None
+    return _normalize_int(match.group(1))
+
+
+def _normalize_tag_category(value: Any) -> str | None:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+    normalized = normalized.casefold().replace("_", " ").replace("-", " ")
+    return re.sub(r"\s+", " ", normalized).strip() or None
+
+
+def _tag_category_matches(category: Any, allowed_labels: Sequence[str]) -> bool:
+    normalized_category = _normalize_tag_category(category)
+    if not normalized_category:
+        return False
+    allowed = {_normalize_tag_category(label) for label in allowed_labels}
+    return normalized_category in allowed
+
+
+def _extract_schema_tag_label(tagging: Mapping[str, Any]) -> str | None:
+    tag = tagging.get("tag")
+    if isinstance(tag, Mapping):
+        return (
+            _normalize_text(tag.get("tag"))
+            or _normalize_text(tag.get("name"))
+            or _normalize_text(tag.get("title"))
+            or _normalize_text(tag.get("label"))
+        )
+    return None
+
+
+def _resolve_schema_tag_values(
+    book: Mapping[str, Any],
+    *,
+    categories: Sequence[str],
+    limit: int,
+    prefer_non_spoilers: bool = False,
+) -> tuple[str, ...]:
+    matches: list[tuple[int, int, str]] = []
+    seen: set[str] = set()
+
+    for index, tagging in enumerate(_iter_mapping_items(book.get("taggings"))):
+        tag = tagging.get("tag")
+        if not isinstance(tag, Mapping):
+            continue
+
+        tag_category = tag.get("tag_category")
+        category_value = None
+        if isinstance(tag_category, Mapping):
+            category_value = tag_category.get("category") or tag_category.get("slug")
+        if not _tag_category_matches(category_value, categories):
+            continue
+
+        label = _extract_schema_tag_label(tagging)
+        if not label:
+            continue
+
+        label_key = label.casefold()
+        if label_key in seen:
+            continue
+        seen.add(label_key)
+
+        spoiler_rank = 1 if bool(tagging.get("spoiler")) else 0
+        if not prefer_non_spoilers:
+            spoiler_rank = 0
+        matches.append((spoiler_rank, index, label))
+
+    if prefer_non_spoilers:
+        matches.sort(key=lambda item: (item[0], item[1]))
+
+    return tuple(label for _, _, label in matches[:limit])
+
+
+def _resolve_hardcover_slug(book: Mapping[str, Any]) -> str | None:
+    slug = _normalize_text(book.get("slug"))
+    if slug:
+        return slug
+
+    canonical = book.get("canonical")
+    if isinstance(canonical, Mapping):
+        return _normalize_text(canonical.get("slug"))
+    return None
+
+
+def _resolve_source_url(book: Mapping[str, Any]) -> str | None:
+    explicit_source_url = _normalize_text(book.get("source_url"))
+    if explicit_source_url:
+        return explicit_source_url
+
+    if (_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER) != SHELFMARK_METADATA_PROVIDER:
+        return None
+
+    slug = _resolve_hardcover_slug(book)
+    if not slug:
+        return None
+    return f"https://hardcover.app/books/{slug}"
+
+
+def _edition_identity(edition: Mapping[str, Any]) -> tuple[str | None, ...]:
+    return (
+        _normalize_text(edition.get("id")),
+        _normalize_text(edition.get("title")),
+        _normalize_text(edition.get("isbn_13")),
+        _normalize_text(edition.get("isbn_10")),
+    )
+
+
+def _iter_schema_editions(book: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    editions: list[Mapping[str, Any]] = []
+    seen: set[tuple[str | None, ...]] = set()
+
+    def add_candidate(candidate: Any) -> None:
+        if not isinstance(candidate, Mapping):
+            return
+        edition_key = _edition_identity(candidate)
+        if edition_key in seen:
+            return
+        seen.add(edition_key)
+        editions.append(candidate)
+
+    for key in (
+        "default_ebook_edition",
+        "edition",
+        "default_physical_edition",
+        "default_audio_edition",
+        "default_cover_edition",
+    ):
+        add_candidate(book.get(key))
+
+    for candidate in _iter_mapping_items(book.get("editions")):
+        add_candidate(candidate)
+
+    return tuple(editions)
+
+
+def _iter_media_signals(record: Mapping[str, Any]) -> tuple[str, ...]:
+    values: list[str] = []
+    for key in (
+        "content_type",
+        "format",
+        "edition_format",
+        "media_type",
+        "physical_format",
+        "object_type",
+    ):
+        normalized = _normalize_text(record.get(key))
+        if normalized:
+            values.append(normalized.casefold())
+
+    reading_format = record.get("reading_format")
+    if isinstance(reading_format, Mapping):
+        normalized = _normalize_text(reading_format.get("format"))
+        if normalized:
+            values.append(normalized.casefold())
+
+    return tuple(values)
+
+
+def _classify_schema_content_type(record: Mapping[str, Any]) -> str | None:
+    media_signals = _iter_media_signals(record)
+    if not media_signals:
+        return None
+
+    has_ebook_signal = any(
+        any(hint in signal for hint in SHELFMARK_EBOOK_HINTS)
+        for signal in media_signals
+    )
+    has_physical_signal = any(
+        any(hint in signal for hint in SHELFMARK_PHYSICAL_HINTS)
+        for signal in media_signals
+    )
+    has_audio_signal = any(
+        signal == "audiobook"
+        or any(hint in signal for hint in SHELFMARK_AUDIOBOOK_HINTS)
+        for signal in media_signals
+    )
+
+    if has_ebook_signal:
+        return "ebook"
+    if has_physical_signal:
+        return "physical"
+    if has_audio_signal:
+        return "audio"
+    return None
+
+
+def _select_edition_by_kind(book: Mapping[str, Any], kind: str) -> Mapping[str, Any] | None:
+    default_key_by_kind = {
+        "ebook": "default_ebook_edition",
+        "physical": "default_physical_edition",
+        "audio": "default_audio_edition",
+    }
+    default_candidate = book.get(default_key_by_kind[kind])
+    if isinstance(default_candidate, Mapping):
+        return default_candidate
+
+    inline_edition = book.get("edition")
+    if isinstance(inline_edition, Mapping):
+        inline_kind = _classify_schema_content_type(inline_edition)
+        if inline_kind == kind or (kind == "ebook" and inline_kind is None):
+            return inline_edition
+
+    for candidate in _iter_mapping_items(book.get("editions")):
+        if _classify_schema_content_type(candidate) == kind:
+            return candidate
+
+    return None
+
+
+def _resolve_display_edition(book: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    for kind in ("ebook", "physical", "audio"):
+        candidate = _select_edition_by_kind(book, kind)
+        if candidate is not None:
+            return candidate
+
+    default_cover_edition = book.get("default_cover_edition")
+    if isinstance(default_cover_edition, Mapping):
+        return default_cover_edition
+
+    all_editions = _iter_schema_editions(book)
+    return all_editions[0] if all_editions else None
+
+
+def _resolve_primary_content_type(book: Mapping[str, Any]) -> str | None:
+    explicit_type = _classify_schema_content_type(book)
+    if _select_edition_by_kind(book, "ebook") is not None:
+        return "ebook"
+    if explicit_type == "ebook":
+        return "ebook"
+
+    if _select_edition_by_kind(book, "physical") is not None:
+        return "physical"
+    if explicit_type == "physical":
+        return "physical"
+
+    if _select_edition_by_kind(book, "audio") is not None:
+        return "audio"
+    if explicit_type == "audio":
+        return "audio"
+
+    return None
+
+
+def _resolve_featured_series_row(book: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    featured = book.get("featured_book_series")
+    if isinstance(featured, Mapping):
+        return featured
+
+    for row in _iter_mapping_items(book.get("book_series")):
+        if bool(row.get("featured")) and isinstance(row.get("series"), Mapping):
+            return row
+
+    for row in _iter_mapping_items(book.get("book_series")):
+        if isinstance(row.get("series"), Mapping):
+            return row
+
+    return None
+
+
+def _resolve_featured_series(book: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    row = _resolve_featured_series_row(book)
+    if not row:
+        return None
+    series = row.get("series")
+    return series if isinstance(series, Mapping) else None
+
+
 def _resolve_shelfmark_cover_value(book: Mapping[str, Any]) -> Any:
     for key in ("cover_url", "preview", "cached_image", "image"):
-        value = _normalize_text(book.get(key))
+        value = _normalize_cover_candidate(book.get(key))
         if value:
             return value
+
+    default_cover_edition = book.get("default_cover_edition")
+    if isinstance(default_cover_edition, Mapping):
+        for key in ("cached_image", "image"):
+            value = _normalize_cover_candidate(default_cover_edition.get(key))
+            if value:
+                return value
+
+    display_edition = _resolve_display_edition(book)
+    if isinstance(display_edition, Mapping):
+        for key in ("cached_image", "image"):
+            value = _normalize_cover_candidate(display_edition.get(key))
+            if value:
+                return value
     return None
 
 
@@ -2408,15 +2789,54 @@ def _format_series_position(value: float | None) -> str | None:
 
 
 def _resolve_series_name(book: Mapping[str, Any]) -> str | None:
+    featured_series = _resolve_featured_series(book)
+    if isinstance(featured_series, Mapping):
+        name = _normalize_text(featured_series.get("name"))
+        if name:
+            return name
     return _normalize_text(book.get("series_name"))
 
 
 def _resolve_series_position(book: Mapping[str, Any]) -> float | None:
+    featured_series_row = _resolve_featured_series_row(book)
+    if isinstance(featured_series_row, Mapping):
+        position = _normalize_series_position(featured_series_row.get("position"))
+        if position is not None:
+            return position
     return _normalize_series_position(book.get("series_position"))
 
 
 def _resolve_series_count(book: Mapping[str, Any]) -> int | None:
+    featured_series = _resolve_featured_series(book)
+    if isinstance(featured_series, Mapping):
+        for key in ("primary_books_count", "books_count"):
+            count = _normalize_int(featured_series.get(key))
+            if count is not None:
+                return count
     return _normalize_int(book.get("series_count"))
+
+
+def _resolve_publish_year(book: Mapping[str, Any]) -> int | None:
+    for candidate in (
+        book.get("publish_year"),
+        book.get("release_year"),
+        book.get("release_date"),
+    ):
+        resolved_year = _normalize_year_from_value(candidate)
+        if resolved_year is not None:
+            return resolved_year
+
+    display_edition = _resolve_display_edition(book)
+    if isinstance(display_edition, Mapping):
+        for candidate in (
+            display_edition.get("release_year"),
+            display_edition.get("release_date"),
+        ):
+            resolved_year = _normalize_year_from_value(candidate)
+            if resolved_year is not None:
+                return resolved_year
+
+    return None
 
 
 def _lookup_display_field_value(book: Mapping[str, Any], *labels: str) -> str | None:
@@ -2432,6 +2852,12 @@ def _lookup_display_field_value(book: Mapping[str, Any], *labels: str) -> str | 
 
 
 def _resolve_pages(book: Mapping[str, Any]) -> int | None:
+    display_edition = _resolve_display_edition(book)
+    if isinstance(display_edition, Mapping):
+        edition_pages = _normalize_int(display_edition.get("pages"))
+        if edition_pages is not None:
+            return edition_pages
+
     pages = _normalize_int(book.get("pages"))
     if pages is not None:
         return pages
@@ -2446,6 +2872,14 @@ def _resolve_editions_count(book: Mapping[str, Any]) -> int | None:
     editions_count = _normalize_int(book.get("editions_count"))
     if editions_count is not None:
         return editions_count
+
+    editions_aggregate = book.get("editions_aggregate")
+    if isinstance(editions_aggregate, Mapping):
+        aggregate = editions_aggregate.get("aggregate")
+        if isinstance(aggregate, Mapping):
+            editions_count = _normalize_int(aggregate.get("count"))
+            if editions_count is not None:
+                return editions_count
 
     display_value = _lookup_display_field_value(book, "Editions")
     if not display_value:
@@ -2520,6 +2954,10 @@ def _resolve_readers_count(book: Mapping[str, Any]) -> int | None:
     if readers_count is not None:
         return readers_count
 
+    readers_count = _normalize_int(book.get("users_read_count"))
+    if readers_count is not None:
+        return readers_count
+
     display_value = _lookup_display_field_value(book, "Readers", "Reader count")
     if not display_value:
         return None
@@ -2527,8 +2965,23 @@ def _resolve_readers_count(book: Mapping[str, Any]) -> int | None:
 
 
 def _resolve_shelfmark_subtitle(book: Mapping[str, Any]) -> str | None:
-    # Shelfmark/Hardcover subtitles frequently surface edition-localized or
-    # otherwise noisy secondary titles. Prefer omission over misleading copy.
+    subtitle = _normalize_text(book.get("subtitle"))
+
+    if (_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER) != SHELFMARK_METADATA_PROVIDER:
+        return subtitle
+
+    display_edition = _resolve_display_edition(book)
+    edition_subtitle = None
+    if isinstance(display_edition, Mapping):
+        edition_subtitle = _normalize_text(display_edition.get("subtitle"))
+
+    if subtitle and edition_subtitle:
+        return subtitle if subtitle.casefold() == edition_subtitle.casefold() else None
+    if edition_subtitle and not subtitle:
+        return edition_subtitle
+
+    # Hardcover subtitles are often noisy unless we can confirm them against a
+    # schema-backed edition relationship.
     return None
 
 
@@ -2564,6 +3017,10 @@ def _resolve_series_url(book: Mapping[str, Any]) -> str | None:
         return None
 
     series_slug = _normalize_text(book.get("series_slug"))
+    if not series_slug:
+        featured_series = _resolve_featured_series(book)
+        if isinstance(featured_series, Mapping):
+            series_slug = _normalize_text(featured_series.get("slug"))
     if not series_slug:
         featured_series = book.get("featured_book_series")
         if isinstance(featured_series, Mapping):
@@ -2621,9 +3078,21 @@ def _normalize_tag_list(value: Any, *, limit: int | None = None) -> tuple[str, .
 
 
 def _resolve_genres(book: Mapping[str, Any]) -> tuple[str, ...]:
+    schema_values = _resolve_schema_tag_values(
+        book,
+        categories=SHELFMARK_GENRE_CATEGORY_HINTS,
+        limit=5,
+    )
+    if schema_values:
+        return schema_values
+
     direct = _normalize_tag_list(book.get("genres"), limit=5)
     if direct:
         return direct
+
+    cached_tags = _normalize_tag_list(book.get("cached_tags"), limit=5)
+    if cached_tags:
+        return cached_tags
 
     tag_fallback = _normalize_tag_list(book.get("tags"), limit=5)
     if tag_fallback:
@@ -2683,6 +3152,14 @@ def _normalize_compact_values(value: Any, *, limit: int | None = None) -> tuple[
 
 
 def _resolve_moods(book: Mapping[str, Any]) -> tuple[str, ...]:
+    schema_values = _resolve_schema_tag_values(
+        book,
+        categories=SHELFMARK_MOOD_CATEGORY_HINTS,
+        limit=5,
+    )
+    if schema_values:
+        return schema_values
+
     direct = _normalize_compact_values(book.get("moods"), limit=5)
     if direct:
         return direct
@@ -2693,6 +3170,15 @@ def _resolve_moods(book: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _resolve_content_warnings(book: Mapping[str, Any]) -> tuple[str, ...]:
+    schema_values = _resolve_schema_tag_values(
+        book,
+        categories=SHELFMARK_CONTENT_WARNING_CATEGORY_HINTS,
+        limit=6,
+        prefer_non_spoilers=True,
+    )
+    if schema_values:
+        return schema_values
+
     direct = _normalize_compact_values(book.get("content_warnings"), limit=6)
     if direct:
         return direct

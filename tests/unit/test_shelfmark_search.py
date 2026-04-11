@@ -106,6 +106,19 @@ def shelfmark_module(monkeypatch):
     flask_babel_module = types.ModuleType("flask_babel")
     flask_babel_module.gettext = _gettext
 
+    markupsafe_module = types.ModuleType("markupsafe")
+
+    class DummyMarkup(str):
+        def striptags(self):
+            import re as _re
+
+            return _re.sub(r"<[^>]+>", "", self)
+
+    markupsafe_module.Markup = DummyMarkup
+
+    requests_module = types.ModuleType("requests")
+    requests_module.RequestException = Exception
+
     sqlalchemy_module = types.ModuleType("sqlalchemy")
     sqlalchemy_sql_module = types.ModuleType("sqlalchemy.sql")
     sqlalchemy_expression_module = types.ModuleType("sqlalchemy.sql.expression")
@@ -117,6 +130,8 @@ def shelfmark_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "cps.cw_advocate.exceptions", cw_advocate_exceptions_module)
     monkeypatch.setitem(sys.modules, "flask", flask_module)
     monkeypatch.setitem(sys.modules, "flask_babel", flask_babel_module)
+    monkeypatch.setitem(sys.modules, "markupsafe", markupsafe_module)
+    monkeypatch.setitem(sys.modules, "requests", requests_module)
     monkeypatch.setitem(sys.modules, "sqlalchemy", sqlalchemy_module)
     monkeypatch.setitem(sys.modules, "sqlalchemy.sql", sqlalchemy_sql_module)
     monkeypatch.setitem(sys.modules, "sqlalchemy.sql.expression", sqlalchemy_expression_module)
@@ -998,6 +1013,113 @@ def test_fetch_shelfmark_detail_promotes_genres_pages_and_editions(shelfmark_mod
     )
 
 
+def test_fetch_shelfmark_detail_prefers_schema_relationships_when_available(shelfmark_module):
+    fake_client = mock.Mock()
+    fake_client.fetch_book.return_value = {
+        "provider": "hardcover",
+        "provider_id": "777",
+        "title": "The Wee Free Men",
+        "subtitle": "Discworld 30",
+        "authors": ["Terry Pratchett"],
+        "rating": 4.4,
+        "ratings_count": 4102,
+        "users_count": 8123,
+        "release_date": "2003-05-01",
+        "slug": "the-wee-free-men",
+        "pages": 999,
+        "series_name": "Wrong Flat Series",
+        "series_position": 99,
+        "featured_book_series": {
+            "position": 30,
+            "series": {
+                "name": "Discworld",
+                "slug": "discworld",
+                "primary_books_count": 41,
+            },
+        },
+        "default_ebook_edition": {
+            "pages": 304,
+            "subtitle": "Discworld 30",
+            "reading_format": {"format": "E-Book"},
+        },
+        "editions_aggregate": {"aggregate": {"count": 18}},
+        "taggings": [
+            {
+                "tag": {
+                    "tag": "Fantasy",
+                    "tag_category": {"category": "Genre"},
+                },
+                "spoiler": False,
+            },
+            {
+                "tag": {
+                    "tag": "Funny",
+                    "tag_category": {"category": "Mood"},
+                },
+                "spoiler": False,
+            },
+            {
+                "tag": {
+                    "tag": "Violence",
+                    "tag_category": {"category": "Content warning"},
+                },
+                "spoiler": False,
+            },
+            {
+                "tag": {
+                    "tag": "Death",
+                    "tag_category": {"category": "Content warnings"},
+                },
+                "spoiler": True,
+            },
+        ],
+        "identifiers": {"hardcover-id": "777"},
+    }
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={},
+    ):
+        result = shelfmark_module.fetch_shelfmark_detail(
+            "hardcover",
+            "777",
+            detail_url="/external/the-wee-free-men",
+        )
+
+    assert result.subtitle == "Discworld 30"
+    assert result.publish_year == 2003
+    assert result.source_url == "https://hardcover.app/books/the-wee-free-men"
+    assert result.series_display == "Discworld (30)"
+    assert result.series_url == "https://hardcover.app/series/discworld"
+    assert result.series_count == 41
+    assert result.pages == 304
+    assert result.editions_count == 18
+    assert result.genres == ("Fantasy",)
+    assert result.moods == ("Funny",)
+    assert result.content_warnings == ("Violence", "Death")
+    assert "304 pages" in result.facts
+    assert "Discworld (30)" in result.facts
+
+
 def test_search_results_leave_cached_detail_for_on_demand_fetch(shelfmark_module):
     shelfmark_module.clear_shelfmark_detail_cache()
     shelfmark_module.clear_shelfmark_scan_cache()
@@ -1510,6 +1632,78 @@ def test_search_results_exclude_explicit_audiobook_results(shelfmark_module):
         )
 
     assert [result.title for result in section.results] == ["Mort"]
+
+
+def test_search_results_exclude_audio_only_results_but_keep_books_with_ebook_editions(shelfmark_module):
+    fake_client = mock.Mock()
+    books = (
+        {
+            "provider": "hardcover",
+            "provider_id": "401",
+            "title": "Audio Only",
+            "authors": ["Author One"],
+            "default_audio_edition": {
+                "edition_format": "Audiobook",
+                "reading_format": {"format": "Audio"},
+            },
+            "identifiers": {"hardcover-id": "401"},
+        },
+        {
+            "provider": "hardcover",
+            "provider_id": "402",
+            "title": "Mixed Format",
+            "authors": ["Author Two"],
+            "default_audio_edition": {
+                "edition_format": "Audiobook",
+                "reading_format": {"format": "Audio"},
+            },
+            "default_ebook_edition": {
+                "edition_format": "EPUB",
+                "reading_format": {"format": "E-Book"},
+                "pages": 320,
+            },
+            "identifiers": {"hardcover-id": "402"},
+        },
+    )
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=books,
+        page=1,
+        total_found=2,
+        has_more=False,
+    )
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={},
+    ):
+        section = shelfmark_module.search_shelfmark_results(
+            "format",
+            detail_url_builder=lambda _: "/external/format",
+            page=1,
+            filter_requestable=False,
+            filter_has_cover=False,
+        )
+
+    assert [result.title for result in section.results] == ["Mixed Format"]
 
 
 def test_search_results_rank_next_missing_owned_series_above_generic_matches(shelfmark_module):

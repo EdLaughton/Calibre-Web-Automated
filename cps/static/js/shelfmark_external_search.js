@@ -1,7 +1,6 @@
 (function () {
   'use strict';
 
-  var flow = window.CwaShelfmarkRequestFlow || null;
   var DEFAULT_TIMEOUT_MS = 10000;
   var DETAIL_VIEW_PARAM = 'view';
   var DETAIL_VIEW_VALUE = 'modal';
@@ -12,6 +11,8 @@
   var ROW_ENRICH_TIMEOUT_MS = 12000;
   var ROW_ENRICH_MAX_CONCURRENCY = 2;
   var ROW_ENRICH_ROOT_MARGIN = '180px 0px';
+  var TOP_UP_TIMEOUT_MS = 12000;
+  var TOP_UP_MAX_PAGES = 3;
   var ACTIVITY_SNAPSHOT_TTL_MS = 30000;
   var STATUS_SETTLE_DELAY_MS = typeof window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS === 'number'
     ? window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS
@@ -38,9 +39,15 @@
   var rowEnrichmentObserver = null;
   var rowEnrichmentQueue = [];
   var rowEnrichmentInFlight = 0;
+  var topUpInFlight = false;
+  var topUpPagesFetched = 0;
 
   function toArray(value) {
     return Array.prototype.slice.call(value || []);
+  }
+
+  function getFlow() {
+    return typeof window !== 'undefined' ? (window.CwaShelfmarkRequestFlow || null) : null;
   }
 
   function parseJson(value) {
@@ -330,10 +337,11 @@
   }
 
   function createRequestError(message, options) {
-    if (!flow) {
+    var requestFlow = getFlow();
+    if (!requestFlow) {
       return Object.assign(new Error(message), options || {});
     }
-    return flow.createBrowserError(message, options || {});
+    return requestFlow.createBrowserError(message, options || {});
   }
 
   function fetchJson(url, options, timeoutMs) {
@@ -450,8 +458,21 @@
     return promise;
   }
 
+  function scopeHasClass(scope, className) {
+    return Boolean(scope && scope.classList && scope.classList.contains(className));
+  }
+
+  function getScopedClassNodes(scope, className) {
+    var selector = '.' + className;
+    var matches = toArray((scope || document).querySelectorAll(selector));
+    if (scopeHasClass(scope, className)) {
+      matches.unshift(scope);
+    }
+    return matches;
+  }
+
   function getStatusTargetNodes(scope) {
-    return toArray((scope || document).querySelectorAll('.js-shelfmark-status-target')).filter(function (target) {
+    return getScopedClassNodes(scope, 'js-shelfmark-status-target').filter(function (target) {
       return !isFilterHiddenRow(target);
     });
   }
@@ -636,7 +657,8 @@
       return false;
     }
     var actionNode = target.querySelector('.js-shelfmark-action');
-    return Boolean(actionNode && flow && flow.normalizeMode(actionNode.dataset.mode) === 'request');
+    var requestFlow = getFlow();
+    return Boolean(actionNode && requestFlow && requestFlow.normalizeMode(actionNode.dataset.mode) === 'request');
   }
 
   function setWorkflowState(target, workflowState) {
@@ -745,7 +767,8 @@
     }
 
     var actionNode = target.querySelector('.js-shelfmark-action');
-    if (actionNode && flow && flow.normalizeMode(actionNode.dataset.mode) === 'request') {
+    var requestFlow = getFlow();
+    if (actionNode && requestFlow && requestFlow.normalizeMode(actionNode.dataset.mode) === 'request') {
       return buildAvailableWorkflowState();
     }
 
@@ -794,6 +817,7 @@
   }
 
   function applyPerActionProbeStates(actions, probeOptions) {
+    var requestFlow = getFlow();
     var requestableCount = 0;
     var blockedCount = 0;
     var payloadCount = 0;
@@ -804,7 +828,7 @@
         return;
       }
       payloadCount += 1;
-      var outcome = flow.resolveProbeState({
+      var outcome = requestFlow.resolveProbeState({
         baseUrl: probeOptions.baseUrl,
         currentOrigin: probeOptions.currentOrigin,
         authPayload: probeOptions.authPayload,
@@ -834,11 +858,11 @@
   }
 
   function getBatchToolbars(scope) {
-    return toArray((scope || document).querySelectorAll('.js-shelfmark-batch-toolbar'));
+    return getScopedClassNodes(scope, 'js-shelfmark-batch-toolbar');
   }
 
   function getBatchRows(scope) {
-    return toArray((scope || document).querySelectorAll('.js-shelfmark-batch-row')).filter(function (row) {
+    return getScopedClassNodes(scope, 'js-shelfmark-batch-row').filter(function (row) {
       return !isFilterHiddenRow(row);
     });
   }
@@ -915,10 +939,11 @@
       return false;
     }
     var actionNode = getBatchActionNode(row);
+    var requestFlow = getFlow();
     if (!actionNode || !parseJson(actionNode.dataset.requestPayload)) {
       return false;
     }
-    if (!flow || flow.normalizeMode(actionNode.dataset.mode) !== 'request') {
+    if (!requestFlow || requestFlow.normalizeMode(actionNode.dataset.mode) !== 'request') {
       return false;
     }
     return getWorkflowStatusKey(row) === 'available';
@@ -1007,7 +1032,8 @@
   }
 
   async function refreshWorkflowStatus(scope, baseUrl) {
-    if (!baseUrl || !flow || !flow.isDirectRequestViable(baseUrl, window.location.origin)) {
+    var requestFlow = getFlow();
+    if (!baseUrl || !requestFlow || !requestFlow.isDirectRequestViable(baseUrl, window.location.origin)) {
       return;
     }
     try {
@@ -1019,6 +1045,7 @@
   }
 
   async function submitRequest(node, payload, openUrl, statusNodes, options) {
+    var requestFlow = getFlow();
     var settings = options || {};
     var showStatusBanner = !settings.silentStatus;
 
@@ -1033,7 +1060,7 @@
         body: JSON.stringify(payload)
       }, DEFAULT_TIMEOUT_MS);
 
-      var successOutcome = flow.resolveRequestOutcome({ success: true });
+      var successOutcome = requestFlow.resolveRequestOutcome({ success: true });
       updateActionNode(node, successOutcome.actionState);
       node.setAttribute('href', openUrl);
       if (showStatusBanner) {
@@ -1046,7 +1073,7 @@
         outcome: successOutcome
       };
     } catch (error) {
-      var failureOutcome = flow.resolveRequestOutcome({ success: false, error: error });
+      var failureOutcome = requestFlow.resolveRequestOutcome({ success: false, error: error });
       updateActionNode(node, failureOutcome.actionState);
       node.setAttribute('href', openUrl);
       if (showStatusBanner) {
@@ -1064,8 +1091,9 @@
   }
 
   async function requestSelectedRows(toolbar) {
+    var requestFlow = getFlow();
     var selectedRows = getSelectedBatchRows(document);
-    if (!selectedRows.length || !flow) {
+    if (!selectedRows.length || !requestFlow) {
       syncBatchUi(document);
       return;
     }
@@ -1149,11 +1177,12 @@
   }
 
   async function attachProbe(actions, baseUrl, statusNodes) {
+    var requestFlow = getFlow();
     var currentOrigin = window.location.origin;
     var probeOutcome;
 
-    if (!flow.isDirectRequestViable(baseUrl, currentOrigin)) {
-      probeOutcome = flow.resolveProbeState({
+    if (!requestFlow.isDirectRequestViable(baseUrl, currentOrigin)) {
+      probeOutcome = requestFlow.resolveProbeState({
         baseUrl: baseUrl,
         currentOrigin: currentOrigin
       });
@@ -1164,7 +1193,7 @@
     try {
       var authPayload = await fetchJson(stripTrailingSlash(baseUrl) + '/api/auth/check', {}, DEFAULT_TIMEOUT_MS);
       if (!authPayload || !authPayload.authenticated) {
-        probeOutcome = flow.resolveProbeState({
+        probeOutcome = requestFlow.resolveProbeState({
           baseUrl: baseUrl,
           currentOrigin: currentOrigin,
           authPayload: authPayload
@@ -1174,7 +1203,7 @@
       }
 
       var policyPayload = await fetchJson(stripTrailingSlash(baseUrl) + '/api/request-policy', {}, DEFAULT_TIMEOUT_MS);
-      probeOutcome = flow.resolveProbeState({
+      probeOutcome = requestFlow.resolveProbeState({
         baseUrl: baseUrl,
         currentOrigin: currentOrigin,
         authPayload: authPayload,
@@ -1205,7 +1234,7 @@
       );
       syncBatchUi(document);
     } catch (error) {
-      probeOutcome = flow.resolveProbeState({
+      probeOutcome = requestFlow.resolveProbeState({
         baseUrl: baseUrl,
         currentOrigin: currentOrigin,
         error: error
@@ -1216,7 +1245,8 @@
 
   async function attachWorkflowStatus(scope, baseUrl, probePromise) {
     var targets = getStatusTargetNodes(scope);
-    if (!targets.length || !flow || !flow.isDirectRequestViable(baseUrl, window.location.origin)) {
+    var requestFlow = getFlow();
+    if (!targets.length || !requestFlow || !requestFlow.isDirectRequestViable(baseUrl, window.location.origin)) {
       return;
     }
 
@@ -1242,7 +1272,8 @@
     boundActionNodes.add(node);
 
     node.addEventListener('click', async function (event) {
-      if (flow.normalizeMode(node.dataset.mode) !== 'request') {
+      var requestFlow = getFlow();
+      if (!requestFlow || requestFlow.normalizeMode(node.dataset.mode) !== 'request') {
         return;
       }
 
@@ -1341,12 +1372,201 @@
   }
 
   function getProgressiveRows(scope) {
-    return toArray((scope || document).querySelectorAll('.js-shelfmark-progressive-row'));
+    return getScopedClassNodes(scope, 'js-shelfmark-progressive-row');
   }
 
   function getVisibleResultRows(scope) {
-    return toArray((scope || document).querySelectorAll('.js-shelfmark-result-row')).filter(function (row) {
+    return getScopedClassNodes(scope, 'js-shelfmark-result-row').filter(function (row) {
       return !isFilterHiddenRow(row);
+    });
+  }
+
+  function getResultsList() {
+    return document.querySelector('.js-shelfmark-results-list');
+  }
+
+  function getConfiguredPageSize(resultsList) {
+    var parsed = toOptionalNumber(resultsList && resultsList.dataset ? resultsList.dataset.pageSize : null);
+    return parsed && parsed > 0 ? parsed : 0;
+  }
+
+  function getNextTopUpPage(resultsList) {
+    var parsed = toOptionalNumber(resultsList && resultsList.dataset ? resultsList.dataset.nextPage : null);
+    return parsed && parsed > 0 ? parsed : null;
+  }
+
+  function setNextTopUpPage(resultsList, nextPage) {
+    if (!resultsList || !resultsList.dataset) {
+      return;
+    }
+    if (nextPage && nextPage > 0) {
+      resultsList.dataset.nextPage = String(nextPage);
+      return;
+    }
+    delete resultsList.dataset.nextPage;
+  }
+
+  function getTopUpUrl(resultsList) {
+    return toOptionalText(resultsList && resultsList.dataset ? resultsList.dataset.topUpUrl : '');
+  }
+
+  function isTopUpPending(resultsList) {
+    return Boolean(resultsList && resultsList.dataset && resultsList.dataset.topUpPending === '1');
+  }
+
+  function setTopUpPending(resultsList, pending) {
+    if (!resultsList || !resultsList.dataset) {
+      return;
+    }
+    if (pending) {
+      resultsList.dataset.topUpPending = '1';
+      return;
+    }
+    delete resultsList.dataset.topUpPending;
+  }
+
+  function buildRowIdentityKey(provider, providerId) {
+    var normalizedProvider = toOptionalText(provider).toLowerCase();
+    var normalizedProviderId = toOptionalText(providerId);
+    if (!normalizedProvider || !normalizedProviderId) {
+      return '';
+    }
+    return normalizedProvider + ':' + normalizedProviderId;
+  }
+
+  function getRenderedRowIdentityKeys(resultsList) {
+    return new Set(
+      toArray((resultsList || document).querySelectorAll('.js-shelfmark-result-row')).map(function (row) {
+        return buildRowIdentityKey(
+          row && row.dataset ? row.dataset.provider : '',
+          row && row.dataset ? row.dataset.providerId : ''
+        );
+      }).filter(Boolean)
+    );
+  }
+
+  function getNextRowIndex(resultsList) {
+    var maxIndex = -1;
+    toArray((resultsList || document).querySelectorAll('.js-shelfmark-result-row')).forEach(function (row) {
+      var parsed = toOptionalNumber(row && row.dataset ? row.dataset.rowIndex : null);
+      if (parsed !== null && parsed > maxIndex) {
+        maxIndex = parsed;
+      }
+    });
+    return maxIndex + 1;
+  }
+
+  function buildTopUpRequestUrl(baseUrl, nextPage) {
+    var url = buildUrl(baseUrl);
+    if (!url) {
+      return '';
+    }
+    url.searchParams.set('shelfmark_source_page', String(nextPage));
+    return url.toString();
+  }
+
+  function canTopUpResults(resultsList, visibleCount) {
+    var targetCount = getConfiguredPageSize(resultsList);
+    if (!resultsList || !targetCount || visibleCount >= targetCount) {
+      return false;
+    }
+    if (topUpInFlight || topUpPagesFetched >= TOP_UP_MAX_PAGES) {
+      return false;
+    }
+    return Boolean(getTopUpUrl(resultsList) && getNextTopUpPage(resultsList));
+  }
+
+  function appendTopUpRows(resultsList, rows) {
+    if (!resultsList || !rows || !rows.length || typeof document.createElement !== 'function') {
+      return 0;
+    }
+
+    var appended = 0;
+    var renderedKeys = getRenderedRowIdentityKeys(resultsList);
+    var nextRowIndex = getNextRowIndex(resultsList);
+
+    rows.forEach(function (rowPayload) {
+      var identityKey = buildRowIdentityKey(rowPayload.provider, rowPayload.provider_id);
+      if (identityKey && renderedKeys.has(identityKey)) {
+        return;
+      }
+
+      var row = document.createElement('article');
+      row.className = rowPayload.row_class_name || 'shelfmark-result-card js-shelfmark-result-row';
+      row.setAttribute('role', 'listitem');
+      row.dataset.rowIndex = String(nextRowIndex);
+      nextRowIndex += 1;
+
+      if (rowPayload.provider) {
+        row.dataset.provider = rowPayload.provider;
+      }
+      if (rowPayload.provider_id) {
+        row.dataset.providerId = rowPayload.provider_id;
+      }
+      if (rowPayload.row_status_provider) {
+        row.dataset.statusProvider = rowPayload.row_status_provider;
+        row.dataset.statusProviderId = rowPayload.row_status_provider_id || '';
+        row.dataset.statusInLibrary = rowPayload.row_status_in_library || '0';
+      }
+      if (rowPayload.row_enrichment_url) {
+        row.dataset.rowEnrichUrl = rowPayload.row_enrichment_url;
+      }
+      row.innerHTML = typeof rowPayload.html === 'string' ? rowPayload.html : '';
+      resultsList.appendChild(row);
+      if (identityKey) {
+        renderedKeys.add(identityKey);
+      }
+      appended += 1;
+      initActions(row);
+      initDetailModal(row);
+      initProgressiveEnrichment(row);
+      initBatchToolbar(row);
+    });
+
+    return appended;
+  }
+
+  function ensurePageFilled() {
+    var resultsList = getResultsList();
+    var visibleCount = getVisibleResultRows(document).length;
+
+    if (!canTopUpResults(resultsList, visibleCount)) {
+      updateProgressiveCounts();
+      return Promise.resolve();
+    }
+
+    var nextPage = getNextTopUpPage(resultsList);
+    var requestUrl = buildTopUpRequestUrl(getTopUpUrl(resultsList), nextPage);
+    if (!requestUrl) {
+      updateProgressiveCounts();
+      return Promise.resolve();
+    }
+
+    topUpInFlight = true;
+    topUpPagesFetched += 1;
+    setTopUpPending(resultsList, true);
+    updateProgressiveCounts();
+
+    return fetchJson(requestUrl, {
+      method: 'GET',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    }, TOP_UP_TIMEOUT_MS).then(function (payload) {
+      if (!payload || payload.ok !== true) {
+        throw new Error(payload && payload.message ? payload.message : 'Shelfmark page top-up failed.');
+      }
+      setNextTopUpPage(resultsList, payload.next_page);
+      appendTopUpRows(resultsList, Array.isArray(payload.rows) ? payload.rows : []);
+    }).catch(function () {
+      setNextTopUpPage(resultsList, null);
+    }).finally(function () {
+      topUpInFlight = false;
+      setTopUpPending(resultsList, false);
+      updateProgressiveCounts();
+      if (canTopUpResults(resultsList, getVisibleResultRows(document).length)) {
+        ensurePageFilled();
+      }
     });
   }
 
@@ -1362,7 +1582,9 @@
   }
 
   function updateProgressiveCounts() {
+    var resultsList = getResultsList();
     var visibleCount = getVisibleResultRows(document).length;
+    var canStillTopUp = canTopUpResults(resultsList, visibleCount) || isTopUpPending(resultsList);
     var visibleCountNodes = toArray(document.querySelectorAll('.js-shelfmark-visible-count'));
     var summaryNodes = toArray(document.querySelectorAll('.js-shelfmark-page-summary'));
     var emptyState = document.querySelector('.js-shelfmark-progressive-empty-state');
@@ -1377,7 +1599,7 @@
     });
 
     if (emptyState) {
-      var showEmptyState = visibleCount < 1;
+      var showEmptyState = visibleCount < 1 && !canStillTopUp;
       emptyState.classList.toggle('is-hidden', !showEmptyState);
       emptyState.setAttribute('aria-hidden', showEmptyState ? 'false' : 'true');
     }
@@ -1506,6 +1728,7 @@
     initBatchToolbar(row);
     updateProgressiveCounts();
     syncBatchUi(document);
+    ensurePageFilled();
   }
 
   function startProgressiveRowEnrichment(row) {
@@ -1566,19 +1789,18 @@
       setProgressiveRowState(row, 'pending');
       if (observer) {
         observer.observe(row);
-      } else {
-        queueProgressiveRow(row, { deferDrain: true });
       }
+      queueProgressiveRow(row, { deferDrain: true });
     });
 
-    if (!observer) {
-      drainProgressiveRowQueue();
-    }
+    drainProgressiveRowQueue();
     updateProgressiveCounts();
+    ensurePageFilled();
   }
 
   function initActions(root) {
-    if (!flow) {
+    var requestFlow = getFlow();
+    if (!requestFlow) {
       return;
     }
 
@@ -1879,7 +2101,7 @@
   };
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    setTimeout(init, 0);
   } else {
     init();
   }

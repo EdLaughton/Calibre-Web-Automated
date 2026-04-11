@@ -610,6 +610,76 @@ def shelfmark_external_row(provider, provider_id):
         return jsonify({"ok": False, "message": str(exc)}), 503
 
 
+@search.route("/search/external/shelfmark/topup", methods=["GET"])
+@login_required_if_no_ano
+def shelfmark_external_topup():
+    query = (request.args.get("query") or "").strip()
+    return_to = _safe_local_return_url(request.args.get("return_to"))
+    try:
+        source_page = int(request.args.get("shelfmark_source_page", "1"))
+    except (TypeError, ValueError):
+        source_page = 1
+    if source_page < 1:
+        source_page = 1
+
+    try:
+        section = search_shelfmark_results(
+            query,
+            detail_url_builder=lambda book: _build_shelfmark_detail_url(
+                book,
+                query=query,
+                return_to=return_to,
+            ),
+            page=source_page,
+            page_size=_requested_shelfmark_page_size(),
+            sort=_requested_shelfmark_sort(),
+            series_filter=_requested_shelfmark_series_filter(),
+            triage_filter=_requested_shelfmark_triage_filter(),
+            filter_requestable=_requested_shelfmark_flag(
+                "shelfmark_filter_requestable",
+                default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+            ),
+            filter_high_confidence=_requested_shelfmark_flag(
+                "shelfmark_filter_high_confidence",
+                default=DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE,
+            ),
+            filter_has_cover=_requested_shelfmark_flag(
+                "shelfmark_filter_has_cover",
+                default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+            ),
+        ).to_template_dict()
+        section["state_url"] = return_to
+        _decorate_shelfmark_result_rows(section, query=query)
+        rows = []
+        for result in section.get("results") or []:
+            rows.append(
+                {
+                    "provider": result.get("provider") or "",
+                    "provider_id": result.get("provider_id") or "",
+                    "row_class_name": result.get("row_class_name") or "",
+                    "row_status_provider": result.get("row_status_provider") or "",
+                    "row_status_provider_id": result.get("row_status_provider_id") or "",
+                    "row_status_in_library": result.get("row_status_in_library") or "0",
+                    "row_enrichment_url": result.get("row_enrichment_url") or "",
+                    "html": render_template(
+                        "shelfmark_external_result_card_inner.html",
+                        result=result,
+                    ),
+                }
+            )
+        return jsonify(
+            {
+                "ok": True,
+                "page": source_page,
+                "has_more": bool(section.get("has_more")),
+                "next_page": section.get("next_page"),
+                "rows": rows,
+            }
+        )
+    except ShelfmarkIntegrationError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 503
+
+
 def _build_shelfmark_detail_url(book, *, query, return_to=None):
     provider = (book or {}).get("provider")
     provider_id = (book or {}).get("provider_id")
@@ -643,6 +713,18 @@ def _build_shelfmark_row_enrichment_url(book, *, query, return_to=None):
         provider_id=provider_id,
         **params,
     )
+
+
+def _build_shelfmark_top_up_url(*, query, return_to=None):
+    params = _current_request_params(include_transient=False)
+    params["query"] = query
+    params.pop("shelfmark_source_page", None)
+    safe_return_to = _safe_local_return_url(return_to)
+    if safe_return_to:
+        params["return_to"] = safe_return_to
+    else:
+        params.pop("return_to", None)
+    return url_for("search.shelfmark_external_topup", **params)
 
 
 def _build_shelfmark_result_row_class_name(result):
@@ -823,6 +905,10 @@ def _build_shelfmark_section(query, **kwargs):
         _("Show all matches")
         if section.get("filter_requestable")
         else _("Focus on requestable")
+    )
+    section["top_up_url"] = _build_shelfmark_top_up_url(
+        query=query,
+        return_to=section.get("state_url"),
     )
     _decorate_shelfmark_result_rows(section, query=query)
     return section

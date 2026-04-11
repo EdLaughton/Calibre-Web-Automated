@@ -149,12 +149,12 @@
 .shelfmark-empty-state {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 12px;
   margin-bottom: 12px;
-  padding: 16px 18px;
-  border: 1px solid #dbe4eb;
+  padding: 14px 16px;
+  border: 1px solid rgba(226, 236, 242, 0.14);
   border-radius: 12px;
-  background: #f8fbfd;
+  background: rgba(13, 21, 29, 0.34);
   box-shadow: none;
 }
 
@@ -162,13 +162,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-  border-radius: 12px;
-  background: #e8f0f7;
-  color: #416785;
-  font-size: 17px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(225, 235, 242, 0.9);
+  font-size: 15px;
 }
 
 .shelfmark-empty-state__body {
@@ -177,14 +177,14 @@
 
 .shelfmark-empty-state__title {
   margin: 1px 0 4px;
-  color: #25394d;
-  font-size: 17px;
-  font-weight: 700;
+  color: var(--shelfmark-shell-text);
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .shelfmark-empty-state__message {
   margin: 0 0 8px;
-  color: #55697b;
+  color: var(--shelfmark-shell-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -199,10 +199,15 @@
   margin-left: 4px;
   padding: 3px 8px;
   border-radius: 8px;
-  border: 1px solid #d3dfeb;
-  background: #f8fbfd;
-  color: #214b72;
+  border: 1px solid rgba(226, 236, 242, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--shelfmark-shell-text);
   font-size: 12px;
+}
+
+.shelfmark-empty-state--progressive {
+  margin-top: 14px;
+  background: rgba(11, 18, 25, 0.28);
 }
 
 .shelfmark-external-toolbar {
@@ -245,8 +250,7 @@
   white-space: nowrap;
 }
 
-.shelfmark-external-controls__select,
-.shelfmark-pagination-footer__jump-input {
+.shelfmark-external-controls__select {
   min-width: 88px;
   height: 32px;
   border-color: rgba(255, 255, 255, 0.14);
@@ -267,8 +271,7 @@
   width: 74px;
 }
 
-.shelfmark-external-controls__select option,
-.shelfmark-pagination-footer__jump-input option {
+.shelfmark-external-controls__select option {
   color: #1e2c38;
 }
 
@@ -297,8 +300,7 @@
 .shelfmark-external-controls__apply,
 .shelfmark-external-toolbar__open-search,
 .shelfmark-batch-toolbar__request,
-.shelfmark-pagination-footer__page-link,
-.shelfmark-pagination-footer__jump-button {
+.shelfmark-pagination-footer__page-link {
   padding: 6px 12px;
   min-height: 32px;
   border-color: rgba(255, 255, 255, 0.14);
@@ -319,9 +321,7 @@
 .shelfmark-batch-toolbar__request:hover,
 .shelfmark-batch-toolbar__request:focus,
 .shelfmark-pagination-footer__page-link:hover,
-.shelfmark-pagination-footer__page-link:focus,
-.shelfmark-pagination-footer__jump-button:hover,
-.shelfmark-pagination-footer__jump-button:focus {
+.shelfmark-pagination-footer__page-link:focus {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
@@ -1064,48 +1064,6 @@
   align-items: center;
 }
 
-.shelfmark-pagination-footer__jump {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-  flex-wrap: nowrap;
-}
-
-.shelfmark-pagination-footer__jump-label {
-  margin: 0;
-  color: var(--shelfmark-shell-muted);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.shelfmark-pagination-footer__jump-total {
-  color: var(--shelfmark-shell-muted);
-  font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.shelfmark-pagination-footer__jump-input {
-  width: 54px;
-  min-width: 54px;
-  padding-left: 6px;
-  padding-right: 6px;
-  text-align: center;
-}
-
-.shelfmark-pagination-footer__jump-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 38px;
-  padding-left: 10px;
-  padding-right: 10px;
-  text-align: center;
-  line-height: 1;
-}
-
 .shelfmark-pagination-footer__page-link .glyphicon {
   margin-right: 6px;
 }
@@ -1587,11 +1545,6 @@
   .shelfmark-pagination-footer__controls {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .shelfmark-pagination-footer__jump {
-    display: inline-flex;
-    flex-wrap: wrap;
   }
 
   .shelfmark-result-card__primary-action,

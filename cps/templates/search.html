@@ -4,7 +4,7 @@
 {% set local_count = entries|length if entries is defined and entries else 0 %}
 {% set external_count = shelfmark.results|length if shelfmark and shelfmark.results is defined else 0 %}
 {% set shelfmark_has_external_results = shelfmark and shelfmark.enabled and external_count > 0 %}
-{% macro render_shelfmark_pagination(shelfmark, summary_text, jump_id) -%}
+{% macro render_shelfmark_pagination(shelfmark, summary_text) -%}
   <div class="shelfmark-pagination-footer">
     <div class="shelfmark-pagination-footer__summary">
       {% if summary_text %}
@@ -19,19 +19,6 @@
       <span>{{ _('%(count)s per page', count=shelfmark.page_size) }}</span>
     </div>
     <div class="shelfmark-pagination-footer__controls">
-      <form class="shelfmark-pagination-footer__jump" method="get" action="{{ request.path }}">
-        {% for key, value in request.args.items() %}
-          {% if key not in ['shelfmark_page', 'shelfmark_detail_provider', 'shelfmark_detail_id'] %}
-            <input type="hidden" name="{{ key }}" value="{{ value }}">
-          {% endif %}
-        {% endfor %}
-        <label class="shelfmark-pagination-footer__jump-label" for="{{ jump_id }}">{{ _('Page') }}</label>
-        <input class="form-control input-sm shelfmark-pagination-footer__jump-input" id="{{ jump_id }}" type="number" name="shelfmark_page" min="1" {% if shelfmark.total_pages %}max="{{ shelfmark.total_pages }}"{% endif %} value="{{ shelfmark.page }}">
-        {% if shelfmark.total_pages > 0 %}
-          <span class="shelfmark-pagination-footer__jump-total">{{ _('of %(pages)s', pages=shelfmark.total_pages) }}</span>
-        {% endif %}
-        <button type="submit" class="btn btn-default btn-sm shelfmark-pagination-footer__jump-button">{{ _('Go') }}</button>
-      </form>
       {% if shelfmark.previous_page_url %}
         <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.previous_page_url }}">
           <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
@@ -316,12 +303,21 @@
           </div>
         </div>
         <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ shelfmark.results[0].shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
-        <div class="shelfmark-results-list js-shelfmark-results-list" role="list">
+        <div
+          class="shelfmark-results-list js-shelfmark-results-list"
+          role="list"
+          data-page-size="{{ shelfmark.page_size }}"
+          data-next-page="{{ shelfmark.next_page or '' }}"
+          data-total-pages="{{ shelfmark.total_pages or 0 }}"
+          data-top-up-url="{{ shelfmark.top_up_url or '' }}"
+        >
           {% for result in shelfmark.results %}
             <article
               class="{{ result.row_class_name }}"
               role="listitem"
               data-row-index="{{ result.row_index }}"
+              data-provider="{{ result.provider }}"
+              data-provider-id="{{ result.provider_id }}"
               {% if result.row_status_provider %}
                 data-status-provider="{{ result.row_status_provider }}"
                 data-status-provider-id="{{ result.row_status_provider_id }}"
@@ -335,14 +331,14 @@
             </article>
           {% endfor %}
         </div>
-        <div class="shelfmark-empty-state shelfmark-empty-state--filtered js-shelfmark-progressive-empty-state is-hidden" aria-hidden="true">
+        <div class="shelfmark-empty-state shelfmark-empty-state--progressive js-shelfmark-progressive-empty-state is-hidden" aria-hidden="true">
           <div class="shelfmark-empty-state__icon">
             <span class="glyphicon glyphicon-filter" aria-hidden="true"></span>
           </div>
           <div class="shelfmark-empty-state__body">
-            <h4 class="shelfmark-empty-state__title">{{ _('No visible Shelfmark results remain on this page') }}</h4>
+            <h4 class="shelfmark-empty-state__title">{{ _('No Shelfmark rows remain visible on this page') }}</h4>
             <p class="shelfmark-empty-state__message">
-              {{ _('The current page refined away every visible row after richer Shelfmark metadata loaded.') }}
+              {{ _('The visible rows on this page refined away after richer Shelfmark metadata loaded, and no later page rows were suitable for a top-up.') }}
             </p>
             {% if shelfmark.clear_filters_url %}
               <p class="shelfmark-empty-state__actions">
@@ -354,8 +350,7 @@
         {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.page_result_count > 0 %}
           {{ render_shelfmark_pagination(
             shelfmark,
-            _('%(count)s shown on this page', count=external_count) if external_count > 0 else _('No matching results'),
-            'shelfmark_page_jump'
+            _('%(count)s shown on this page', count=external_count) if external_count > 0 else _('No matching results')
           ) }}
         {% endif %}
       {% elif shelfmark.available and shelfmark.filters_active and shelfmark.raw_total_available > 0 %}
