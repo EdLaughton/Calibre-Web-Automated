@@ -652,6 +652,54 @@
     });
   }
 
+  function buildHandledActionState(workflowState) {
+    if (!workflowState || !workflowState.key) {
+      return null;
+    }
+
+    if (workflowState.key === 'requested') {
+      return {
+        mode: 'open',
+        label: 'Requested',
+        hint: 'Already requested in Shelfmark.',
+        buttonClass: 'btn-success',
+        iconClass: 'glyphicon glyphicon-ok'
+      };
+    }
+
+    if (workflowState.key === 'queue') {
+      return {
+        mode: 'open',
+        label: 'In queue',
+        hint: 'Shelfmark is still processing this request.',
+        buttonClass: 'btn-warning',
+        iconClass: 'glyphicon glyphicon-time'
+      };
+    }
+
+    if (workflowState.key === 'downloaded') {
+      return {
+        mode: 'open',
+        label: 'Downloaded',
+        hint: 'Shelfmark has completed delivery for this request.',
+        buttonClass: 'btn-success',
+        iconClass: 'glyphicon glyphicon-download-alt'
+      };
+    }
+
+    return null;
+  }
+
+  function syncActionWithWorkflowState(target, workflowState) {
+    var actionNode = target ? target.querySelector('.js-shelfmark-action') : null;
+    var nextActionState = buildHandledActionState(workflowState);
+    if (!actionNode || !nextActionState) {
+      return;
+    }
+    updateActionNode(actionNode, nextActionState);
+    actionNode.setAttribute('href', actionNode.dataset.openUrl || actionNode.getAttribute('href') || '#');
+  }
+
   function shouldHideAvailableWorkflowState(target, workflowState) {
     if (!target || !workflowState || workflowState.key !== 'available') {
       return false;
@@ -733,6 +781,8 @@
         messageNode.classList.add('is-hidden');
       }
     }
+
+    syncActionWithWorkflowState(target, workflowState);
   }
 
   function getWorkflowStatusKey(target) {
@@ -1482,10 +1532,15 @@
     }
 
     var appended = 0;
+    var targetCount = getConfiguredPageSize(resultsList);
     var renderedKeys = getRenderedRowIdentityKeys(resultsList);
     var nextRowIndex = getNextRowIndex(resultsList);
 
     rows.forEach(function (rowPayload) {
+      if (targetCount && getVisibleResultRows(resultsList).length >= targetCount) {
+        return;
+      }
+
       var identityKey = buildRowIdentityKey(rowPayload.provider, rowPayload.provider_id);
       if (identityKey && renderedKeys.has(identityKey)) {
         return;
@@ -1522,6 +1577,10 @@
       initProgressiveEnrichment(row);
       initBatchToolbar(row);
     });
+
+    if (appended > 0) {
+      updateProgressiveCounts();
+    }
 
     return appended;
   }
@@ -1583,7 +1642,7 @@
 
   function updateProgressiveCounts() {
     var resultsList = getResultsList();
-    var visibleCount = getVisibleResultRows(document).length;
+    var visibleCount = resultsList ? getVisibleResultRows(resultsList).length : getVisibleResultRows(document).length;
     var canStillTopUp = canTopUpResults(resultsList, visibleCount) || isTopUpPending(resultsList);
     var visibleCountNodes = toArray(document.querySelectorAll('.js-shelfmark-visible-count'));
     var summaryNodes = toArray(document.querySelectorAll('.js-shelfmark-page-summary'));

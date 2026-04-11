@@ -56,6 +56,8 @@ SHELFMARK_REQUEST_MODE = "request_book"
 SHELFMARK_REQUEST_KIND = "book"
 SHELFMARK_DETAIL_CACHE_TTL_SECONDS = 300
 SHELFMARK_DETAIL_CACHE_MAX_ENTRIES = 256
+HARDCOVER_DETAIL_CACHE_TTL_SECONDS = 300
+HARDCOVER_DETAIL_CACHE_MAX_ENTRIES = 128
 SHELFMARK_COVER_CACHE_TTL_SECONDS = 300
 SHELFMARK_COVER_CACHE_MAX_ENTRIES = 512
 SHELFMARK_SCAN_CACHE_TTL_SECONDS = 120
@@ -104,6 +106,7 @@ SHELFMARK_CONTENT_WARNING_CATEGORY_HINTS = (
 )
 
 _SHELFMARK_DETAIL_CACHE: OrderedDict[tuple[str, str, str], tuple[float, dict[str, Any]]] = OrderedDict()
+_HARDCOVER_DETAIL_CACHE: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
 _SHELFMARK_COVER_CACHE: OrderedDict[tuple[str, str], tuple[float, str]] = OrderedDict()
 _SHELFMARK_SCAN_CACHE: OrderedDict[
     tuple[str, str, str, int, int],
@@ -238,6 +241,7 @@ class ShelfmarkResultView:
     series_count: int | None = None
     series_display: str | None = None
     series_url: str | None = None
+    series_entries: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     facts: tuple[str, ...] = field(default_factory=tuple)
     detail_stats: tuple[dict[str, str], ...] = field(default_factory=tuple)
     genres: tuple[str, ...] = field(default_factory=tuple)
@@ -254,6 +258,7 @@ class ShelfmarkResultView:
         payload = asdict(self)
         payload["authors"] = list(self.authors)
         payload["display_fields"] = list(self.display_fields)
+        payload["series_entries"] = list(self.series_entries)
         payload["facts"] = list(self.facts)
         payload["detail_stats"] = list(self.detail_stats)
         payload["genres"] = list(self.genres)
@@ -1166,6 +1171,7 @@ def build_shelfmark_result_view(
     series_name = _resolve_series_name(book)
     series_position = _resolve_series_position(book)
     series_count = _resolve_series_count(book)
+    series_entries = _resolve_series_entries(book)
     rating = _resolve_rating_value(book)
     ratings_count = _resolve_ratings_count(book)
     reviews_count = _resolve_reviews_count(book)
@@ -1235,6 +1241,7 @@ def build_shelfmark_result_view(
         series_count=series_count,
         series_display=_format_series_display(series_name, series_position),
         series_url=_resolve_series_url(book),
+        series_entries=series_entries,
         facts=_build_result_facts(book, publish_year=publish_year),
         detail_stats=_build_detail_stats(book, publish_year=publish_year),
         genres=_resolve_genres(book),
@@ -1460,6 +1467,15 @@ def _prune_shelfmark_detail_cache(now: float | None = None) -> None:
     )
 
 
+def _prune_hardcover_detail_cache(now: float | None = None) -> None:
+    _prune_ttl_cache(
+        _HARDCOVER_DETAIL_CACHE,
+        ttl_seconds=HARDCOVER_DETAIL_CACHE_TTL_SECONDS,
+        max_entries=HARDCOVER_DETAIL_CACHE_MAX_ENTRIES,
+        now=now,
+    )
+
+
 def _get_cached_shelfmark_detail_book(
     base_url: str,
     provider: str,
@@ -1492,6 +1508,39 @@ def _remember_shelfmark_detail_book(
     _SHELFMARK_DETAIL_CACHE[cache_key] = (monotonic(), cached_payload)
     _SHELFMARK_DETAIL_CACHE.move_to_end(cache_key)
     _prune_shelfmark_detail_cache()
+    return dict(cached_payload)
+
+
+def _get_cached_hardcover_detail_book(hardcover_id: str) -> dict[str, Any] | None:
+    now = monotonic()
+    _prune_hardcover_detail_cache(now)
+    cache_key = _normalize_text(hardcover_id) or ""
+    if not cache_key:
+        return None
+    cached_entry = _HARDCOVER_DETAIL_CACHE.get(cache_key)
+    if not cached_entry:
+        return None
+
+    cached_at, cached_payload = cached_entry
+    if now - cached_at >= HARDCOVER_DETAIL_CACHE_TTL_SECONDS:
+        _HARDCOVER_DETAIL_CACHE.pop(cache_key, None)
+        return None
+    _HARDCOVER_DETAIL_CACHE.move_to_end(cache_key)
+    return dict(cached_payload)
+
+
+def _remember_hardcover_detail_book(
+    hardcover_id: str,
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    cache_key = _normalize_text(hardcover_id) or ""
+    cached_payload = dict(payload)
+    if not cache_key:
+        return cached_payload
+    _prune_hardcover_detail_cache()
+    _HARDCOVER_DETAIL_CACHE[cache_key] = (monotonic(), cached_payload)
+    _HARDCOVER_DETAIL_CACHE.move_to_end(cache_key)
+    _prune_hardcover_detail_cache()
     return dict(cached_payload)
 
 
@@ -1633,6 +1682,40 @@ def _fetch_shelfmark_search_page(
         page_size=page_size,
         response=response,
     )
+
+
+def _fetch_direct_hardcover_detail_book(hardcover_id: str | None) -> Mapping[str, Any] | None:
+    normalized_id = _normalize_text(hardcover_id)
+    if not normalized_id:
+        return None
+
+    cached_detail = _get_cached_hardcover_detail_book(normalized_id)
+    if cached_detail is not None:
+        return cached_detail
+
+    token = _normalize_text(getattr(config, "config_hardcover_token", None))
+    if not token:
+        return None
+
+    try:
+        from cps.services.hardcover import HardcoverClient, MissingHardcoverToken
+    except Exception as exc:
+        log.debug("Hardcover detail client unavailable for %s: %s", normalized_id, exc)
+        return None
+
+    try:
+        client = HardcoverClient(token.replace("Bearer ", ""), load_privacy=False)
+        detail_book = client.get_book_by_id(int(normalized_id))
+    except MissingHardcoverToken:
+        return None
+    except Exception as exc:
+        log.debug("Hardcover detail lookup skipped for %s: %s", normalized_id, exc)
+        return None
+
+    if not isinstance(detail_book, Mapping):
+        return None
+
+    return _remember_hardcover_detail_book(normalized_id, detail_book)
 
 
 def _get_search_enrichment_detail_book(
@@ -2135,7 +2218,7 @@ def search_shelfmark_results(
             progressive_refinement=progressive_refinement,
             progressive_refinement_note=(
                 _(
-                    "Totals and paging come directly from Shelfmark. Visible rows on this page refine as richer metadata loads, then top up from later Shelfmark pages when needed."
+                    "Shelfmark totals are shown as-is. Visible rows refine as details load."
                 )
                 if progressive_refinement
                 else None
@@ -2171,6 +2254,12 @@ def fetch_shelfmark_detail(
     client = ShelfmarkClient(config_data)
     book = client.fetch_book(provider, provider_id)
     hardcover_id = _extract_hardcover_id(book)
+    if hardcover_id:
+        book = _merge_book_details(
+            book,
+            _fetch_direct_hardcover_detail_book(hardcover_id),
+        )
+        hardcover_id = _extract_hardcover_id(book)
     library_match = None
     if hardcover_id:
         library_match = lookup_visible_library_matches([hardcover_id]).get(hardcover_id)
@@ -2737,6 +2826,95 @@ def _resolve_featured_series(book: Mapping[str, Any]) -> Mapping[str, Any] | Non
     return series if isinstance(series, Mapping) else None
 
 
+def _build_series_entry(
+    *,
+    name: str | None,
+    position: float | None,
+    slug: str | None,
+    allow_generated_url: bool = True,
+    featured: bool = False,
+) -> dict[str, Any] | None:
+    normalized_name = _normalize_text(name)
+    if not normalized_name:
+        return None
+    normalized_slug = _normalize_text(slug)
+    fallback_slug = _slugify_hardcover_path_segment(normalized_name) if allow_generated_url else None
+    display = _format_series_display(normalized_name, position) or normalized_name
+    return {
+        "name": normalized_name,
+        "position": position,
+        "featured": bool(featured),
+        "display": display,
+        "url": (
+            f"https://hardcover.app/series/{normalized_slug}"
+            if allow_generated_url and normalized_slug
+            else f"https://hardcover.app/series/{fallback_slug}"
+            if fallback_slug
+            else None
+        ),
+    }
+
+
+def _resolve_series_entries(book: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    entries: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    allow_generated_url = (
+        (_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER)
+        == SHELFMARK_METADATA_PROVIDER
+    )
+
+    def append_entry(series_row: Mapping[str, Any] | None, *, force_featured: bool = False) -> None:
+        if not isinstance(series_row, Mapping):
+            return
+        series = series_row.get("series")
+        series_data = series if isinstance(series, Mapping) else {}
+        name = _normalize_text(series_data.get("name")) or _normalize_text(series_row.get("series_name"))
+        position = _normalize_series_position(series_row.get("position"))
+        slug = _normalize_text(series_data.get("slug")) or _normalize_text(series_row.get("series_slug"))
+        featured = force_featured or bool(series_row.get("featured"))
+        entry = _build_series_entry(
+            name=name,
+            position=position,
+            slug=slug,
+            allow_generated_url=allow_generated_url,
+            featured=featured,
+        )
+        if not entry:
+            return
+        key = (
+            _normalize_series_name_key(entry.get("name")) or "",
+            _format_series_position(entry.get("position")) or "",
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        entries.append(entry)
+
+    append_entry(_resolve_featured_series_row(book), force_featured=True)
+    for row in _iter_mapping_items(book.get("book_series")):
+        append_entry(row)
+
+    if not entries:
+        fallback_entry = _build_series_entry(
+            name=_resolve_series_name(book),
+            position=_resolve_series_position(book),
+            slug=_normalize_text(book.get("series_slug")),
+            allow_generated_url=allow_generated_url,
+        )
+        if fallback_entry:
+            entries.append(fallback_entry)
+
+    entries.sort(
+        key=lambda entry: (
+            0 if entry.get("featured") else 1,
+            entry.get("position") is None,
+            entry.get("position") or 0,
+            entry.get("name") or "",
+        )
+    )
+    return tuple(entries)
+
+
 def _resolve_shelfmark_cover_value(book: Mapping[str, Any]) -> Any:
     for key in ("cover_url", "preview", "cached_image", "image"):
         value = _normalize_cover_candidate(book.get(key))
@@ -3016,22 +3194,10 @@ def _resolve_series_url(book: Mapping[str, Any]) -> str | None:
     if (_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER) != SHELFMARK_METADATA_PROVIDER:
         return None
 
-    series_slug = _normalize_text(book.get("series_slug"))
-    if not series_slug:
-        featured_series = _resolve_featured_series(book)
-        if isinstance(featured_series, Mapping):
-            series_slug = _normalize_text(featured_series.get("slug"))
-    if not series_slug:
-        featured_series = book.get("featured_book_series")
-        if isinstance(featured_series, Mapping):
-            series_data = featured_series.get("series")
-            if isinstance(series_data, Mapping):
-                series_slug = _normalize_text(series_data.get("slug"))
-    if not series_slug:
-        series_slug = _slugify_hardcover_path_segment(_resolve_series_name(book))
-    if not series_slug:
-        return None
-    return f"https://hardcover.app/series/{series_slug}"
+    primary_entry = next(iter(_resolve_series_entries(book)), None)
+    if isinstance(primary_entry, Mapping):
+        return _normalize_text(primary_entry.get("url"))
+    return None
 
 
 def _normalize_tag_list(value: Any, *, limit: int | None = None) -> tuple[str, ...]:

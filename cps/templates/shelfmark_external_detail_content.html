@@ -10,13 +10,6 @@
   {% if shelfmark_error %}
     <div class="alert alert-warning">{{ shelfmark_error }}</div>
   {% elif result %}
-    {% if modal_mode %}
-      <div class="shelfmark-detail-pane__lead">
-        {% if result.authors %}
-          <p class="shelfmark-detail-pane__authorline">{{ result.authors|join(', ') }}</p>
-        {% endif %}
-      </div>
-    {% endif %}
     <div class="shelfmark-detail-layout">
       <aside class="shelfmark-detail-sidebar">
         <div class="shelfmark-detail-cover-card">
@@ -34,6 +27,19 @@
       <section class="shelfmark-detail-main">
         <div class="shelfmark-detail-hero shelfmark-detail-hero--{{ result.library_state.row_class }}">
           <div class="shelfmark-detail-hero__body">
+            {% if modal_mode %}
+              <div class="shelfmark-detail-pane__titleblock">
+                <h2 class="shelfmark-detail-pane__titleline">
+                  <span class="shelfmark-detail-pane__titletext">{{ result.title }}</span>
+                  {% if result.authors %}
+                    <span class="shelfmark-detail-pane__authorinline">— {{ result.authors|join(', ') }}</span>
+                  {% endif %}
+                </h2>
+                {% if result.subtitle %}
+                  <p class="shelfmark-detail-pane__subtitle">{{ result.subtitle }}</p>
+                {% endif %}
+              </div>
+            {% endif %}
             {% if result.library_state.label and result.library_state.badge_class %}
               <div class="shelfmark-detail-hero__badges">
                 <span class="label {{ result.library_state.badge_class }}">
@@ -140,7 +146,21 @@
                 {% endif %}
               </dd>
             {% endif %}
-            {% if result.series_display %}
+            {% if result.series_entries %}
+              <dt>{{ _("Series") }}</dt>
+              <dd class="shelfmark-detail-meta-list__series-row">
+                {% for series in result.series_entries %}
+                  {% if not loop.first %}
+                    <span class="shelfmark-detail-meta-list__separator" aria-hidden="true">·</span>
+                  {% endif %}
+                  {% if series.url %}
+                    <a class="shelfmark-detail-meta-list__link" href="{{ series.url }}" target="_blank" rel="noopener noreferrer">{{ series.display }}</a>
+                  {% else %}
+                    <span>{{ series.display }}</span>
+                  {% endif %}
+                {% endfor %}
+              </dd>
+            {% elif result.series_display %}
               <dt>{{ _("Series") }}</dt>
               <dd>
                 {% if result.series_url %}

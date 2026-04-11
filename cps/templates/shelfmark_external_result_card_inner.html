@@ -1,5 +1,5 @@
 <div class="shelfmark-result-card__media">
-  {% if result.request_payload and not result.already_in_library %}
+  {% if result.request_payload and not result.already_in_library and (not result.workflow_state or result.workflow_state.key == 'available') %}
     <label class="shelfmark-result-card__select shelfmark-batch-select js-shelfmark-batch-select is-hidden">
       <input type="checkbox" class="js-shelfmark-batch-toggle" disabled aria-label="{{ _('Select %(title)s for batch request', title=result.title) }}">
       <span class="sr-only">{{ _('Select %(title)s for batch request', title=result.title) }}</span>

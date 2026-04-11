@@ -705,7 +705,9 @@ def test_search_results_normalize_external_and_duplicate_sections(shelfmark_modu
     assert section.filters_active is True
     assert section.pagination_mode == "shelfmark"
     assert section.progressive_refinement is True
-    assert "Totals and paging come directly from Shelfmark" in section.progressive_refinement_note
+    assert section.progressive_refinement_note == (
+        "Shelfmark totals are shown as-is. Visible rows refine as details load."
+    )
     assert section.total_pages == 75
     assert section.visible_start == 1
     assert section.visible_end == 3
@@ -1118,6 +1120,136 @@ def test_fetch_shelfmark_detail_prefers_schema_relationships_when_available(shel
     assert result.content_warnings == ("Violence", "Death")
     assert "304 pages" in result.facts
     assert "Discworld (30)" in result.facts
+
+
+def test_fetch_shelfmark_detail_prefers_direct_hardcover_book_by_id_when_available(shelfmark_module):
+    fake_client = mock.Mock()
+    fake_client.fetch_book.return_value = {
+        "provider": "hardcover",
+        "provider_id": "379631",
+        "title": "Mort",
+        "authors": ["Terry Pratchett"],
+        "description": "<p>Shelfmark detail copy</p>",
+        "publish_year": 1987,
+        "identifiers": {"hardcover-id": "379631"},
+    }
+    direct_book = {
+        "id": 379631,
+        "title": "Mort",
+        "subtitle": "A Discworld Novel",
+        "slug": "mort",
+        "description": "<p>Direct Hardcover copy</p>",
+        "release_date": "1987-11-12",
+        "pages": 272,
+        "rating": 4.1,
+        "ratings_count": 1295,
+        "users_count": 2298,
+        "editions_count": 34,
+        "book_series": [
+            {
+                "featured": True,
+                "position": 4,
+                "series": {"name": "Discworld", "slug": "discworld", "primary_books_count": 41},
+            },
+            {
+                "featured": False,
+                "position": 3,
+                "series": {"name": "Death", "slug": "death", "primary_books_count": 5},
+            },
+        ],
+        "featured_book_series": {
+            "featured": True,
+            "position": 4,
+            "series": {"name": "Discworld", "slug": "discworld", "primary_books_count": 41},
+        },
+        "default_ebook_edition": {
+            "pages": 272,
+            "subtitle": "A Discworld Novel",
+            "edition_format": "EBOOK",
+        },
+        "taggings": [
+            {
+                "spoiler": False,
+                "tag": {
+                    "tag": "Fantasy",
+                    "slug": "fantasy",
+                    "tag_category": {"category": "Genre", "slug": "genre"},
+                },
+            },
+            {
+                "spoiler": False,
+                "tag": {
+                    "tag": "funny",
+                    "slug": "funny",
+                    "tag_category": {"category": "Mood", "slug": "mood"},
+                },
+            },
+            {
+                "spoiler": True,
+                "tag": {
+                    "tag": "Death",
+                    "slug": "death-warning",
+                    "tag_category": {"category": "Content warning", "slug": "content-warning"},
+                },
+            },
+        ],
+    }
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "_fetch_direct_hardcover_detail_book",
+        return_value=direct_book,
+    ) as direct_fetch, mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={},
+    ):
+        result = shelfmark_module.fetch_shelfmark_detail(
+            "hardcover",
+            "379631",
+            detail_url="/external/mort",
+        )
+
+    direct_fetch.assert_called_once_with("379631")
+    assert result.subtitle == "A Discworld Novel"
+    assert result.description == "Direct Hardcover copy"
+    assert result.publish_year == 1987
+    assert result.series_display == "Discworld (4)"
+    assert result.series_url == "https://hardcover.app/series/discworld"
+    assert result.series_count == 41
+    assert [entry["display"] for entry in result.series_entries] == [
+        "Discworld (4)",
+        "Death (3)",
+    ]
+    assert result.facts == (
+        "4.1 ★",
+        "1,295 ratings",
+        "2,298 readers",
+        "1987",
+        "272 pages",
+        "Discworld (4)",
+    )
+    assert result.genres == ("Fantasy",)
+    assert result.moods == ("funny",)
+    assert result.content_warnings == ("Death",)
 
 
 def test_search_results_leave_cached_detail_for_on_demand_fetch(shelfmark_module):

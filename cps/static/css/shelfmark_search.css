@@ -207,7 +207,8 @@
 
 .shelfmark-empty-state--progressive {
   margin-top: 14px;
-  background: rgba(11, 18, 25, 0.28);
+  border-color: rgba(236, 244, 248, 0.12);
+  background: rgba(11, 18, 25, 0.22);
 }
 
 .shelfmark-external-toolbar {
@@ -259,10 +260,6 @@
 }
 
 #shelfmark_sort.shelfmark-external-controls__select {
-  min-width: 146px;
-}
-
-#shelfmark_triage_filter.shelfmark-external-controls__select {
   min-width: 146px;
 }
 
@@ -1088,6 +1085,16 @@
   line-height: 1.2;
 }
 
+.shelfmark-detail-page__titletext {
+  display: inline;
+}
+
+.shelfmark-detail-page__authorinline {
+  color: var(--shelfmark-shell-muted);
+  font-size: 0.72em;
+  font-weight: 500;
+}
+
 .shelfmark-detail-page__header {
   display: flex;
   align-items: flex-start;
@@ -1102,18 +1109,11 @@
   min-width: 0;
 }
 
-.shelfmark-detail-page__subtitle,
-.shelfmark-detail-page__authorline {
+.shelfmark-detail-page__subtitle {
   margin: 6px 0 0;
   color: var(--shelfmark-shell-muted);
   font-size: 15px;
   line-height: 1.45;
-}
-
-.shelfmark-detail-page__authorline {
-  font-size: 18px;
-  font-weight: 600;
-  color: rgba(236, 243, 248, 0.9);
 }
 
 .shelfmark-detail-page__header-actions {
@@ -1126,27 +1126,34 @@
   color: var(--shelfmark-shell-text);
 }
 
-.shelfmark-detail-pane__lead {
-  margin: 0 0 16px;
-}
-
-.shelfmark-detail-pane__subtitle,
-.shelfmark-detail-pane__authorline {
-  margin: 0;
-}
-
 .shelfmark-detail-pane__subtitle {
+  margin: 4px 0 0;
   color: var(--shelfmark-shell-muted);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
-.shelfmark-detail-pane__authorline {
-  margin-top: 6px;
-  color: rgba(236, 243, 248, 0.92);
-  font-size: 18px;
+.shelfmark-detail-pane__titleblock {
+  margin: 0 0 12px;
+}
+
+.shelfmark-detail-pane__titleline {
+  margin: 0;
+  color: var(--shelfmark-shell-text);
+  font-size: 26px;
+  line-height: 1.22;
   font-weight: 600;
-  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+.shelfmark-detail-pane__titletext {
+  display: inline;
+}
+
+.shelfmark-detail-pane__authorinline {
+  color: var(--shelfmark-shell-muted);
+  font-size: 0.72em;
+  font-weight: 500;
 }
 
 .shelfmark-detail-layout {
@@ -1176,7 +1183,7 @@
 }
 
 .shelfmark-detail-hero {
-  padding: 2px 0 14px;
+  padding: 0 0 14px;
   border-top: 0;
   border-bottom: 1px solid var(--shelfmark-shell-soft-border);
 }
@@ -1220,7 +1227,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .shelfmark-detail-hero__badges .label .glyphicon {
@@ -1231,13 +1238,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .shelfmark-detail-status {
   display: grid;
   gap: 6px;
-  margin: 0 0 12px;
+  margin: 0 0 10px;
 }
 
 .shelfmark-detail-status.is-hidden {
@@ -1262,6 +1269,18 @@
   color: rgba(229, 236, 242, 0.9);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.shelfmark-detail-meta-list__series-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 0;
+}
+
+.shelfmark-detail-meta-list__separator {
+  margin: 0 8px;
+  color: rgba(215, 226, 234, 0.46);
 }
 
 .shelfmark-detail-top-stats {
@@ -1590,6 +1609,11 @@
   .shelfmark-detail-modal__body {
     max-height: calc(100vh - 82px);
     padding: 16px 14px 20px;
+  }
+
+  .shelfmark-detail-page__title,
+  .shelfmark-detail-pane__titleline {
+    font-size: 24px;
   }
 
   .shelfmark-detail-meta-list {

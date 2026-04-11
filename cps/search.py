@@ -21,11 +21,9 @@ from .usermanagement import login_required_if_no_ano
 from .render_template import render_title_template
 from .pagination import Pagination
 from .services.shelfmark_search import (
-    DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE,
     DEFAULT_SHELFMARK_FILTER_HAS_COVER,
     DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
     DEFAULT_SHELFMARK_SERIES_FILTER,
-    DEFAULT_SHELFMARK_TRIAGE_FILTER,
     ShelfmarkIntegrationError,
     build_shelfmark_advanced_query,
     fetch_shelfmark_detail,
@@ -41,6 +39,8 @@ log = logger.create()
 SHELFMARK_TRANSIENT_QUERY_KEYS = (
     "shelfmark_detail_provider",
     "shelfmark_detail_id",
+    "shelfmark_filter_high_confidence",
+    "shelfmark_triage_filter",
 )
 
 
@@ -589,12 +589,7 @@ def shelfmark_external_row(provider, provider_id):
                         "shelfmark_filter_has_cover",
                         default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
                     ),
-                    high_confidence_only=_requested_shelfmark_flag(
-                        "shelfmark_filter_high_confidence",
-                        default=DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE,
-                    ),
                     series_filter=_requested_shelfmark_series_filter(),
-                    triage_filter=_requested_shelfmark_triage_filter(),
                 ),
                 "row_class_name": result["row_class_name"],
                 "row_status_provider": result["row_status_provider"],
@@ -634,14 +629,9 @@ def shelfmark_external_topup():
             page_size=_requested_shelfmark_page_size(),
             sort=_requested_shelfmark_sort(),
             series_filter=_requested_shelfmark_series_filter(),
-            triage_filter=_requested_shelfmark_triage_filter(),
             filter_requestable=_requested_shelfmark_flag(
                 "shelfmark_filter_requestable",
                 default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
-            ),
-            filter_high_confidence=_requested_shelfmark_flag(
-                "shelfmark_filter_high_confidence",
-                default=DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE,
             ),
             filter_has_cover=_requested_shelfmark_flag(
                 "shelfmark_filter_has_cover",
@@ -821,10 +811,6 @@ def _requested_shelfmark_series_filter():
     return (values[-1] or DEFAULT_SHELFMARK_SERIES_FILTER).strip().lower()
 
 
-def _requested_shelfmark_triage_filter():
-    return (request.args.get("shelfmark_triage_filter", DEFAULT_SHELFMARK_TRIAGE_FILTER) or DEFAULT_SHELFMARK_TRIAGE_FILTER).strip().lower()
-
-
 def _requested_shelfmark_flag(name, default=False):
     values = request.args.getlist(name)
     if not values:
@@ -848,14 +834,9 @@ def _build_shelfmark_section(query, **kwargs):
         page_size=_requested_shelfmark_page_size(),
         sort=_requested_shelfmark_sort(),
         series_filter=_requested_shelfmark_series_filter(),
-        triage_filter=_requested_shelfmark_triage_filter(),
         filter_requestable=_requested_shelfmark_flag(
             "shelfmark_filter_requestable",
             default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
-        ),
-        filter_high_confidence=_requested_shelfmark_flag(
-            "shelfmark_filter_high_confidence",
-            default=DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE,
         ),
         filter_has_cover=_requested_shelfmark_flag(
             "shelfmark_filter_has_cover",
@@ -871,9 +852,7 @@ def _build_shelfmark_section(query, **kwargs):
         shelfmark_page_size=section.get("page_size") or 12,
         shelfmark_sort=section.get("selected_sort"),
         shelfmark_series_filter=section.get("selected_series_filter"),
-        shelfmark_triage_filter=section.get("selected_triage_filter"),
         shelfmark_filter_requestable="1" if section.get("filter_requestable") else "0",
-        shelfmark_filter_high_confidence="1" if section.get("filter_high_confidence") else "0",
         shelfmark_filter_has_cover="1" if section.get("filter_has_cover") else "0",
     )
 
@@ -892,9 +871,7 @@ def _build_shelfmark_section(query, **kwargs):
     section["clear_filters_url"] = _current_request_url_with(
         shelfmark_page=1,
         shelfmark_series_filter=None,
-        shelfmark_triage_filter=None,
         shelfmark_filter_requestable=None,
-        shelfmark_filter_high_confidence=None,
         shelfmark_filter_has_cover=None,
     )
     section["requestable_toggle_url"] = _current_request_url_with(

@@ -195,10 +195,6 @@
                 {{ _('Likely next books in series you already own.') }}
               {% elif shelfmark.selected_series_filter == 'owned' %}
                 {{ _('Matches from series already in your library.') }}
-              {% elif shelfmark.filter_high_confidence %}
-                {{ _('Higher-confidence request candidates from Shelfmark.') }}
-              {% elif shelfmark.selected_triage_filter == 'strong' %}
-                {{ _('Stronger request candidates from Shelfmark.') }}
               {% elif shelfmark.filter_requestable %}
                 {{ _('Request-ready matches from Shelfmark.') }}
               {% else %}
@@ -228,7 +224,6 @@
             {% endfor %}
             <input type="hidden" name="shelfmark_page" value="1">
             <input type="hidden" name="shelfmark_filter_requestable" value="{{ 1 if shelfmark.filter_requestable else 0 }}">
-            <input type="hidden" name="shelfmark_filter_high_confidence" value="0">
             <div class="form-group shelfmark-external-controls__group">
               <label class="shelfmark-external-controls__label" for="shelfmark_sort">{{ _('Sort') }}</label>
               <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_sort" name="shelfmark_sort">
@@ -245,14 +240,6 @@
               </label>
             </div>
             <div class="form-group shelfmark-external-controls__group">
-              <label class="shelfmark-external-controls__label" for="shelfmark_triage_filter">{{ _('Candidates') }}</label>
-              <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_triage_filter" name="shelfmark_triage_filter">
-                {% for option in shelfmark.triage_filter_options %}
-                  <option value="{{ option.value }}"{% if option.value == shelfmark.selected_triage_filter %} selected{% endif %}>{{ option.label }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="form-group shelfmark-external-controls__group">
               <label class="shelfmark-external-controls__label" for="shelfmark_page_size">{{ _('Per page') }}</label>
               <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_page_size" name="shelfmark_page_size">
                 {% for option in shelfmark.page_size_options %}
@@ -261,10 +248,6 @@
               </select>
             </div>
             <input type="hidden" name="shelfmark_filter_has_cover" value="0">
-            <label class="shelfmark-external-controls__checkbox-label">
-              <input class="shelfmark-external-controls__checkbox" type="checkbox" name="shelfmark_filter_high_confidence" value="1"{% if shelfmark.filter_high_confidence %} checked{% endif %}>
-              <span>{{ _('High confidence') }}</span>
-            </label>
             <label class="shelfmark-external-controls__checkbox-label">
               <input class="shelfmark-external-controls__checkbox" type="checkbox" name="shelfmark_filter_has_cover" value="1"{% if shelfmark.filter_has_cover %} checked{% endif %}>
               <span>{{ _('Has cover') }}</span>
@@ -336,9 +319,9 @@
             <span class="glyphicon glyphicon-filter" aria-hidden="true"></span>
           </div>
           <div class="shelfmark-empty-state__body">
-            <h4 class="shelfmark-empty-state__title">{{ _('No Shelfmark rows remain visible on this page') }}</h4>
+            <h4 class="shelfmark-empty-state__title">{{ _('No visible results remain on this page') }}</h4>
             <p class="shelfmark-empty-state__message">
-              {{ _('The visible rows on this page refined away after richer Shelfmark metadata loaded, and no later page rows were suitable for a top-up.') }}
+              {{ _('The visible rows refined away after details loaded, and no later Shelfmark rows could fill this page.') }}
             </p>
             {% if shelfmark.clear_filters_url %}
               <p class="shelfmark-empty-state__actions">
@@ -364,10 +347,6 @@
                 {{ _('No next-missing owned-series matches') }}
               {% elif shelfmark.selected_series_filter == 'owned' %}
                 {{ _('No owned-series matches') }}
-              {% elif shelfmark.filter_high_confidence %}
-                {{ _('No high-confidence request candidates') }}
-              {% elif shelfmark.selected_triage_filter == 'strong' %}
-                {{ _('No strong request candidates') }}
               {% elif shelfmark.filter_requestable %}
                 {{ _('No request-ready matches') }}
               {% else %}
