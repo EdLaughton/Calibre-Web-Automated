@@ -143,4 +143,107 @@ assert.equal(requestRequiresRelease.kind, 'request_requires_release');
 assert.equal(requestRequiresRelease.actionState.mode, 'open');
 assert.match(requestRequiresRelease.bannerText, /concrete release|download path/i);
 
+const preferredSettings = flow.normalizePreferredReleaseSettings({
+  enabled: true,
+  provider: 'MyAnonamouse',
+  contentType: 'ebook',
+  ranking: 'seeders_desc'
+});
+assert.equal(preferredSettings.enabled, true);
+assert.equal(preferredSettings.provider, 'MyAnonamouse');
+assert.equal(preferredSettings.contentType, 'ebook');
+assert.equal(preferredSettings.ranking, 'seeders_desc');
+
+const selectedPreferredRelease = flow.selectPreferredRelease(
+  [
+    { source: 'prowlarr', source_id: 'audio-1', indexer: 'MyAnonamouse', format: 'm4b', seeders: 120 },
+    { source: 'prowlarr', source_id: 'ebook-1', indexer: 'OtherIndexer', format: 'epub', seeders: 400 },
+    { source: 'prowlarr', source_id: 'ebook-2', indexer: 'MyAnonamouse', format: 'pdf', seeders: 20 },
+    { source: 'prowlarr', source_id: 'ebook-3', indexer: 'MyAnonamouse', format: 'epub', seeders: 75 }
+  ],
+  preferredSettings,
+  {
+    source_modes: [{ source: 'prowlarr', modes: { ebook: 'request_release' } }]
+  }
+);
+assert.equal(selectedPreferredRelease.source_id, 'ebook-3');
+
+const sourceFilteredRelease = flow.selectPreferredRelease(
+  [
+    { source: 'direct_download', source_id: 'direct-1', format: 'epub', seeders: 0 },
+    { source: 'prowlarr', source_id: 'prowlarr-1', indexer: 'Elsewhere', format: 'epub', seeders: 99 }
+  ],
+  flow.normalizePreferredReleaseSettings({
+    enabled: true,
+    provider: 'direct_download',
+    contentType: 'ebook',
+    ranking: 'seeders_desc'
+  }),
+  {
+    source_modes: [{ source: 'direct_download', modes: { ebook: 'download' } }]
+  }
+);
+assert.equal(sourceFilteredRelease.source_id, 'direct-1');
+
+const defaultSourceMode = flow.resolveSourceModeFromPolicy(
+  {
+    requests_enabled: true,
+    defaults: { ebook: 'request_book' },
+    source_modes: [{ source: 'prowlarr', modes: { ebook: 'request_release' } }]
+  },
+  'prowlarr',
+  'ebook'
+);
+assert.equal(defaultSourceMode, 'request_book');
+
+const preferredSourceMode = flow.resolveSourceModeFromPolicy(
+  {
+    requests_enabled: true,
+    defaults: { ebook: 'request_book' },
+    source_modes: [{ source: 'prowlarr', modes: { ebook: 'request_release' } }]
+  },
+  'prowlarr',
+  'ebook',
+  { preferSourceSpecific: true }
+);
+assert.equal(preferredSourceMode, 'request_release');
+
+const preferredPayload = flow.buildPreferredReleaseRequestPayload(
+  {
+    book_data: {
+      title: 'Mort',
+      author: 'Terry Pratchett',
+      provider: 'hardcover',
+      provider_id: '222',
+      series_name: 'Discworld',
+      series_position: 4,
+      series_count: 41
+    },
+    context: { source: '*', content_type: 'ebook', request_level: 'book' }
+  },
+  {
+    source: 'prowlarr',
+    source_id: 'mam-1',
+    title: 'Mort [EPUB]',
+    format: 'epub',
+    size: '1 MB',
+    seeders: 55,
+    indexer: 'MyAnonamouse'
+  },
+  preferredSettings
+);
+assert.equal(preferredPayload.context.request_level, 'release');
+assert.equal(preferredPayload.context.source, 'prowlarr');
+assert.equal(preferredPayload.release_data.source_id, 'mam-1');
+assert.equal(preferredPayload.release_data.indexer, 'MyAnonamouse');
+assert.equal(preferredPayload.release_data.content_type, 'ebook');
+
+const queuedOutcome = flow.resolveRequestOutcome({
+  success: true,
+  response: { kind: 'download', status: 'queued' }
+});
+assert.equal(queuedOutcome.kind, 'release_queued');
+assert.equal(queuedOutcome.actionState.label, 'In queue');
+assert.equal(queuedOutcome.actionState.buttonClass, 'btn-warning');
+
 console.log('test_shelfmark_request_flow.js: ok');

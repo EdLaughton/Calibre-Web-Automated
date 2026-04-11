@@ -13,6 +13,57 @@
   var REQUEST_RELEASE_MODE = 'request_release';
   var DOWNLOAD_MODE = 'download';
   var BLOCKED_MODE = 'blocked';
+  var DEFAULT_PREFERRED_RELEASE_CONTENT_TYPE = 'ebook';
+  var DEFAULT_PREFERRED_RELEASE_RANKING = 'seeders_desc';
+  var AUDIO_FORMATS = {
+    aac: true,
+    aax: true,
+    aaxc: true,
+    flac: true,
+    m4a: true,
+    m4b: true,
+    mp3: true,
+    ogg: true,
+    opus: true,
+    wav: true
+  };
+  var EBOOK_FORMATS = {
+    azw: true,
+    azw3: true,
+    cb7: true,
+    cba: true,
+    cbr: true,
+    cbt: true,
+    cbz: true,
+    djvu: true,
+    doc: true,
+    docx: true,
+    epub: true,
+    fb2: true,
+    kepub: true,
+    kepub_epub: true,
+    lit: true,
+    lrf: true,
+    mobi: true,
+    pdf: true,
+    rtf: true,
+    txt: true
+  };
+  var EBOOK_FORMAT_RANK = {
+    epub: 0,
+    azw3: 1,
+    kepub: 2,
+    kepub_epub: 2,
+    mobi: 3,
+    pdf: 4
+  };
+  var AUDIO_FORMAT_RANK = {
+    m4b: 0,
+    mp3: 1,
+    aax: 2,
+    aaxc: 3,
+    m4a: 4
+  };
   var MODE_RANK = {
     download: 0,
     request_release: 1,
@@ -38,6 +89,213 @@
     return source || '*';
   }
 
+  function normalizeText(value) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  function normalizePreferredReleaseContentType(value) {
+    var normalized = normalizeMode(value);
+    if (normalized === 'audiobook') {
+      return 'audiobook';
+    }
+    return DEFAULT_PREFERRED_RELEASE_CONTENT_TYPE;
+  }
+
+  function normalizePreferredReleaseRanking(value) {
+    var normalized = normalizeMode(value);
+    if (normalized === DEFAULT_PREFERRED_RELEASE_RANKING) {
+      return normalized;
+    }
+    return DEFAULT_PREFERRED_RELEASE_RANKING;
+  }
+
+  function normalizePreferredReleaseSettings(settings) {
+    var raw = settings || {};
+    return {
+      enabled: Boolean(raw.enabled),
+      provider: normalizeText(raw.provider),
+      contentType: normalizePreferredReleaseContentType(raw.contentType),
+      ranking: normalizePreferredReleaseRanking(raw.ranking)
+    };
+  }
+
+  function isPreferredReleaseWorkflowEnabled(settings) {
+    return Boolean(normalizePreferredReleaseSettings(settings).enabled);
+  }
+
+  function resolvePreferredReleaseSource(settings, policy) {
+    var normalizedSettings = normalizePreferredReleaseSettings(settings);
+    var preferred = normalizeSource(normalizedSettings.provider);
+    if (preferred === '*') {
+      return '';
+    }
+    var sourceModes = Array.isArray(policy && policy.source_modes) ? policy.source_modes : [];
+    var matched = sourceModes.find(function (entry) {
+      return normalizeSource(entry && entry.source) === preferred;
+    });
+    return matched ? preferred : '';
+  }
+
+  function normalizeReleaseFormat(value) {
+    return normalizeMode(value).replace(/\s+/g, '').replace(/\./g, '');
+  }
+
+  function resolveReleaseContentType(release) {
+    var releaseContentType = normalizeMode(release && release.content_type);
+    if (releaseContentType === 'ebook' || releaseContentType === 'audiobook') {
+      return releaseContentType;
+    }
+
+    var extraContentType = normalizeMode(
+      release && release.extra && typeof release.extra === 'object'
+        ? release.extra.content_type
+        : ''
+    );
+    if (extraContentType === 'ebook' || extraContentType === 'audiobook') {
+      return extraContentType;
+    }
+
+    var format = normalizeReleaseFormat(release && release.format);
+    if (format && AUDIO_FORMATS[format]) {
+      return 'audiobook';
+    }
+    if (format && EBOOK_FORMATS[format]) {
+      return 'ebook';
+    }
+
+    return '';
+  }
+
+  function releaseMatchesPreferredProvider(release, settings, policy) {
+    var normalizedSettings = normalizePreferredReleaseSettings(settings);
+    if (!normalizedSettings.provider) {
+      return true;
+    }
+
+    var preferredSource = resolvePreferredReleaseSource(normalizedSettings, policy);
+    if (preferredSource) {
+      return normalizeSource(release && release.source) === preferredSource;
+    }
+
+    return normalizeText(release && release.indexer).toLowerCase() === normalizedSettings.provider.toLowerCase();
+  }
+
+  function releaseMatchesPreferredContentType(release, settings) {
+    var normalizedSettings = normalizePreferredReleaseSettings(settings);
+    return resolveReleaseContentType(release) === normalizedSettings.contentType;
+  }
+
+  function getReleaseSeeders(release) {
+    var raw = release && typeof release.seeders !== 'undefined' ? Number(release.seeders) : NaN;
+    return Number.isFinite(raw) ? raw : -1;
+  }
+
+  function getReleaseFormatRank(release, settings) {
+    var normalizedSettings = normalizePreferredReleaseSettings(settings);
+    var format = normalizeReleaseFormat(release && release.format);
+    if (!format) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+    if (normalizedSettings.contentType === 'audiobook') {
+      return Object.prototype.hasOwnProperty.call(AUDIO_FORMAT_RANK, format)
+        ? AUDIO_FORMAT_RANK[format]
+        : 999;
+    }
+    return Object.prototype.hasOwnProperty.call(EBOOK_FORMAT_RANK, format)
+      ? EBOOK_FORMAT_RANK[format]
+      : 999;
+  }
+
+  function comparePreferredReleases(left, right, settings) {
+    var seederDelta = getReleaseSeeders(right) - getReleaseSeeders(left);
+    if (seederDelta !== 0) {
+      return seederDelta;
+    }
+
+    var formatDelta = getReleaseFormatRank(left, settings) - getReleaseFormatRank(right, settings);
+    if (formatDelta !== 0) {
+      return formatDelta;
+    }
+
+    var leftTitle = normalizeText(left && left.title).toLowerCase();
+    var rightTitle = normalizeText(right && right.title).toLowerCase();
+    if (leftTitle < rightTitle) {
+      return -1;
+    }
+    if (leftTitle > rightTitle) {
+      return 1;
+    }
+    return 0;
+  }
+
+  function selectPreferredRelease(releases, settings, policy) {
+    var normalizedSettings = normalizePreferredReleaseSettings(settings);
+    if (!normalizedSettings.enabled) {
+      return null;
+    }
+
+    var matches = (Array.isArray(releases) ? releases : []).filter(function (release) {
+      return releaseMatchesPreferredProvider(release, normalizedSettings, policy)
+        && releaseMatchesPreferredContentType(release, normalizedSettings);
+    });
+
+    if (!matches.length) {
+      return null;
+    }
+
+    return matches.slice().sort(function (left, right) {
+      return comparePreferredReleases(left, right, normalizedSettings);
+    })[0] || null;
+  }
+
+  function buildPreferredReleaseRequestPayload(requestPayload, release, settings) {
+    var normalizedSettings = normalizePreferredReleaseSettings(settings);
+    var basePayload = requestPayload && typeof requestPayload === 'object' ? requestPayload : {};
+    var bookData = basePayload.book_data && typeof basePayload.book_data === 'object'
+      ? Object.assign({}, basePayload.book_data)
+      : {};
+    var normalizedRelease = release && typeof release === 'object' ? release : {};
+    var releaseTitle = normalizeText(normalizedRelease.title);
+
+    if (normalizedSettings.contentType) {
+      bookData.content_type = normalizedSettings.contentType;
+    }
+
+    return {
+      book_data: bookData,
+      note: basePayload.note,
+      on_behalf_of_user_id: basePayload.on_behalf_of_user_id,
+      release_data: {
+        source: normalizeSource(normalizedRelease.source),
+        source_id: normalizeText(normalizedRelease.source_id || normalizedRelease.id),
+        title: releaseTitle || bookData.title || 'Unknown title',
+        author: bookData.author,
+        year: bookData.year,
+        format: normalizeReleaseFormat(normalizedRelease.format) || normalizeText(normalizedRelease.format),
+        size: normalizedRelease.size,
+        size_bytes: normalizedRelease.size_bytes,
+        download_url: normalizedRelease.download_url,
+        protocol: normalizedRelease.protocol,
+        indexer: normalizedRelease.indexer,
+        seeders: typeof normalizedRelease.seeders === 'number'
+          ? normalizedRelease.seeders
+          : (Number.isFinite(Number(normalizedRelease.seeders)) ? Number(normalizedRelease.seeders) : undefined),
+        extra: normalizedRelease.extra,
+        preview: bookData.preview,
+        content_type: normalizedSettings.contentType,
+        series_name: bookData.series_name,
+        series_position: bookData.series_position,
+        series_count: bookData.series_count,
+        subtitle: bookData.subtitle
+      },
+      context: {
+        source: normalizeSource(normalizedRelease.source),
+        content_type: normalizedSettings.contentType,
+        request_level: 'release'
+      }
+    };
+  }
+
   function buildOpenState(hint, label, buttonClass, iconClass) {
     return {
       mode: 'open',
@@ -55,6 +313,16 @@
       hint: hint || '',
       buttonClass: 'btn-primary',
       iconClass: 'glyphicon glyphicon-send'
+    };
+  }
+
+  function buildQueuedState(hint) {
+    return {
+      mode: 'open',
+      label: 'In queue',
+      hint: hint || '',
+      buttonClass: 'btn-warning',
+      iconClass: 'glyphicon glyphicon-time'
     };
   }
 
@@ -127,10 +395,12 @@
     return normalizeMode(defaults[normalizeContentType(contentType)]) || DOWNLOAD_MODE;
   }
 
-  function resolveSourceModeFromPolicy(policy, source, contentType) {
+  function resolveSourceModeFromPolicy(policy, source, contentType, options) {
+    var settings = options || {};
     var normalizedSource = normalizeSource(source);
     var normalizedContentType = normalizeContentType(contentType);
     var defaultMode = resolveDefaultModeFromPolicy(policy, normalizedContentType);
+    var preferSourceSpecific = Boolean(settings.preferSourceSpecific && normalizedSource !== '*');
     if (defaultMode === DOWNLOAD_MODE && (!policy || !policy.requests_enabled)) {
       return DOWNLOAD_MODE;
     }
@@ -145,7 +415,7 @@
         return normalizeReleaseResultMode(
           policy,
           normalizedSource,
-          capModeToCeiling(fromSource, defaultMode)
+          preferSourceSpecific ? fromSource : capModeToCeiling(fromSource, defaultMode)
         );
       }
     }
@@ -181,7 +451,9 @@
       return normalizeReleaseResultMode(
         policy,
         normalizedSource,
-        capModeToCeiling(parsedMode, defaultMode)
+        preferSourceSpecific && sourceMatch === normalizedSource
+          ? parsedMode
+          : capModeToCeiling(parsedMode, defaultMode)
       );
     }
 
@@ -391,7 +663,16 @@
   }
 
   function resolveRequestOutcome(options) {
+    var response = options && options.response ? options.response : null;
     if (options && options.success) {
+      if (response && normalizeMode(response.kind) === 'download' && normalizeMode(response.status) === 'queued') {
+        return {
+          kind: 'release_queued',
+          bannerLevel: 'alert-success',
+          bannerText: 'Preferred release queued in Shelfmark.',
+          actionState: buildQueuedState('Shelfmark has queued the preferred release.')
+        };
+      }
       return {
         kind: 'request_created',
         bannerLevel: 'alert-success',
@@ -483,8 +764,17 @@
     normalizeMode: normalizeMode,
     normalizeContentType: normalizeContentType,
     normalizeSource: normalizeSource,
+    normalizePreferredReleaseSettings: normalizePreferredReleaseSettings,
+    isPreferredReleaseWorkflowEnabled: isPreferredReleaseWorkflowEnabled,
+    resolvePreferredReleaseSource: resolvePreferredReleaseSource,
+    resolveReleaseContentType: resolveReleaseContentType,
+    releaseMatchesPreferredProvider: releaseMatchesPreferredProvider,
+    releaseMatchesPreferredContentType: releaseMatchesPreferredContentType,
+    selectPreferredRelease: selectPreferredRelease,
+    buildPreferredReleaseRequestPayload: buildPreferredReleaseRequestPayload,
     buildOpenState: buildOpenState,
     buildRequestState: buildRequestState,
+    buildQueuedState: buildQueuedState,
     createBrowserError: createBrowserError,
     resolveDefaultModeFromPolicy: resolveDefaultModeFromPolicy,
     resolveSourceModeFromPolicy: resolveSourceModeFromPolicy,

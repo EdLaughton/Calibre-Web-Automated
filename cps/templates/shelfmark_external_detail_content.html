@@ -7,6 +7,7 @@
     data-status-in-library="{{ 1 if result.already_in_library else 0 }}"
   {% endif %}
 >
+  {% set preferred_release = preferred_release or {} %}
   {% if shelfmark_error %}
     <div class="alert alert-warning">{{ shelfmark_error }}</div>
   {% elif result %}
@@ -121,6 +122,10 @@
                   data-open-url="{{ result.shelfmark_open_url }}"
                   data-request-payload='{{ result.request_payload|tojson if result.request_payload else "" }}'
                   data-mode="{{ result.action.mode }}"
+                  data-preferred-release-enabled="{{ 1 if preferred_release.enabled else 0 }}"
+                  data-preferred-release-provider="{{ preferred_release.provider or '' }}"
+                  data-preferred-release-content-type="{{ preferred_release.content_type or 'ebook' }}"
+                  data-preferred-release-ranking="{{ preferred_release.ranking or 'seeders_desc' }}"
                 >
                   <span class="{{ result.action.icon_class }} js-shelfmark-action-icon" aria-hidden="true"></span>
                   <span class="js-shelfmark-action-label">{{ result.action.label }}</span>

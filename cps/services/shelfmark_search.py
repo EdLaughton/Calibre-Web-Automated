@@ -28,6 +28,8 @@ DEFAULT_SHELFMARK_TIMEOUT_SECONDS = 15
 DEFAULT_SHELFMARK_LIMIT = 12
 DEFAULT_SHELFMARK_SORT = "popularity"
 DEFAULT_SHELFMARK_PAGE = 1
+DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE = "ebook"
+DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING = "seeders_desc"
 DEFAULT_SHELFMARK_FILTER_REQUESTABLE = True
 DEFAULT_SHELFMARK_FILTER_HAS_COVER = True
 DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE = False
@@ -417,6 +419,17 @@ class ShelfmarkSearchResponse:
     has_more: bool = False
 
 
+@dataclass(frozen=True)
+class ShelfmarkPreferredReleaseSettings:
+    enabled: bool = False
+    provider: str = ""
+    content_type: str = DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE
+    ranking: str = DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING
+
+    def to_template_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def clear_shelfmark_detail_cache() -> None:
     _SHELFMARK_DETAIL_CACHE.clear()
 
@@ -441,6 +454,40 @@ def get_shelfmark_client_config() -> ShelfmarkClientConfig:
         browser_base_url=browser_base_url,
         username=username,
         password=password,
+    )
+
+
+def get_shelfmark_preferred_release_settings() -> ShelfmarkPreferredReleaseSettings:
+    provider = _normalize_text(
+        getattr(config, "config_shelfmark_preferred_release_provider", "") or ""
+    ) or ""
+    content_type = _normalize_preferred_release_content_type(
+        getattr(
+            config,
+            "config_shelfmark_preferred_release_content_type",
+            DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE,
+        )
+    )
+    ranking = (
+        _normalize_text(
+            getattr(
+                config,
+                "config_shelfmark_preferred_release_ranking",
+                DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING,
+            )
+        )
+        or DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING
+    ).lower()
+    if ranking != DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING:
+        ranking = DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING
+
+    return ShelfmarkPreferredReleaseSettings(
+        enabled=bool(
+            getattr(config, "config_shelfmark_preferred_release_enabled", False)
+        ),
+        provider=provider,
+        content_type=content_type,
+        ranking=ranking,
     )
 
 
@@ -2471,6 +2518,13 @@ def _normalize_text(value: Any) -> str | None:
         return None
     text_value = str(value).strip()
     return text_value or None
+
+
+def _normalize_preferred_release_content_type(value: Any) -> str:
+    normalized = (_normalize_text(value) or "").lower()
+    if normalized == "audiobook":
+        return "audiobook"
+    return DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE
 
 
 def _normalize_int(value: Any) -> int | None:

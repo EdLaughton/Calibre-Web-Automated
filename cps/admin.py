@@ -2360,6 +2360,10 @@ def _configuration_update_helper():
         _config_string(to_save, "config_shelfmark_username")
         if to_save.get("config_shelfmark_password_e", ""):
             _config_string(to_save, "config_shelfmark_password_e")
+        _config_checkbox(to_save, "config_shelfmark_preferred_release_enabled")
+        _config_string(to_save, "config_shelfmark_preferred_release_provider")
+        _config_string(to_save, "config_shelfmark_preferred_release_content_type")
+        _config_string(to_save, "config_shelfmark_preferred_release_ranking")
         if config.config_shelfmark_search and not config.config_shelfmark_url:
             return _configuration_result(_('Shelfmark Base URL is required when integrated Shelfmark search is enabled'))
 

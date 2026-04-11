@@ -1,6 +1,7 @@
 {% import 'image.html' as image %}
 {% extends "layout.html" %}
 {% set shelfmark = shelfmark_section if shelfmark_section is defined and shelfmark_section else None %}
+{% set preferred_release = shelfmark.preferred_release_settings if shelfmark and shelfmark.preferred_release_settings is defined else {} %}
 {% set local_count = entries|length if entries is defined and entries else 0 %}
 {% set external_count = shelfmark.results|length if shelfmark and shelfmark.results is defined else 0 %}
 {% set shelfmark_has_external_results = shelfmark and shelfmark.enabled and external_count > 0 %}

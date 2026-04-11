@@ -204,8 +204,12 @@ function createResultNode(options) {
     dataset: {
       baseUrl: options.baseUrl,
       openUrl: options.openUrl,
-    requestPayload: options.requestPayload ? JSON.stringify(options.requestPayload) : '',
-      mode: options.mode
+      requestPayload: options.requestPayload ? JSON.stringify(options.requestPayload) : '',
+      mode: options.mode,
+      preferredReleaseEnabled: options.preferredReleaseEnabled ? '1' : '0',
+      preferredReleaseProvider: options.preferredReleaseProvider || '',
+      preferredReleaseContentType: options.preferredReleaseContentType || 'ebook',
+      preferredReleaseRanking: options.preferredReleaseRanking || 'seeders_desc'
     },
     attributes: {
       href: options.openUrl,
@@ -291,7 +295,11 @@ function createDom(options) {
     statusChipText: options.statusChipText,
     statusChipKey: options.statusChipKey,
     statusChipClass: options.statusChipClass,
-    batchToggle: options.batchToggle
+    batchToggle: options.batchToggle,
+    preferredReleaseEnabled: options.preferredReleaseEnabled,
+    preferredReleaseProvider: options.preferredReleaseProvider,
+    preferredReleaseContentType: options.preferredReleaseContentType,
+    preferredReleaseRanking: options.preferredReleaseRanking
   });
   root.appendChild(first.wrapper);
 
@@ -554,6 +562,125 @@ async function runProgressiveScenario() {
   assert.equal(sameOrigin.dom.status.classList.contains('is-hidden'), false);
   assert.equal(sameOrigin.dom.status.classList.contains('is-settled'), true);
   assert.equal(sameOrigin.dom.action.getAttribute('target'), '_blank');
+
+  const preferredRelease = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=Mort+Terry+Pratchett&title=Mort&author=Terry+Pratchett',
+    requestPayload: {
+      book_data: {
+        provider: 'hardcover',
+        provider_id: '444',
+        title: 'Mort',
+        author: 'Terry Pratchett'
+      },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    preferredReleaseEnabled: true,
+    preferredReleaseProvider: 'MyAnonamouse',
+    preferredReleaseContentType: 'ebook',
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      {
+        payload: {
+          requests_enabled: true,
+          defaults: { ebook: 'request_book' },
+          source_modes: [
+            {
+              source: 'prowlarr',
+              browse_results_are_releases: false,
+              modes: { ebook: 'request_release' }
+            }
+          ]
+        }
+      },
+      {
+        payload: {
+          releases: [
+            { source: 'prowlarr', source_id: 'audio-1', indexer: 'MyAnonamouse', format: 'm4b', seeders: 90 },
+            { source: 'prowlarr', source_id: 'ebook-1', indexer: 'MyAnonamouse', format: 'epub', seeders: 70 },
+            { source: 'prowlarr', source_id: 'ebook-2', indexer: 'OtherIndexer', format: 'epub', seeders: 500 }
+          ]
+        }
+      },
+      {
+        payload: {
+          id: 95,
+          status: 'pending',
+          request_level: 'release',
+          policy_mode: 'request_release',
+          release_data: {
+            source: 'prowlarr',
+            source_id: 'ebook-1',
+            indexer: 'MyAnonamouse'
+          }
+        }
+      }
+    ]
+  });
+
+  await preferredRelease.clickPrimaryAction();
+
+  assert.equal(preferredRelease.fetchCalls.length, 4);
+  assert.match(preferredRelease.fetchCalls[2].url, /\/api\/releases\?/);
+  assert.match(preferredRelease.fetchCalls[2].url, /indexers=MyAnonamouse/);
+  const preferredRequestBody = JSON.parse(preferredRelease.fetchCalls[3].options.body);
+  assert.equal(preferredRequestBody.context.request_level, 'release');
+  assert.equal(preferredRequestBody.context.source, 'prowlarr');
+  assert.equal(preferredRequestBody.release_data.source_id, 'ebook-1');
+  assert.equal(preferredRequestBody.release_data.indexer, 'MyAnonamouse');
+  assert.equal(
+    preferredRelease.dom.action.querySelector('.js-shelfmark-action-label').textContent,
+    'Requested'
+  );
+
+  const preferredFallback = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=Mort+Terry+Pratchett&title=Mort&author=Terry+Pratchett',
+    requestPayload: {
+      book_data: {
+        provider: 'hardcover',
+        provider_id: '445',
+        title: 'Mort',
+        author: 'Terry Pratchett'
+      },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    preferredReleaseEnabled: true,
+    preferredReleaseProvider: 'MyAnonamouse',
+    preferredReleaseContentType: 'ebook',
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      {
+        payload: {
+          requests_enabled: true,
+          defaults: { ebook: 'request_book' },
+          source_modes: [
+            {
+              source: 'prowlarr',
+              browse_results_are_releases: false,
+              modes: { ebook: 'request_release' }
+            }
+          ]
+        }
+      },
+      {
+        payload: {
+          releases: [
+            { source: 'prowlarr', source_id: 'nonmatch-1', indexer: 'Elsewhere', format: 'epub', seeders: 50 }
+          ]
+        }
+      },
+      { payload: { success: true } }
+    ]
+  });
+
+  await preferredFallback.clickPrimaryAction();
+
+  const fallbackRequestBody = JSON.parse(preferredFallback.fetchCalls[3].options.body);
+  assert.equal(fallbackRequestBody.context.request_level, 'book');
+  assert.equal(fallbackRequestBody.release_data, undefined);
 
   const crossOrigin = await runScenario({
     currentOrigin: 'https://library.example.com',
@@ -831,6 +958,77 @@ async function runProgressiveScenario() {
   assert.equal(
     batchBlocked.dom.action.querySelector('.js-shelfmark-action-label').textContent,
     'Requested'
+  );
+
+  const directQueued = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=Queued+Book',
+    requestPayload: {
+      book_data: { provider: 'hardcover', provider_id: '333', title: 'Queued Book' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    preferredReleaseEnabled: true,
+    preferredReleaseProvider: 'direct_download',
+    preferredReleaseContentType: 'ebook',
+    mode: 'request',
+    statusTarget: true,
+    statusProviderId: '333',
+    statusChipText: 'Available to request',
+    statusChipKey: 'available',
+    statusChipClass: 'shelfmark-status-chip--available',
+    includeBatchToolbar: true,
+    batchToggle: true,
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      { payload: { requests: [] } },
+      {
+        payload: {
+          requests_enabled: true,
+          defaults: { ebook: 'request_book' },
+          source_modes: [
+            {
+              source: 'direct_download',
+              browse_results_are_releases: true,
+              modes: { ebook: 'download' }
+            }
+          ]
+        }
+      },
+      {
+        payload: {
+          releases: [
+            { source: 'direct_download', source_id: 'dd-1', format: 'epub', seeders: 0 }
+          ]
+        }
+      },
+      {
+        payload: {
+          kind: 'download',
+          status: 'queued',
+          source: 'direct_download',
+          source_id: 'dd-1',
+          content_type: 'ebook'
+        }
+      }
+    ]
+  });
+
+  await directQueued.clickPrimaryAction();
+
+  assert.equal(
+    directQueued.dom.action.querySelector('.js-shelfmark-action-label').textContent,
+    'In queue'
+  );
+  assert.equal(
+    directQueued.dom.document.querySelector('.js-shelfmark-status-chip').textContent,
+    'In queue'
+  );
+  assert.equal(directQueued.dom.batchToggle.disabled, true);
+  assert.equal(directQueued.dom.batchSelect.classList.contains('is-hidden'), true);
+  assert.equal(
+    directQueued.dom.document.querySelector('.js-shelfmark-status-target').classList.contains('is-shelfmark-handled'),
+    true
   );
 
   const progressive = await runProgressiveScenario();

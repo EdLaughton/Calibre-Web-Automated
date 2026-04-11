@@ -1,3 +1,4 @@
+{% set preferred_release = preferred_release or {} %}
 <div class="shelfmark-result-card__media">
   {% if result.request_payload and not result.already_in_library and (not result.workflow_state or result.workflow_state.key == 'available') %}
     <label class="shelfmark-result-card__select shelfmark-batch-select js-shelfmark-batch-select is-hidden">
@@ -111,6 +112,10 @@
           data-open-url="{{ result.shelfmark_open_url }}"
           data-request-payload='{{ result.request_payload|tojson if result.request_payload else "" }}'
           data-mode="{{ result.action.mode }}"
+          data-preferred-release-enabled="{{ 1 if preferred_release.enabled else 0 }}"
+          data-preferred-release-provider="{{ preferred_release.provider or '' }}"
+          data-preferred-release-content-type="{{ preferred_release.content_type or 'ebook' }}"
+          data-preferred-release-ranking="{{ preferred_release.ranking or 'seeders_desc' }}"
         >
           <span class="{{ result.action.icon_class }} js-shelfmark-action-icon" aria-hidden="true"></span>
           <span class="js-shelfmark-action-label">{{ result.action.label }}</span>

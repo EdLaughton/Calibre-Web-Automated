@@ -269,6 +269,32 @@
         <input type="password" class="form-control" id="config_shelfmark_password_e" name="config_shelfmark_password_e" value="" autocomplete="off">
         <div class="help-block">{{_('Leave blank to keep the current stored search password unchanged.')}}</div>
       </div>
+      <div class="form-group">
+        <input type="checkbox" id="config_shelfmark_preferred_release_enabled" name="config_shelfmark_preferred_release_enabled" data-control="shelfmark-preferred-release-settings" {% if config.config_shelfmark_preferred_release_enabled %}checked{% endif %}>
+        <label for="config_shelfmark_preferred_release_enabled">{{_('Enable Preferred Shelfmark Auto-Download Workflow')}}</label>
+        <div class="help-block">{{_('Optional browser-side upgrade for Request in Shelfmark. When enabled, CWA tries to pick a concrete release before submitting the request action. This only changes request-time release choice; exact Hardcover IDs and Shelfmark/CWA sidecar provenance still drive the later import metadata match.') }}</div>
+      </div>
+      <div data-related="shelfmark-preferred-release-settings">
+        <div class="form-group">
+          <label for="config_shelfmark_preferred_release_provider">{{_('Preferred Provider/Indexer Name')}}</label>
+          <input type="text" class="form-control" id="config_shelfmark_preferred_release_provider" name="config_shelfmark_preferred_release_provider" value="{% if config.config_shelfmark_preferred_release_provider != None %}{{ config.config_shelfmark_preferred_release_provider }}{% endif %}" autocomplete="off" placeholder="MyAnonamouse">
+          <div class="help-block">{{_('Optional. Match a Shelfmark release source or an indexer name such as MyAnonamouse. Leave blank to choose from any compatible ebook release.') }}</div>
+        </div>
+        <div class="form-group">
+          <label for="config_shelfmark_preferred_release_content_type">{{_('Preferred Content Type')}}</label>
+          <select class="form-control" id="config_shelfmark_preferred_release_content_type" name="config_shelfmark_preferred_release_content_type">
+            <option value="ebook" {% if (config.config_shelfmark_preferred_release_content_type or 'ebook') == 'ebook' %}selected{% endif %}>{{_('Ebook')}}</option>
+            <option value="audiobook" {% if config.config_shelfmark_preferred_release_content_type == 'audiobook' %}selected{% endif %}>{{_('Audiobook')}}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="config_shelfmark_preferred_release_ranking">{{_('Release Ranking')}}</label>
+          <select class="form-control" id="config_shelfmark_preferred_release_ranking" name="config_shelfmark_preferred_release_ranking">
+            <option value="seeders_desc" {% if (config.config_shelfmark_preferred_release_ranking or 'seeders_desc') == 'seeders_desc' %}selected{% endif %}>{{_('Highest seeders')}}</option>
+          </select>
+          <div class="help-block">{{_('If no preferred release matches, or Shelfmark policy still requires a book-level request, CWA falls back to the normal Request in Shelfmark flow.') }}</div>
+        </div>
+      </div>
     </div>
     <div class="form-group">
       <input type="checkbox" id="config_allow_reverse_proxy_header_login" name="config_allow_reverse_proxy_header_login" data-control="reverse-proxy-login-settings" {% if config.config_allow_reverse_proxy_header_login %}checked{% endif %}>

@@ -61,6 +61,10 @@ def shelfmark_module(monkeypatch):
         config_shelfmark_browser_url="",
         config_shelfmark_username="",
         config_shelfmark_password_e="",
+        config_shelfmark_preferred_release_enabled=False,
+        config_shelfmark_preferred_release_provider="",
+        config_shelfmark_preferred_release_content_type="ebook",
+        config_shelfmark_preferred_release_ranking="seeders_desc",
     )
     cps_module.db = dummy_db
     cps_module.logger = types.SimpleNamespace(create=lambda: logger_instance)
@@ -155,6 +159,29 @@ def test_parse_probe_state_authenticated_requestable(shelfmark_module):
     assert state.requests_enabled is True
     assert state.ebook_mode == "request_book"
     assert state.probe_available is True
+
+
+def test_get_preferred_release_settings_defaults_off(shelfmark_module):
+    settings = shelfmark_module.get_shelfmark_preferred_release_settings()
+
+    assert settings.enabled is False
+    assert settings.provider == ""
+    assert settings.content_type == "ebook"
+    assert settings.ranking == "seeders_desc"
+
+
+def test_get_preferred_release_settings_normalizes_invalid_values(shelfmark_module):
+    shelfmark_module.config.config_shelfmark_preferred_release_enabled = True
+    shelfmark_module.config.config_shelfmark_preferred_release_provider = "  MyAnonamouse  "
+    shelfmark_module.config.config_shelfmark_preferred_release_content_type = "AUDIOBOOK"
+    shelfmark_module.config.config_shelfmark_preferred_release_ranking = "unknown"
+
+    settings = shelfmark_module.get_shelfmark_preferred_release_settings()
+
+    assert settings.enabled is True
+    assert settings.provider == "MyAnonamouse"
+    assert settings.content_type == "audiobook"
+    assert settings.ranking == "seeders_desc"
 
 
 def test_select_action_uses_view_library_for_exact_duplicate(shelfmark_module):

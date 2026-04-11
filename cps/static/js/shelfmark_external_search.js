@@ -11,6 +11,7 @@
   var ROW_ENRICH_TIMEOUT_MS = 12000;
   var ROW_ENRICH_MAX_CONCURRENCY = 2;
   var ROW_ENRICH_ROOT_MARGIN = '180px 0px';
+  var PREFERRED_RELEASE_TIMEOUT_MS = 20000;
   var TOP_UP_TIMEOUT_MS = 12000;
   var TOP_UP_MAX_PAGES = 3;
   var ACTIVITY_SNAPSHOT_TTL_MS = 30000;
@@ -59,6 +60,13 @@
     } catch (err) {
       return null;
     }
+  }
+
+  function cloneJsonValue(value) {
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+    return parseJson(JSON.stringify(value));
   }
 
   function toOptionalNumber(value) {
@@ -557,6 +565,35 @@
     };
   }
 
+  function serializeWorkflowState(workflowState) {
+    if (!workflowState) {
+      return '';
+    }
+    try {
+      return JSON.stringify(workflowState);
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function parseWorkflowOverride(target) {
+    if (!target || !target.dataset) {
+      return null;
+    }
+    return parseJson(target.dataset.workflowOverride);
+  }
+
+  function setWorkflowOverride(target, workflowState) {
+    if (!target || !target.dataset) {
+      return;
+    }
+    if (!workflowState) {
+      delete target.dataset.workflowOverride;
+      return;
+    }
+    target.dataset.workflowOverride = serializeWorkflowState(workflowState);
+  }
+
   function mapRequestRecordToWorkflowState(record) {
     if (!record || typeof record !== 'object') {
       return null;
@@ -813,7 +850,13 @@
     var matchedRequest = requestIndex ? requestIndex.get(matchKey) : null;
     var mappedState = mapRequestRecordToWorkflowState(matchedRequest);
     if (mappedState) {
+      setWorkflowOverride(target, null);
       return mappedState;
+    }
+
+    var overrideState = parseWorkflowOverride(target);
+    if (overrideState) {
+      return overrideState;
     }
 
     var actionNode = target.querySelector('.js-shelfmark-action');
@@ -844,14 +887,28 @@
     });
   }
 
-  function applyImmediateRequestedState(scope, requestPayload) {
-    var state = buildWorkflowState({
+  function buildSubmissionWorkflowState(responseData) {
+    if (responseData && responseData.kind === 'download' && responseData.status === 'queued') {
+      return buildWorkflowState({
+        key: 'queue',
+        label: 'In queue',
+        chipClass: 'shelfmark-status-chip--queue',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    return buildWorkflowState({
       key: 'requested',
       label: 'Requested',
       chipClass: 'shelfmark-status-chip--requested',
       timestamp: new Date().toISOString()
     });
+  }
+
+  function applyImmediateSubmissionState(scope, requestPayload, responseData) {
+    var state = buildSubmissionWorkflowState(responseData);
     findRelatedStatusTargets(scope, requestPayload).forEach(function (target) {
+      setWorkflowOverride(target, state);
       setWorkflowState(target, state);
     });
     syncBatchUi(document);
@@ -1094,6 +1151,202 @@
     }
   }
 
+  function rememberPolicyPayload(actions, policyPayload) {
+    (actions || []).forEach(function (node) {
+      if (!node || !node.dataset) {
+        return;
+      }
+      if (policyPayload) {
+        node.dataset.requestPolicy = serializeWorkflowState(policyPayload);
+      } else {
+        delete node.dataset.requestPolicy;
+      }
+    });
+  }
+
+  function getStoredPolicyPayload(node) {
+    if (!node || !node.dataset) {
+      return null;
+    }
+    return parseJson(node.dataset.requestPolicy);
+  }
+
+  function getPreferredReleaseSettings(node) {
+    var requestFlow = getFlow();
+    if (!requestFlow || !node || !node.dataset) {
+      return null;
+    }
+    return requestFlow.normalizePreferredReleaseSettings({
+      enabled: node.dataset.preferredReleaseEnabled === '1',
+      provider: node.dataset.preferredReleaseProvider,
+      contentType: node.dataset.preferredReleaseContentType,
+      ranking: node.dataset.preferredReleaseRanking
+    });
+  }
+
+  function buildPreferredReleaseSearchUrl(baseUrl, requestPayload, settings, policyPayload) {
+    var requestFlow = getFlow();
+    var bookData = requestPayload && requestPayload.book_data ? requestPayload.book_data : {};
+    var provider = toOptionalText(bookData.provider);
+    var bookId = toOptionalText(bookData.provider_id);
+    if (!requestFlow || !provider || !bookId) {
+      return '';
+    }
+
+    var url = buildUrl(stripTrailingSlash(baseUrl) + '/api/releases');
+    if (!url) {
+      return '';
+    }
+
+    var preferredSource = requestFlow.resolvePreferredReleaseSource(settings, policyPayload);
+    url.searchParams.set('provider', provider);
+    url.searchParams.set('book_id', bookId);
+    url.searchParams.set('content_type', settings.contentType);
+    if (preferredSource) {
+      url.searchParams.set('source', preferredSource);
+    } else if (settings.provider) {
+      url.searchParams.set('indexers', settings.provider);
+    }
+    return url.toString();
+  }
+
+  async function fetchPreferredReleaseCandidates(node, requestPayload, settings, policyPayload) {
+    var requestUrl = buildPreferredReleaseSearchUrl(node.dataset.baseUrl, requestPayload, settings, policyPayload);
+    if (!requestUrl) {
+      return [];
+    }
+
+    var response = await fetchJson(requestUrl, {
+      method: 'GET'
+    }, PREFERRED_RELEASE_TIMEOUT_MS);
+    return Array.isArray(response && response.releases) ? response.releases : [];
+  }
+
+  async function resolvePreferredSubmission(node, requestPayload) {
+    var requestFlow = getFlow();
+    var settings = getPreferredReleaseSettings(node);
+    if (!requestFlow || !settings || !requestFlow.isPreferredReleaseWorkflowEnabled(settings)) {
+      return {
+        payload: requestPayload,
+        usedPreferredRelease: false,
+        fallbackReason: 'disabled'
+      };
+    }
+
+    if (requestFlow.getRequestPayloadLevel(requestPayload) !== 'book') {
+      return {
+        payload: requestPayload,
+        usedPreferredRelease: false,
+        fallbackReason: 'already_release_level'
+      };
+    }
+
+    var policyPayload = getStoredPolicyPayload(node);
+    if (!policyPayload) {
+      try {
+        policyPayload = await fetchJson(
+          stripTrailingSlash(node.dataset.baseUrl) + '/api/request-policy',
+          {},
+          DEFAULT_TIMEOUT_MS
+        );
+        rememberPolicyPayload([node], policyPayload);
+      } catch (error) {
+        return {
+          payload: requestPayload,
+          usedPreferredRelease: false,
+          fallbackReason: 'policy_unavailable'
+        };
+      }
+    }
+
+    var releases;
+    try {
+      releases = await fetchPreferredReleaseCandidates(node, requestPayload, settings, policyPayload);
+    } catch (error) {
+      return {
+        payload: requestPayload,
+        usedPreferredRelease: false,
+        fallbackReason: 'release_lookup_failed'
+      };
+    }
+
+    var preferredRelease = requestFlow.selectPreferredRelease(releases, settings, policyPayload);
+    if (!preferredRelease) {
+      return {
+        payload: requestPayload,
+        usedPreferredRelease: false,
+        fallbackReason: 'no_match'
+      };
+    }
+
+    var resolvedMode = requestFlow.resolveSourceModeFromPolicy(
+      policyPayload,
+      preferredRelease.source,
+      settings.contentType,
+      { preferSourceSpecific: true }
+    );
+    if (resolvedMode !== requestFlow.REQUEST_RELEASE_MODE && resolvedMode !== requestFlow.DOWNLOAD_MODE) {
+      return {
+        payload: requestPayload,
+        usedPreferredRelease: false,
+        fallbackReason: 'policy_requires_book'
+      };
+    }
+
+    var preferredPayload = requestFlow.buildPreferredReleaseRequestPayload(
+      cloneJsonValue(requestPayload),
+      preferredRelease,
+      settings
+    );
+    if (
+      !preferredPayload
+      || !preferredPayload.release_data
+      || !preferredPayload.release_data.source
+      || !preferredPayload.release_data.source_id
+    ) {
+      return {
+        payload: requestPayload,
+        usedPreferredRelease: false,
+        fallbackReason: 'incomplete_release_payload'
+      };
+    }
+
+    return {
+      payload: preferredPayload,
+      usedPreferredRelease: true,
+      resolvedMode: resolvedMode,
+      release: preferredRelease
+    };
+  }
+
+  async function submitResolvedRequest(node, payload, openUrl, statusNodes, options) {
+    var settings = options || {};
+    var showStatusBanner = !settings.silentStatus;
+    var resolvedPayload = payload;
+
+    if (showStatusBanner) {
+      var preferredSettings = getPreferredReleaseSettings(node);
+      var requestFlow = getFlow();
+      if (
+        requestFlow
+        && preferredSettings
+        && requestFlow.isPreferredReleaseWorkflowEnabled(preferredSettings)
+        && requestFlow.getRequestPayloadLevel(payload) === 'book'
+      ) {
+        setStatusText(statusNodes, 'Selecting preferred Shelfmark release…', 'alert-info', { persist: true });
+      }
+    }
+
+    try {
+      var resolved = await resolvePreferredSubmission(node, payload);
+      resolvedPayload = resolved && resolved.payload ? resolved.payload : payload;
+    } catch (error) {
+      resolvedPayload = payload;
+    }
+
+    return submitRequest(node, resolvedPayload, openUrl, statusNodes, options);
+  }
+
   async function submitRequest(node, payload, openUrl, statusNodes, options) {
     var requestFlow = getFlow();
     var settings = options || {};
@@ -1105,22 +1358,23 @@
     }
 
     try {
-      await fetchJson(stripTrailingSlash(node.dataset.baseUrl) + '/api/requests', {
+      var responseData = await fetchJson(stripTrailingSlash(node.dataset.baseUrl) + '/api/requests', {
         method: 'POST',
         body: JSON.stringify(payload)
       }, DEFAULT_TIMEOUT_MS);
 
-      var successOutcome = requestFlow.resolveRequestOutcome({ success: true });
+      var successOutcome = requestFlow.resolveRequestOutcome({ success: true, response: responseData });
       updateActionNode(node, successOutcome.actionState);
       node.setAttribute('href', openUrl);
       if (showStatusBanner) {
         setStatusText(statusNodes, successOutcome.bannerText, successOutcome.bannerLevel);
       }
       invalidateActivitySnapshot(node.dataset.baseUrl);
-      applyImmediateRequestedState(document, payload);
+      applyImmediateSubmissionState(document, payload, responseData);
       return {
         success: true,
-        outcome: successOutcome
+        outcome: successOutcome,
+        response: responseData
       };
     } catch (error) {
       var failureOutcome = requestFlow.resolveRequestOutcome({ success: false, error: error });
@@ -1180,15 +1434,19 @@
     });
 
     var successCount = 0;
+    var queuedCount = 0;
     var failureCount = 0;
 
     for (var index = 0; index < requestItems.length; index += 1) {
       var item = requestItems[index];
-      var response = await submitRequest(item.actionNode, item.payload, item.openUrl, [], {
+      var response = await submitResolvedRequest(item.actionNode, item.payload, item.openUrl, [], {
         silentStatus: true
       });
       if (response.success) {
         successCount += 1;
+        if (response.outcome && response.outcome.kind === 'release_queued') {
+          queuedCount += 1;
+        }
       } else {
         failureCount += 1;
       }
@@ -1210,7 +1468,9 @@
     if (successCount > 0 && failureCount === 0) {
       setBatchMessage(
         toolbar,
-        successCount === 1 ? 'Requested 1 book.' : 'Requested ' + successCount + ' books.',
+        queuedCount === successCount
+          ? (successCount === 1 ? 'Queued 1 book.' : 'Queued ' + successCount + ' books.')
+          : (successCount === 1 ? 'Requested 1 book.' : 'Requested ' + successCount + ' books.'),
         'success'
       );
     } else if (successCount > 0 && failureCount > 0) {
@@ -1253,6 +1513,7 @@
       }
 
       var policyPayload = await fetchJson(stripTrailingSlash(baseUrl) + '/api/request-policy', {}, DEFAULT_TIMEOUT_MS);
+      rememberPolicyPayload(actions, policyPayload);
       probeOutcome = requestFlow.resolveProbeState({
         baseUrl: baseUrl,
         currentOrigin: currentOrigin,
@@ -1284,6 +1545,7 @@
       );
       syncBatchUi(document);
     } catch (error) {
+      rememberPolicyPayload(actions, null);
       probeOutcome = requestFlow.resolveProbeState({
         baseUrl: baseUrl,
         currentOrigin: currentOrigin,
@@ -1329,7 +1591,7 @@
 
       event.preventDefault();
       clearBatchMessage(getBatchToolbars(document)[0] || null);
-      await submitRequest(node, payload, openUrl, statusNodes, {});
+      await submitResolvedRequest(node, payload, openUrl, statusNodes, {});
     });
   }
 

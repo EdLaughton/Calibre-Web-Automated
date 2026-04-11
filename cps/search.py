@@ -27,6 +27,7 @@ from .services.shelfmark_search import (
     ShelfmarkIntegrationError,
     build_shelfmark_advanced_query,
     fetch_shelfmark_detail,
+    get_shelfmark_preferred_release_settings,
     result_matches_shelfmark_filters,
     search_shelfmark_results,
 )
@@ -494,6 +495,7 @@ def shelfmark_external_detail(provider, provider_id):
     query = (request.args.get("query") or "").strip()
     return_to = _safe_local_return_url(request.args.get("return_to"))
     modal_view = (request.args.get("view") or "").strip().lower() == "modal"
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
     detail_url = url_for(
         "search.shelfmark_external_detail",
         provider=provider,
@@ -513,6 +515,7 @@ def shelfmark_external_detail(provider, provider_id):
                 "shelfmark_external_detail_content.html",
                 result=result,
                 modal_mode=True,
+                preferred_release=preferred_release,
                 shelfmark_error=None,
             )
         return render_title_template(
@@ -523,6 +526,7 @@ def shelfmark_external_detail(provider, provider_id):
             search_query=query,
             return_to=return_to,
             modal_mode=False,
+            preferred_release=preferred_release,
         )
     except ShelfmarkIntegrationError as exc:
         flash(str(exc), category="error")
@@ -532,6 +536,7 @@ def shelfmark_external_detail(provider, provider_id):
                 title=_("Shelfmark External Result"),
                 result=None,
                 modal_mode=True,
+                preferred_release=preferred_release,
                 shelfmark_error=str(exc),
             )
         return render_title_template(
@@ -543,6 +548,7 @@ def shelfmark_external_detail(provider, provider_id):
             return_to=return_to,
             shelfmark_error=str(exc),
             modal_mode=False,
+            preferred_release=preferred_release,
         )
 
 
@@ -551,6 +557,7 @@ def shelfmark_external_detail(provider, provider_id):
 def shelfmark_external_row(provider, provider_id):
     query = (request.args.get("query") or "").strip()
     return_to = _safe_local_return_url(request.args.get("return_to"))
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
     detail_url = url_for(
         "search.shelfmark_external_detail",
         provider=provider,
@@ -598,6 +605,7 @@ def shelfmark_external_row(provider, provider_id):
                 "html": render_template(
                     "shelfmark_external_result_card_inner.html",
                     result=result,
+                    preferred_release=preferred_release,
                 ),
             }
         )
@@ -610,6 +618,7 @@ def shelfmark_external_row(provider, provider_id):
 def shelfmark_external_topup():
     query = (request.args.get("query") or "").strip()
     return_to = _safe_local_return_url(request.args.get("return_to"))
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
     try:
         source_page = int(request.args.get("shelfmark_source_page", "1"))
     except (TypeError, ValueError):
@@ -654,6 +663,7 @@ def shelfmark_external_topup():
                     "html": render_template(
                         "shelfmark_external_result_card_inner.html",
                         result=result,
+                        preferred_release=preferred_release,
                     ),
                 }
             )
@@ -828,6 +838,7 @@ def _current_request_url_with(**updates):
 
 
 def _build_shelfmark_section(query, **kwargs):
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
     section = search_shelfmark_results(
         query,
         page=_requested_shelfmark_page(),
@@ -887,6 +898,7 @@ def _build_shelfmark_section(query, **kwargs):
         query=query,
         return_to=section.get("state_url"),
     )
+    section["preferred_release_settings"] = preferred_release
     _decorate_shelfmark_result_rows(section, query=query)
     return section
 
