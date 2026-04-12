@@ -7,6 +7,7 @@ import re
 import socket
 from time import monotonic
 from typing import Any, Callable, Iterable, Mapping, Sequence
+import unicodedata
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
 from requests import RequestException
@@ -25,8 +26,10 @@ log = logger.create()
 
 DEFAULT_SHELFMARK_TIMEOUT_SECONDS = 15
 DEFAULT_SHELFMARK_LIMIT = 12
-DEFAULT_SHELFMARK_SORT = "relevance"
+DEFAULT_SHELFMARK_SORT = "popularity"
 DEFAULT_SHELFMARK_PAGE = 1
+DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE = "ebook"
+DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING = "seeders_desc"
 DEFAULT_SHELFMARK_FILTER_REQUESTABLE = True
 DEFAULT_SHELFMARK_FILTER_HAS_COVER = True
 DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE = False
@@ -34,8 +37,8 @@ DEFAULT_SHELFMARK_SERIES_FILTER = "all"
 DEFAULT_SHELFMARK_TRIAGE_FILTER = "all"
 SHELFMARK_PAGE_SIZE_OPTIONS = (12, 24, 50, 100)
 SHELFMARK_SORT_OPTIONS = (
-    ("relevance", "Most relevant"),
     ("popularity", "Most popular"),
+    ("relevance", "Most relevant"),
     ("rating", "Highest rated"),
     ("newest", "Newest"),
     ("oldest", "Oldest"),
@@ -55,16 +58,62 @@ SHELFMARK_REQUEST_MODE = "request_book"
 SHELFMARK_REQUEST_KIND = "book"
 SHELFMARK_DETAIL_CACHE_TTL_SECONDS = 300
 SHELFMARK_DETAIL_CACHE_MAX_ENTRIES = 256
+HARDCOVER_DETAIL_CACHE_TTL_SECONDS = 300
+HARDCOVER_DETAIL_CACHE_MAX_ENTRIES = 128
 SHELFMARK_COVER_CACHE_TTL_SECONDS = 300
 SHELFMARK_COVER_CACHE_MAX_ENTRIES = 512
+SHELFMARK_SCAN_CACHE_TTL_SECONDS = 120
+SHELFMARK_SCAN_CACHE_MAX_ENTRIES = 16
+SHELFMARK_SCAN_PAGE_SIZE = 100
 SHELFMARK_QUALITY_MIN_METADATA_SIGNALS = 5
 SHELFMARK_TRIAGE_MIN_RATINGS = 200
 SHELFMARK_TRIAGE_MIN_READERS = 1000
 SHELFMARK_TRIAGE_MIN_RATING = 4.0
 SHELFMARK_TRIAGE_MIN_RATING_COUNT = 50
+SHELFMARK_AUDIOBOOK_HINTS = (
+    "audiobook",
+    "audio book",
+    "audible audio",
+    "audio cd",
+    "audio-cd",
+    "m4b",
+    "cassette",
+)
+SHELFMARK_EBOOK_HINTS = (
+    "ebook",
+    "e-book",
+    "epub",
+    "digital",
+    "kindle",
+)
+SHELFMARK_PHYSICAL_HINTS = (
+    "physical",
+    "physical book",
+    "hardcover",
+    "paperback",
+    "softcover",
+    "mass market paperback",
+    "board book",
+    "print",
+)
+SHELFMARK_GENRE_CATEGORY_HINTS = ("genre", "genres")
+SHELFMARK_MOOD_CATEGORY_HINTS = ("mood", "moods")
+SHELFMARK_CONTENT_WARNING_CATEGORY_HINTS = (
+    "content warning",
+    "content warnings",
+    "warning",
+    "warnings",
+    "trigger warning",
+    "trigger warnings",
+)
 
 _SHELFMARK_DETAIL_CACHE: OrderedDict[tuple[str, str, str], tuple[float, dict[str, Any]]] = OrderedDict()
+_HARDCOVER_DETAIL_CACHE: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
 _SHELFMARK_COVER_CACHE: OrderedDict[tuple[str, str], tuple[float, str]] = OrderedDict()
+_SHELFMARK_SCAN_CACHE: OrderedDict[
+    tuple[str, str, str, int, int],
+    tuple[float, tuple[dict[str, Any], ...], int, int, bool],
+] = OrderedDict()
 
 
 class ShelfmarkIntegrationError(RuntimeError):
@@ -172,6 +221,7 @@ class ShelfmarkResultView:
     display_fields: tuple[dict[str, Any], ...]
     rating: float | None
     ratings_count: int | None
+    reviews_count: int | None
     readers_count: int | None
     hardcover_id: str | None
     already_in_library: bool
@@ -192,6 +242,8 @@ class ShelfmarkResultView:
     series_position: float | None = None
     series_count: int | None = None
     series_display: str | None = None
+    series_url: str | None = None
+    series_entries: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     facts: tuple[str, ...] = field(default_factory=tuple)
     detail_stats: tuple[dict[str, str], ...] = field(default_factory=tuple)
     genres: tuple[str, ...] = field(default_factory=tuple)
@@ -201,11 +253,14 @@ class ShelfmarkResultView:
     workflow_state: ShelfmarkWorkflowState | None = None
     quality_state: ShelfmarkQualityState | None = None
     triage_state: ShelfmarkTriageState | None = None
+    needs_progressive_enrichment: bool = False
+    progressive_filter_pending: bool = False
 
     def to_template_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["authors"] = list(self.authors)
         payload["display_fields"] = list(self.display_fields)
+        payload["series_entries"] = list(self.series_entries)
         payload["facts"] = list(self.facts)
         payload["detail_stats"] = list(self.detail_stats)
         payload["genres"] = list(self.genres)
@@ -227,6 +282,7 @@ class ShelfmarkResultView:
 class ShelfmarkResultSummary:
     total_results: int = 0
     total_available: int = 0
+    raw_total_available: int = 0
     has_more: bool = False
     already_in_library: int = 0
     external_candidates: int = 0
@@ -285,6 +341,7 @@ class ShelfmarkSearchSection:
     next_page: int | None = None
     has_more: bool = False
     total_available: int = 0
+    raw_total_available: int = 0
     page_result_count: int = 0
     filter_requestable: bool = DEFAULT_SHELFMARK_FILTER_REQUESTABLE
     filter_has_cover: bool = DEFAULT_SHELFMARK_FILTER_HAS_COVER
@@ -295,6 +352,9 @@ class ShelfmarkSearchSection:
     context_hint: str | None = None
     message: str | None = None
     message_level: str = "info"
+    pagination_mode: str = "shelfmark"
+    progressive_refinement: bool = False
+    progressive_refinement_note: str | None = None
     results: tuple[ShelfmarkResultView, ...] = field(default_factory=tuple)
     groups: tuple[ShelfmarkResultGroup, ...] = field(default_factory=tuple)
     summary: ShelfmarkResultSummary = field(default_factory=ShelfmarkResultSummary)
@@ -321,6 +381,7 @@ class ShelfmarkSearchSection:
             "next_page": self.next_page,
             "has_more": self.has_more,
             "total_available": self.total_available,
+            "raw_total_available": self.raw_total_available,
             "page_result_count": self.page_result_count,
             "filter_requestable": self.filter_requestable,
             "filter_has_cover": self.filter_has_cover,
@@ -331,6 +392,9 @@ class ShelfmarkSearchSection:
             "context_hint": self.context_hint,
             "message": self.message,
             "message_level": self.message_level,
+            "pagination_mode": self.pagination_mode,
+            "progressive_refinement": self.progressive_refinement,
+            "progressive_refinement_note": self.progressive_refinement_note,
             "results": [result.to_template_dict() for result in self.results],
             "groups": [group.to_template_dict() for group in self.groups],
             "summary": self.summary.to_template_dict(),
@@ -355,6 +419,57 @@ class ShelfmarkSearchResponse:
     has_more: bool = False
 
 
+@dataclass(frozen=True)
+class ShelfmarkPreferredReleaseSettings:
+    enabled: bool = False
+    provider: str = ""
+    content_type: str = DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE
+    ranking: str = DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING
+
+    def to_template_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ShelfmarkDiagnosticCheck:
+    key: str
+    label: str
+    status: str
+    summary: str
+    detail: str | None = None
+
+    def to_template_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ShelfmarkPreferredProviderOption:
+    value: str
+    label: str
+    kind: str
+
+    def to_template_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ShelfmarkSettingsDiagnostics:
+    success: bool
+    checks: tuple[ShelfmarkDiagnosticCheck, ...] = field(default_factory=tuple)
+    provider_options: tuple[ShelfmarkPreferredProviderOption, ...] = field(default_factory=tuple)
+    provider_options_message: str | None = None
+    selected_probe_source: str | None = None
+
+    def to_template_dict(self) -> dict[str, Any]:
+        return {
+            "success": self.success,
+            "checks": [check.to_template_dict() for check in self.checks],
+            "provider_options": [option.to_template_dict() for option in self.provider_options],
+            "provider_options_message": self.provider_options_message,
+            "selected_probe_source": self.selected_probe_source,
+        }
+
+
 def clear_shelfmark_detail_cache() -> None:
     _SHELFMARK_DETAIL_CACHE.clear()
 
@@ -363,18 +478,115 @@ def clear_shelfmark_cover_cache() -> None:
     _SHELFMARK_COVER_CACHE.clear()
 
 
-def get_shelfmark_client_config() -> ShelfmarkClientConfig:
-    base_url = str(getattr(config, "config_shelfmark_url", "") or "").strip()
-    browser_base_url = str(getattr(config, "config_shelfmark_browser_url", "") or "").strip() or base_url
-    username = str(getattr(config, "config_shelfmark_username", "") or "").strip() or None
-    password = str(getattr(config, "config_shelfmark_password_e", "") or "").strip() or None
-    enabled = bool(getattr(config, "config_shelfmark_search", False) and base_url)
+def clear_shelfmark_scan_cache() -> None:
+    _SHELFMARK_SCAN_CACHE.clear()
+
+
+def get_shelfmark_client_config(values: Mapping[str, Any] | None = None) -> ShelfmarkClientConfig:
+    raw_values = values or {}
+    base_url = str(
+        raw_values.get("config_shelfmark_url", getattr(config, "config_shelfmark_url", "")) or ""
+    ).strip()
+    browser_base_url = str(
+        raw_values.get(
+            "config_shelfmark_browser_url",
+            getattr(config, "config_shelfmark_browser_url", ""),
+        )
+        or ""
+    ).strip() or base_url
+    username = str(
+        raw_values.get(
+            "config_shelfmark_username",
+            getattr(config, "config_shelfmark_username", ""),
+        )
+        or ""
+    ).strip() or None
+    password_value = raw_values.get("config_shelfmark_password_e")
+    if password_value is None:
+        password = str(getattr(config, "config_shelfmark_password_e", "") or "").strip() or None
+    else:
+        password = str(password_value or "").strip() or (
+            str(getattr(config, "config_shelfmark_password_e", "") or "").strip() or None
+        )
+    enabled_flag = raw_values.get(
+        "config_shelfmark_search",
+        getattr(config, "config_shelfmark_search", False),
+    )
+    enabled = (
+        (_normalize_flag(enabled_flag) if isinstance(enabled_flag, (str, bytes)) else bool(enabled_flag))
+        and bool(base_url)
+    )
     return ShelfmarkClientConfig(
         enabled=enabled,
         base_url=base_url,
         browser_base_url=browser_base_url,
         username=username,
         password=password,
+    )
+
+
+def get_shelfmark_preferred_release_settings(
+    values: Mapping[str, Any] | None = None,
+) -> ShelfmarkPreferredReleaseSettings:
+    raw_values = values or {}
+    provider = _normalize_text(
+        raw_values.get(
+            "config_shelfmark_preferred_release_provider",
+            getattr(config, "config_shelfmark_preferred_release_provider", ""),
+        )
+        or ""
+    ) or ""
+    content_type = _normalize_preferred_release_content_type(
+        raw_values.get(
+            "config_shelfmark_preferred_release_content_type",
+            getattr(
+                config,
+                "config_shelfmark_preferred_release_content_type",
+                DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE,
+            ),
+        )
+    )
+    ranking = (
+        _normalize_text(
+            raw_values.get(
+                "config_shelfmark_preferred_release_ranking",
+                getattr(
+                    config,
+                    "config_shelfmark_preferred_release_ranking",
+                    DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING,
+                ),
+            )
+        )
+        or DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING
+    ).lower()
+    if ranking != DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING:
+        ranking = DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING
+
+    return ShelfmarkPreferredReleaseSettings(
+        enabled=(
+            _normalize_flag(
+                raw_values.get(
+                    "config_shelfmark_preferred_release_enabled",
+                    getattr(config, "config_shelfmark_preferred_release_enabled", False),
+                )
+            )
+            if isinstance(
+                raw_values.get(
+                    "config_shelfmark_preferred_release_enabled",
+                    getattr(config, "config_shelfmark_preferred_release_enabled", False),
+                ),
+                (str, bytes),
+            )
+            else bool(
+                raw_values.get(
+                    "config_shelfmark_preferred_release_enabled",
+                    getattr(config, "config_shelfmark_preferred_release_enabled", False),
+                )
+            )
+        ),
+        provider=provider,
+        content_type=content_type,
+        ranking=ranking,
     )
 
 
@@ -950,7 +1162,9 @@ def _build_series_context_facts(
     facts: list[str] = []
     if owned_book_count:
         label = _("book") if owned_book_count == 1 else _("books")
-        facts.append(_("%(count)s %(label)s owned", count=owned_book_count, label=label))
+        facts.append(
+            _("%(count)s %(label)s owned in this series", count=owned_book_count, label=label)
+        )
 
     if owned_contiguous_position and owned_contiguous_position > 0:
         facts.append(_("Owned through %(position)s", position=owned_contiguous_position))
@@ -1098,13 +1312,15 @@ def build_shelfmark_result_view(
     title = _resolve_shelfmark_title(book) or _("Unknown title")
     authors = tuple(_resolve_shelfmark_authors(book))
     hardcover_id = _extract_hardcover_id(book)
-    publish_year = _normalize_int(book.get("publish_year"))
+    publish_year = _resolve_publish_year(book)
     description_html = _sanitize_description_html(book.get("description"))
     series_name = _resolve_series_name(book)
     series_position = _resolve_series_position(book)
     series_count = _resolve_series_count(book)
+    series_entries = _resolve_series_entries(book)
     rating = _resolve_rating_value(book)
     ratings_count = _resolve_ratings_count(book)
+    reviews_count = _resolve_reviews_count(book)
     readers_count = _resolve_readers_count(book)
     pages = _resolve_pages(book)
     editions_count = _resolve_editions_count(book)
@@ -1132,7 +1348,7 @@ def build_shelfmark_result_view(
         provider=_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER,
         provider_id=_normalize_text(book.get("provider_id")) or "",
         title=title,
-        subtitle=_normalize_text(book.get("subtitle")),
+        subtitle=_resolve_shelfmark_subtitle(book),
         authors=authors,
         cover_url=_normalize_shelfmark_cover_url(
             shelfmark_browser_base_url,
@@ -1140,10 +1356,11 @@ def build_shelfmark_result_view(
         ),
         description=_plain_text_from_html(description_html),
         publish_year=publish_year,
-        source_url=_normalize_text(book.get("source_url")),
+        source_url=_resolve_source_url(book),
         display_fields=_normalize_display_fields(book.get("display_fields")),
         rating=rating,
         ratings_count=ratings_count,
+        reviews_count=reviews_count,
         readers_count=readers_count,
         hardcover_id=hardcover_id,
         already_in_library=library_match is not None,
@@ -1169,9 +1386,11 @@ def build_shelfmark_result_view(
         series_position=series_position,
         series_count=series_count,
         series_display=_format_series_display(series_name, series_position),
+        series_url=_resolve_series_url(book),
+        series_entries=series_entries,
         facts=_build_result_facts(book, publish_year=publish_year),
         detail_stats=_build_detail_stats(book, publish_year=publish_year),
-        genres=_normalize_tag_list(book.get("genres"), limit=5),
+        genres=_resolve_genres(book),
         moods=_resolve_moods(book),
         content_warnings=_resolve_content_warnings(book),
         series_context=series_context,
@@ -1187,6 +1406,7 @@ def summarize_shelfmark_results(
     results: Sequence[ShelfmarkResultView],
     *,
     total_available: int | None = None,
+    raw_total_available: int | None = None,
     has_more: bool = False,
 ) -> ShelfmarkResultSummary:
     total_results = len(results)
@@ -1198,6 +1418,7 @@ def summarize_shelfmark_results(
     return ShelfmarkResultSummary(
         total_results=total_results,
         total_available=max(total_results, int(total_available or 0)),
+        raw_total_available=max(int(raw_total_available or 0), int(total_available or 0), total_results),
         has_more=bool(has_more),
         already_in_library=already_in_library,
         external_candidates=external_candidates,
@@ -1265,6 +1486,7 @@ def _needs_detail_enrichment(book: Mapping[str, Any]) -> bool:
         or _resolve_rating_value(book) is None
         or _resolve_ratings_count(book) is None
         or _resolve_readers_count(book) is None
+        or _resolve_pages(book) is None
         or incomplete_series_metadata
     )
 
@@ -1298,18 +1520,56 @@ def _merge_book_details(
         "search_author",
         "description",
         "publish_year",
+        "release_year",
+        "release_date",
         "source_url",
+        "slug",
+        "canonical",
+        "canonical_id",
         "display_fields",
         "genres",
         "series_id",
+        "series_url",
+        "series_slug",
         "series_name",
         "series_position",
         "series_count",
+        "featured_book_series",
+        "featured_book_series_id",
+        "book_series",
         "rating",
         "ratings_count",
+        "reviews_count",
         "users_count",
+        "users_read_count",
         "pages",
         "editions_count",
+        "editions",
+        "editions_aggregate",
+        "lists_count",
+        "moods",
+        "content_warnings",
+        "warnings",
+        "taggings",
+        "cached_tags",
+        "cached_featured_series",
+        "default_audio_edition",
+        "default_audio_edition_id",
+        "default_cover_edition",
+        "default_cover_edition_id",
+        "default_ebook_edition",
+        "default_ebook_edition_id",
+        "default_physical_edition",
+        "default_physical_edition_id",
+        "edition",
+        "edition_id",
+        "content_type",
+        "format",
+        "edition_format",
+        "media_type",
+        "physical_format",
+        "object_type",
+        "reading_format",
         "provider_display_name",
         "cover_url",
         "preview",
@@ -1353,6 +1613,15 @@ def _prune_shelfmark_detail_cache(now: float | None = None) -> None:
     )
 
 
+def _prune_hardcover_detail_cache(now: float | None = None) -> None:
+    _prune_ttl_cache(
+        _HARDCOVER_DETAIL_CACHE,
+        ttl_seconds=HARDCOVER_DETAIL_CACHE_TTL_SECONDS,
+        max_entries=HARDCOVER_DETAIL_CACHE_MAX_ENTRIES,
+        now=now,
+    )
+
+
 def _get_cached_shelfmark_detail_book(
     base_url: str,
     provider: str,
@@ -1388,6 +1657,39 @@ def _remember_shelfmark_detail_book(
     return dict(cached_payload)
 
 
+def _get_cached_hardcover_detail_book(hardcover_id: str) -> dict[str, Any] | None:
+    now = monotonic()
+    _prune_hardcover_detail_cache(now)
+    cache_key = _normalize_text(hardcover_id) or ""
+    if not cache_key:
+        return None
+    cached_entry = _HARDCOVER_DETAIL_CACHE.get(cache_key)
+    if not cached_entry:
+        return None
+
+    cached_at, cached_payload = cached_entry
+    if now - cached_at >= HARDCOVER_DETAIL_CACHE_TTL_SECONDS:
+        _HARDCOVER_DETAIL_CACHE.pop(cache_key, None)
+        return None
+    _HARDCOVER_DETAIL_CACHE.move_to_end(cache_key)
+    return dict(cached_payload)
+
+
+def _remember_hardcover_detail_book(
+    hardcover_id: str,
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    cache_key = _normalize_text(hardcover_id) or ""
+    cached_payload = dict(payload)
+    if not cache_key:
+        return cached_payload
+    _prune_hardcover_detail_cache()
+    _HARDCOVER_DETAIL_CACHE[cache_key] = (monotonic(), cached_payload)
+    _HARDCOVER_DETAIL_CACHE.move_to_end(cache_key)
+    _prune_hardcover_detail_cache()
+    return dict(cached_payload)
+
+
 def _prune_shelfmark_cover_cache(now: float | None = None) -> None:
     _prune_ttl_cache(
         _SHELFMARK_COVER_CACHE,
@@ -1395,6 +1697,20 @@ def _prune_shelfmark_cover_cache(now: float | None = None) -> None:
         max_entries=SHELFMARK_COVER_CACHE_MAX_ENTRIES,
         now=now,
     )
+
+
+def _prune_shelfmark_scan_cache(now: float | None = None) -> None:
+    current_time = monotonic() if now is None else now
+    expired_keys = [
+        cache_key
+        for cache_key, (cached_at, _, _, _, _) in _SHELFMARK_SCAN_CACHE.items()
+        if current_time - cached_at >= SHELFMARK_SCAN_CACHE_TTL_SECONDS
+    ]
+    for cache_key in expired_keys:
+        _SHELFMARK_SCAN_CACHE.pop(cache_key, None)
+
+    while len(_SHELFMARK_SCAN_CACHE) > SHELFMARK_SCAN_CACHE_MAX_ENTRIES:
+        _SHELFMARK_SCAN_CACHE.popitem(last=False)
 
 
 def _get_cached_shelfmark_cover_url(base_url: str, cover_value: str) -> str | None:
@@ -1420,6 +1736,132 @@ def _remember_shelfmark_cover_url(base_url: str, cover_value: str, resolved_url:
     _SHELFMARK_COVER_CACHE.move_to_end(cache_key)
     _prune_shelfmark_cover_cache()
     return resolved_url
+
+
+def _get_cached_shelfmark_scan(
+    base_url: str,
+    query: str,
+    sort: str,
+    *,
+    page: int,
+    page_size: int,
+) -> ShelfmarkSearchResponse | None:
+    now = monotonic()
+    _prune_shelfmark_scan_cache(now)
+    cache_key = (base_url, query, sort, page, page_size)
+    cached_entry = _SHELFMARK_SCAN_CACHE.get(cache_key)
+    if not cached_entry:
+        return None
+
+    cached_at, cached_books, cached_page, total_found, has_more = cached_entry
+    if now - cached_at >= SHELFMARK_SCAN_CACHE_TTL_SECONDS:
+        _SHELFMARK_SCAN_CACHE.pop(cache_key, None)
+        return None
+
+    _SHELFMARK_SCAN_CACHE.move_to_end(cache_key)
+    return ShelfmarkSearchResponse(
+        books=tuple(dict(book) for book in cached_books),
+        page=cached_page,
+        total_found=total_found,
+        has_more=has_more,
+    )
+
+
+def _remember_shelfmark_scan(
+    base_url: str,
+    query: str,
+    sort: str,
+    *,
+    page: int,
+    page_size: int,
+    response: ShelfmarkSearchResponse,
+) -> ShelfmarkSearchResponse:
+    _prune_shelfmark_scan_cache()
+    cache_key = (base_url, query, sort, page, page_size)
+    cached_books = tuple(dict(book) for book in response.books)
+    _SHELFMARK_SCAN_CACHE[cache_key] = (
+        monotonic(),
+        cached_books,
+        max(DEFAULT_SHELFMARK_PAGE, _normalize_int(response.page) or page),
+        int(response.total_found or len(cached_books)),
+        bool(response.has_more),
+    )
+    _SHELFMARK_SCAN_CACHE.move_to_end(cache_key)
+    _prune_shelfmark_scan_cache()
+    return ShelfmarkSearchResponse(
+        books=tuple(dict(book) for book in cached_books),
+        page=max(DEFAULT_SHELFMARK_PAGE, _normalize_int(response.page) or page),
+        total_found=int(response.total_found or len(cached_books)),
+        has_more=bool(response.has_more),
+    )
+
+
+def _fetch_shelfmark_search_page(
+    client: "ShelfmarkClient",
+    query: str,
+    *,
+    page: int,
+    page_size: int,
+    sort: str,
+) -> ShelfmarkSearchResponse:
+    cached_page = _get_cached_shelfmark_scan(
+        client.config.base_url,
+        query,
+        sort,
+        page=page,
+        page_size=page_size,
+    )
+    if cached_page is not None:
+        return cached_page
+
+    response = client.search_books(
+        query,
+        limit=page_size,
+        page=page,
+        sort=sort,
+    )
+    return _remember_shelfmark_scan(
+        client.config.base_url,
+        query,
+        sort,
+        page=page,
+        page_size=page_size,
+        response=response,
+    )
+
+
+def _fetch_direct_hardcover_detail_book(hardcover_id: str | None) -> Mapping[str, Any] | None:
+    normalized_id = _normalize_text(hardcover_id)
+    if not normalized_id:
+        return None
+
+    cached_detail = _get_cached_hardcover_detail_book(normalized_id)
+    if cached_detail is not None:
+        return cached_detail
+
+    token = _normalize_text(getattr(config, "config_hardcover_token", None))
+    if not token:
+        return None
+
+    try:
+        from cps.services.hardcover import HardcoverClient, MissingHardcoverToken
+    except Exception as exc:
+        log.debug("Hardcover detail client unavailable for %s: %s", normalized_id, exc)
+        return None
+
+    try:
+        client = HardcoverClient(token.replace("Bearer ", ""), load_privacy=False)
+        detail_book = client.get_book_by_id(int(normalized_id))
+    except MissingHardcoverToken:
+        return None
+    except Exception as exc:
+        log.debug("Hardcover detail lookup skipped for %s: %s", normalized_id, exc)
+        return None
+
+    if not isinstance(detail_book, Mapping):
+        return None
+
+    return _remember_hardcover_detail_book(normalized_id, detail_book)
 
 
 def _get_search_enrichment_detail_book(
@@ -1479,9 +1921,228 @@ def _enrich_books_with_detail_covers(
             continue
 
         detail_book = _get_search_enrichment_detail_book(client, normalized_book, detail_cache)
-        enriched.append(_merge_book_details(normalized_book, detail_book))
+        merged_book = _merge_book_details(normalized_book, detail_book)
+        provider = _normalize_text(merged_book.get("provider")) or SHELFMARK_METADATA_PROVIDER
+        provider_id = _normalize_text(merged_book.get("provider_id")) or ""
+        if provider_id:
+            _remember_shelfmark_detail_book(
+                client.config.base_url,
+                provider,
+                provider_id,
+                merged_book,
+            )
+        enriched.append(merged_book)
 
     return tuple(enriched)
+
+
+def _iter_request_media_signals(book: Mapping[str, Any]) -> tuple[str, ...]:
+    values: list[str] = []
+    for record in (book, _resolve_display_edition(book), _select_edition_by_kind(book, "audio")):
+        if isinstance(record, Mapping):
+            values.extend(_iter_media_signals(record))
+    for label in ("Format", "Edition format", "Media", "Medium"):
+        display_value = _lookup_display_field_value(book, label)
+        if display_value:
+            values.append(display_value.casefold())
+    return tuple(values)
+
+
+def _is_audiobook_result(book: Mapping[str, Any]) -> bool:
+    primary_content_type = _resolve_primary_content_type(book)
+    if primary_content_type == "audio":
+        return True
+    if primary_content_type in {"ebook", "physical"}:
+        return False
+
+    for value in _iter_request_media_signals(book):
+        if value == "audiobook":
+            return True
+        if any(hint in value for hint in SHELFMARK_AUDIOBOOK_HINTS):
+            return True
+    return False
+
+
+def _build_search_result_views(
+    books: Sequence[Mapping[str, Any]],
+    *,
+    detail_url_builder: Callable[[Mapping[str, Any]], str | None],
+    shelfmark_browser_base_url: str,
+    enrich_with_details: bool = False,
+    detail_client: "ShelfmarkClient" | None = None,
+) -> tuple[tuple[ShelfmarkResultView, ...], tuple[Mapping[str, Any], ...]]:
+    page_books = tuple(book for book in books if not _is_audiobook_result(book))
+    if enrich_with_details and detail_client is not None:
+        page_books = _enrich_books_with_detail_covers(detail_client, page_books)
+
+    hardcover_ids = [value for value in (_extract_hardcover_id(book) for book in page_books) if value]
+    library_matches = lookup_visible_library_matches(hardcover_ids)
+    results = tuple(
+        build_shelfmark_result_view(
+            book,
+            library_match=library_matches.get(_extract_hardcover_id(book) or ""),
+            detail_url=detail_url_builder(book),
+            shelfmark_browser_base_url=shelfmark_browser_base_url,
+        )
+        for book in page_books
+    )
+    owned_series = lookup_visible_owned_series(
+        [result.series_name for result in results if result.series_name]
+    )
+    results = tuple(
+        replace(result, series_context=context)
+        for result, context in zip(
+            results,
+            build_shelfmark_series_contexts(results, owned_series),
+        )
+    )
+    results = tuple(
+        replace(result, quality_state=build_shelfmark_quality_state(result))
+        for result in results
+    )
+    results = tuple(
+        replace(
+            result,
+            triage_state=build_shelfmark_triage_state(
+                result,
+                quality_state=result.quality_state,
+            ),
+        )
+        for result in results
+    )
+    return results, page_books
+
+
+def _result_matches_filters(
+    result: ShelfmarkResultView,
+    *,
+    requestable_only: bool = False,
+    has_cover_only: bool = False,
+    high_confidence_only: bool = False,
+    series_filter: str = DEFAULT_SHELFMARK_SERIES_FILTER,
+    triage_filter: str = DEFAULT_SHELFMARK_TRIAGE_FILTER,
+) -> bool:
+    if requestable_only and (
+        result.already_in_library
+        or not result.hardcover_id
+        or not result.request_payload
+    ):
+        return False
+    if has_cover_only and not result.cover_url:
+        return False
+    if high_confidence_only and not (
+        result.quality_state and result.quality_state.high_confidence
+    ):
+        return False
+    if series_filter == "owned" and not (
+        result.series_context and result.series_context.matched
+    ):
+        return False
+    if series_filter == "next_missing" and not (
+        result.series_context and result.series_context.is_next_missing
+    ):
+        return False
+    if triage_filter == "strong" and not (
+        result.triage_state and result.triage_state.strong_candidate
+    ):
+        return False
+    return True
+
+
+def _result_may_match_filters_after_enrichment(
+    result: ShelfmarkResultView,
+    raw_book: Mapping[str, Any],
+    *,
+    requestable_only: bool = False,
+    has_cover_only: bool = False,
+    high_confidence_only: bool = False,
+    series_filter: str = DEFAULT_SHELFMARK_SERIES_FILTER,
+    triage_filter: str = DEFAULT_SHELFMARK_TRIAGE_FILTER,
+) -> bool:
+    detail_possible = _book_has_detail_identity(raw_book) and _needs_detail_enrichment(raw_book)
+    if not detail_possible:
+        return False
+
+    if requestable_only and (
+        not result.already_in_library
+        and (not result.hardcover_id or not result.request_payload)
+    ):
+        return True
+
+    if has_cover_only and not result.cover_url:
+        return True
+
+    if high_confidence_only and not result.already_in_library and not (
+        result.quality_state and result.quality_state.high_confidence
+    ):
+        return True
+
+    if series_filter == "owned" and not (
+        result.series_context and result.series_context.matched
+    ):
+        return True
+
+    if series_filter == "next_missing" and not (
+        result.series_context and result.series_context.is_next_missing
+    ):
+        return True
+
+    if triage_filter == "strong" and not result.already_in_library and not (
+        result.triage_state and result.triage_state.strong_candidate
+    ):
+        return True
+
+    return False
+
+
+def _prepare_progressive_page_results(
+    results: Sequence[ShelfmarkResultView],
+    raw_books: Sequence[Mapping[str, Any]],
+    *,
+    requestable_only: bool = False,
+    has_cover_only: bool = False,
+    high_confidence_only: bool = False,
+    series_filter: str = DEFAULT_SHELFMARK_SERIES_FILTER,
+    triage_filter: str = DEFAULT_SHELFMARK_TRIAGE_FILTER,
+) -> tuple[ShelfmarkResultView, ...]:
+    visible_results: list[ShelfmarkResultView] = []
+
+    for result, raw_book in zip(results, raw_books):
+        matches_filters = _result_matches_filters(
+            result,
+            requestable_only=requestable_only,
+            has_cover_only=has_cover_only,
+            high_confidence_only=high_confidence_only,
+            series_filter=series_filter,
+            triage_filter=triage_filter,
+        )
+        filter_pending = (
+            not matches_filters
+            and _result_may_match_filters_after_enrichment(
+                result,
+                raw_book,
+                requestable_only=requestable_only,
+                has_cover_only=has_cover_only,
+                high_confidence_only=high_confidence_only,
+                series_filter=series_filter,
+                triage_filter=triage_filter,
+            )
+        )
+        if not matches_filters and not filter_pending:
+            continue
+
+        visible_results.append(
+            replace(
+                result,
+                needs_progressive_enrichment=bool(
+                    _book_has_detail_identity(raw_book)
+                    and _needs_detail_enrichment(raw_book)
+                ),
+                progressive_filter_pending=filter_pending,
+            )
+        )
+
+    return _rank_visible_results(visible_results)
 
 
 def _filter_visible_results(
@@ -1493,40 +2154,37 @@ def _filter_visible_results(
     series_filter: str = DEFAULT_SHELFMARK_SERIES_FILTER,
     triage_filter: str = DEFAULT_SHELFMARK_TRIAGE_FILTER,
 ) -> tuple[ShelfmarkResultView, ...]:
-    filtered = tuple(results)
-    if requestable_only:
-        filtered = tuple(
-            result
-            for result in filtered
-            if not result.already_in_library and result.hardcover_id and result.request_payload
+    return tuple(
+        result
+        for result in results
+        if _result_matches_filters(
+            result,
+            requestable_only=requestable_only,
+            has_cover_only=has_cover_only,
+            high_confidence_only=high_confidence_only,
+            series_filter=series_filter,
+            triage_filter=triage_filter,
         )
-    if has_cover_only:
-        filtered = tuple(result for result in filtered if result.cover_url)
-    if high_confidence_only:
-        filtered = tuple(
-            result
-            for result in filtered
-            if result.quality_state and result.quality_state.high_confidence
-        )
-    if series_filter == "owned":
-        filtered = tuple(
-            result
-            for result in filtered
-            if result.series_context and result.series_context.matched
-        )
-    elif series_filter == "next_missing":
-        filtered = tuple(
-            result
-            for result in filtered
-            if result.series_context and result.series_context.is_next_missing
-        )
-    if triage_filter == "strong":
-        filtered = tuple(
-            result
-            for result in filtered
-            if result.triage_state and result.triage_state.strong_candidate
-        )
-    return filtered
+    )
+
+
+def result_matches_shelfmark_filters(
+    result: ShelfmarkResultView,
+    *,
+    requestable_only: bool = False,
+    has_cover_only: bool = False,
+    high_confidence_only: bool = False,
+    series_filter: str = DEFAULT_SHELFMARK_SERIES_FILTER,
+    triage_filter: str = DEFAULT_SHELFMARK_TRIAGE_FILTER,
+) -> bool:
+    return _result_matches_filters(
+        result,
+        requestable_only=requestable_only,
+        has_cover_only=has_cover_only,
+        high_confidence_only=high_confidence_only,
+        series_filter=series_filter,
+        triage_filter=triage_filter,
+    )
 
 
 def search_shelfmark_results(
@@ -1590,6 +2248,7 @@ def search_shelfmark_results(
             next_page=None,
             has_more=False,
             total_available=0,
+            raw_total_available=0,
             page_result_count=0,
             filter_requestable=requestable_only,
             filter_has_cover=has_cover_only,
@@ -1617,70 +2276,54 @@ def search_shelfmark_results(
 
     client = ShelfmarkClient(config_data)
     try:
-        search_response = client.search_books(
+        search_response = _fetch_shelfmark_search_page(
+            client,
             normalized_query,
-            limit=requested_page_size,
             page=requested_page,
+            page_size=requested_page_size,
             sort=selected_sort,
         )
-        books = _enrich_books_with_detail_covers(client, search_response.books)
-        hardcover_ids = [value for value in (_extract_hardcover_id(book) for book in books) if value]
-        library_matches = lookup_visible_library_matches(hardcover_ids)
-        page_results = tuple(
-            build_shelfmark_result_view(
-                book,
-                library_match=library_matches.get(_extract_hardcover_id(book) or ""),
-                detail_url=detail_url_builder(book),
-                shelfmark_browser_base_url=config_data.browser_base_url,
-            )
-            for book in books
+        page_results, raw_page_books = _build_search_result_views(
+            search_response.books,
+            detail_url_builder=detail_url_builder,
+            shelfmark_browser_base_url=config_data.browser_base_url,
         )
-        owned_series = lookup_visible_owned_series(
-            [result.series_name for result in page_results if result.series_name]
-        )
-        page_results = tuple(
-            replace(result, series_context=context)
-            for result, context in zip(
-                page_results,
-                build_shelfmark_series_contexts(page_results, owned_series),
-            )
-        )
-        page_results = tuple(
-            replace(result, quality_state=build_shelfmark_quality_state(result))
-            for result in page_results
-        )
-        page_results = tuple(
-            replace(
-                result,
-                triage_state=build_shelfmark_triage_state(
-                    result,
-                    quality_state=result.quality_state,
-                ),
-            )
-            for result in page_results
-        )
-        ranked_results = _rank_visible_results(page_results)
-        results = _filter_visible_results(
-            ranked_results,
+        results = _prepare_progressive_page_results(
+            page_results,
+            raw_page_books,
             requestable_only=requestable_only,
             has_cover_only=has_cover_only,
             high_confidence_only=high_confidence_only,
             series_filter=selected_series_filter,
             triage_filter=selected_triage_filter,
         )
-        summary = summarize_shelfmark_results(
-            results,
-            total_available=search_response.total_found,
-            has_more=search_response.has_more,
-        )
+        total_available = search_response.total_found
+        raw_total_available = search_response.total_found
         current_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(search_response.page) or requested_page)
         total_pages = (
-            max(1, math.ceil(summary.total_available / requested_page_size))
-            if summary.total_available
+            max(1, math.ceil(total_available / requested_page_size))
+            if total_available
             else 0
         )
-        visible_start = ((current_page - 1) * requested_page_size) + 1 if page_results else 0
-        visible_end = visible_start + len(page_results) - 1 if page_results else 0
+        visible_start = ((current_page - 1) * requested_page_size) + 1 if results else 0
+        visible_end = visible_start + len(results) - 1 if results else 0
+        has_more = bool(
+            search_response.has_more
+            or (
+                total_pages
+                and current_page < total_pages
+            )
+        )
+        summary = summarize_shelfmark_results(
+            results,
+            total_available=total_available,
+            raw_total_available=raw_total_available,
+            has_more=has_more,
+        )
+        progressive_refinement = bool(
+            any(result.needs_progressive_enrichment for result in results)
+            or filters_active
+        )
         return ShelfmarkSearchSection(
             enabled=True,
             available=True,
@@ -1699,10 +2342,11 @@ def search_shelfmark_results(
             visible_end=visible_end,
             has_previous=current_page > DEFAULT_SHELFMARK_PAGE,
             previous_page=current_page - 1 if current_page > DEFAULT_SHELFMARK_PAGE else None,
-            next_page=current_page + 1 if search_response.has_more else None,
-            has_more=search_response.has_more,
+            next_page=current_page + 1 if has_more else None,
+            has_more=has_more,
             total_available=summary.total_available,
-            page_result_count=len(page_results),
+            raw_total_available=summary.raw_total_available,
+            page_result_count=len(results),
             filter_requestable=requestable_only,
             filter_has_cover=has_cover_only,
             filter_high_confidence=high_confidence_only,
@@ -1716,6 +2360,15 @@ def search_shelfmark_results(
             ),
             query_label=query_label,
             context_hint=context_hint,
+            pagination_mode="shelfmark",
+            progressive_refinement=progressive_refinement,
+            progressive_refinement_note=(
+                _(
+                    "Shelfmark totals are shown as-is. Visible rows refine as details load."
+                )
+                if progressive_refinement
+                else None
+            ),
             results=results,
             groups=group_shelfmark_results(results),
             summary=summary,
@@ -1747,6 +2400,12 @@ def fetch_shelfmark_detail(
     client = ShelfmarkClient(config_data)
     book = client.fetch_book(provider, provider_id)
     hardcover_id = _extract_hardcover_id(book)
+    if hardcover_id:
+        book = _merge_book_details(
+            book,
+            _fetch_direct_hardcover_detail_book(hardcover_id),
+        )
+        hardcover_id = _extract_hardcover_id(book)
     library_match = None
     if hardcover_id:
         library_match = lookup_visible_library_matches([hardcover_id]).get(hardcover_id)
@@ -1851,6 +2510,89 @@ class ShelfmarkClient:
             payload,
         )
 
+    def auth_check(self) -> Mapping[str, Any]:
+        response = self._perform_request(
+            "get",
+            _join_base_url(self.config.base_url, "/api/auth/check"),
+            _("Shelfmark auth check failed."),
+        )
+        return self._parse_json_response(
+            response,
+            _("Shelfmark auth check failed."),
+            invalid_payload_message=_("Shelfmark returned an unexpected auth check response."),
+        )
+
+    def request_policy(self) -> Mapping[str, Any]:
+        self._ensure_authenticated()
+        response = self._perform_request(
+            "get",
+            _join_base_url(self.config.base_url, "/api/request-policy"),
+            _("Shelfmark request policy check failed."),
+        )
+        return self._parse_json_response(
+            response,
+            _("Shelfmark request policy check failed."),
+            invalid_payload_message=_("Shelfmark returned an unexpected request policy response."),
+        )
+
+    def release_sources(self) -> tuple[Mapping[str, Any], ...]:
+        self._ensure_authenticated()
+        response = self._perform_request(
+            "get",
+            _join_base_url(self.config.base_url, "/api/release-sources"),
+            _("Shelfmark release source discovery failed."),
+        )
+        payload = self._parse_json_body(
+            response,
+            _("Shelfmark release source discovery failed."),
+            invalid_payload_message=_("Shelfmark returned an unexpected release source response."),
+        )
+        if not response.ok:
+            raw_error = _normalize_text(payload.get("error") or payload.get("message"))
+            raise ShelfmarkIntegrationError(
+                raw_error or _("Shelfmark release source discovery failed.")
+            )
+        sources = payload if isinstance(payload, Sequence) else []
+        return tuple(item for item in sources if isinstance(item, Mapping))
+
+    def probe_release_lookup(
+        self,
+        source: str,
+        *,
+        content_type: str,
+        title: str = "Settings Diagnostic",
+        author: str = "Calibre-Web Automated",
+        manual_query: str = "settings diagnostic",
+    ) -> tuple[bool, Mapping[str, Any]]:
+        self._ensure_authenticated()
+        response = self._perform_request(
+            "get",
+            _join_base_url(self.config.base_url, "/api/releases"),
+            _("Shelfmark release lookup check failed."),
+            params={
+                "provider": "manual",
+                "book_id": "cwa-settings-diagnostic",
+                "source": source,
+                "title": title,
+                "author": author,
+                "manual_query": manual_query,
+                "content_type": content_type,
+            },
+        )
+        payload = self._parse_json_body(
+            response,
+            _("Shelfmark release lookup check failed."),
+            invalid_payload_message=_("Shelfmark returned an unexpected release lookup response."),
+        )
+        if not isinstance(payload, Mapping):
+            raise ShelfmarkIntegrationError(
+                _("Shelfmark returned an unexpected release lookup response.")
+            )
+        return bool(response.ok), payload
+
+    def authenticate_search_account(self) -> None:
+        self._ensure_authenticated()
+
     def _ensure_authenticated(self) -> None:
         if self._authenticated:
             return
@@ -1952,12 +2694,592 @@ class ShelfmarkClient:
                 message = normalized
         raise ShelfmarkIntegrationError(message)
 
+    @staticmethod
+    def _parse_json_body(
+        response: Any,
+        default_message: str,
+        *,
+        invalid_payload_message: str | None = None,
+    ) -> Any:
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ShelfmarkIntegrationError(invalid_payload_message or default_message) from exc
+        if payload is None:
+            raise ShelfmarkIntegrationError(invalid_payload_message or default_message)
+        return payload
+
+
+def _build_diagnostic_check(
+    key: str,
+    label: str,
+    status: str,
+    summary: str,
+    detail: str | None = None,
+) -> ShelfmarkDiagnosticCheck:
+    return ShelfmarkDiagnosticCheck(
+        key=key,
+        label=label,
+        status=status,
+        summary=summary,
+        detail=detail,
+    )
+
+
+def _preferred_provider_option_label(
+    *,
+    display_name: str,
+    kind: str,
+) -> str:
+    if kind == "indexer":
+        return _("%(name)s (indexer)", name=display_name)
+    return _("%(name)s (source)", name=display_name)
+
+
+def _build_preferred_provider_option(
+    value: str,
+    *,
+    display_name: str | None = None,
+    kind: str,
+) -> ShelfmarkPreferredProviderOption | None:
+    normalized_value = _normalize_text(value)
+    if not normalized_value:
+        return None
+    label_text = _normalize_text(display_name) or normalized_value.replace("_", " ").title()
+    return ShelfmarkPreferredProviderOption(
+        value=normalized_value,
+        label=_preferred_provider_option_label(display_name=label_text, kind=kind),
+        kind=kind,
+    )
+
+
+def _source_mode_map(policy_payload: Mapping[str, Any] | None) -> dict[str, Mapping[str, Any]]:
+    if not isinstance(policy_payload, Mapping):
+        return {}
+    source_modes = policy_payload.get("source_modes")
+    if not isinstance(source_modes, Sequence) or isinstance(source_modes, (str, bytes)):
+        return {}
+
+    mapped: dict[str, Mapping[str, Any]] = {}
+    for entry in source_modes:
+        if not isinstance(entry, Mapping):
+            continue
+        source_name = _normalize_text(entry.get("source"))
+        if source_name:
+            mapped[source_name] = entry
+    return mapped
+
+
+def _release_source_map(
+    release_sources_payload: Sequence[Mapping[str, Any]] | None,
+) -> dict[str, Mapping[str, Any]]:
+    mapped: dict[str, Mapping[str, Any]] = {}
+    for entry in release_sources_payload or ():
+        if not isinstance(entry, Mapping):
+            continue
+        source_name = _normalize_text(entry.get("name"))
+        if source_name:
+            mapped[source_name] = entry
+    return mapped
+
+
+def _supports_content_type(entry: Mapping[str, Any], content_type: str) -> bool:
+    supported = entry.get("supported_content_types")
+    if not isinstance(supported, Sequence) or isinstance(supported, (str, bytes)):
+        return True
+    normalized_supported = {
+        (_normalize_text(item) or "").lower()
+        for item in supported
+        if _normalize_text(item)
+    }
+    return not normalized_supported or content_type in normalized_supported
+
+
+def _build_discovered_source_options(
+    *,
+    content_type: str,
+    release_sources_payload: Sequence[Mapping[str, Any]] | None,
+    policy_payload: Mapping[str, Any] | None,
+) -> tuple[ShelfmarkPreferredProviderOption, ...]:
+    source_map = _release_source_map(release_sources_payload)
+    mode_map = _source_mode_map(policy_payload)
+
+    candidates: list[ShelfmarkPreferredProviderOption] = []
+    seen_values: set[str] = set()
+
+    candidate_names = set(source_map.keys()) | set(mode_map.keys())
+    for source_name in sorted(candidate_names):
+        release_source_entry = source_map.get(source_name)
+        policy_entry = mode_map.get(source_name)
+        if release_source_entry is not None and not bool(release_source_entry.get("enabled", True)):
+            continue
+        if release_source_entry is not None and not _supports_content_type(release_source_entry, content_type):
+            continue
+        if policy_entry is not None and not _supports_content_type(policy_entry, content_type):
+            continue
+        if policy_entry is not None:
+            modes = policy_entry.get("modes")
+            mode_value = None
+            if isinstance(modes, Mapping):
+                mode_value = _normalize_text(modes.get(content_type))
+            if mode_value and mode_value.lower() == "blocked":
+                continue
+
+        option = _build_preferred_provider_option(
+            source_name,
+            display_name=(
+                _normalize_text(release_source_entry.get("display_name"))
+                if isinstance(release_source_entry, Mapping)
+                else None
+            ),
+            kind="source",
+        )
+        if option is None or option.value in seen_values:
+            continue
+        seen_values.add(option.value)
+        candidates.append(option)
+
+    return tuple(candidates)
+
+
+def _extract_release_lookup_indexers(
+    release_lookup_payload: Mapping[str, Any] | None,
+) -> tuple[ShelfmarkPreferredProviderOption, ...]:
+    if not isinstance(release_lookup_payload, Mapping):
+        return tuple()
+
+    values: list[str] = []
+    column_config = release_lookup_payload.get("column_config")
+    if isinstance(column_config, Mapping):
+        available_indexers = column_config.get("available_indexers")
+        if isinstance(available_indexers, Sequence) and not isinstance(available_indexers, (str, bytes)):
+            values.extend(
+                normalized
+                for normalized in (_normalize_text(item) for item in available_indexers)
+                if normalized
+            )
+
+    if not values:
+        releases = release_lookup_payload.get("releases")
+        if isinstance(releases, Sequence) and not isinstance(releases, (str, bytes)):
+            for release in releases:
+                if not isinstance(release, Mapping):
+                    continue
+                normalized_indexer = _normalize_text(release.get("indexer"))
+                if normalized_indexer:
+                    values.append(normalized_indexer)
+
+    options: list[ShelfmarkPreferredProviderOption] = []
+    seen_values: set[str] = set()
+    for value in sorted(set(values), key=lambda item: item.casefold()):
+        option = _build_preferred_provider_option(value, display_name=value, kind="indexer")
+        if option is None or option.value in seen_values:
+            continue
+        seen_values.add(option.value)
+        options.append(option)
+    return tuple(options)
+
+
+def _pick_release_probe_source(
+    *,
+    preferred_value: str,
+    content_type: str,
+    release_sources_payload: Sequence[Mapping[str, Any]] | None,
+    policy_payload: Mapping[str, Any] | None,
+) -> str | None:
+    source_options = _build_discovered_source_options(
+        content_type=content_type,
+        release_sources_payload=release_sources_payload,
+        policy_payload=policy_payload,
+    )
+    available_values = [option.value for option in source_options]
+    if preferred_value and preferred_value in available_values:
+        return preferred_value
+    if "prowlarr" in available_values:
+        return "prowlarr"
+    return available_values[0] if available_values else None
+
+
+def _diagnostics_success(checks: Sequence[ShelfmarkDiagnosticCheck]) -> bool:
+    return not any(check.status == "error" for check in checks)
+
+
+def run_shelfmark_settings_diagnostics(
+    values: Mapping[str, Any] | None = None,
+    *,
+    client_factory: Callable[[ShelfmarkClientConfig], ShelfmarkClient] | None = None,
+) -> ShelfmarkSettingsDiagnostics:
+    config_data = get_shelfmark_client_config(values)
+    preferred_settings = get_shelfmark_preferred_release_settings(values)
+
+    if not config_data.base_url:
+        checks = (
+            _build_diagnostic_check(
+                "base_url",
+                _("Shelfmark base URL"),
+                "error",
+                _("Enter a Shelfmark Base URL before running the test."),
+            ),
+            _build_diagnostic_check(
+                "auth",
+                _("Auth/session"),
+                "warning",
+                _("No auth check was attempted because the Shelfmark Base URL is missing."),
+            ),
+            _build_diagnostic_check(
+                "request_policy",
+                _("Request policy"),
+                "warning",
+                _("No request policy check was attempted because the Shelfmark Base URL is missing."),
+            ),
+            _build_diagnostic_check(
+                "release_lookup",
+                _("Release lookup"),
+                "warning",
+                _("No release lookup was attempted because the Shelfmark Base URL is missing."),
+            ),
+            _build_diagnostic_check(
+                "provider_options",
+                _("Preferred provider/indexer options"),
+                "warning",
+                _("No provider or indexer options could be loaded yet."),
+            ),
+        )
+        return ShelfmarkSettingsDiagnostics(
+            success=False,
+            checks=checks,
+            provider_options=tuple(),
+            provider_options_message=_(
+                "Provider/source options are loaded from Shelfmark only when the connection test succeeds."
+            ),
+            selected_probe_source=None,
+        )
+
+    try:
+        _base_url_host_port(config_data.base_url)
+    except ShelfmarkIntegrationError as exc:
+        checks = (
+            _build_diagnostic_check(
+                "base_url",
+                _("Shelfmark base URL"),
+                "error",
+                str(exc),
+            ),
+        )
+        return ShelfmarkSettingsDiagnostics(
+            success=False,
+            checks=checks,
+            provider_options=tuple(),
+            provider_options_message=_(
+                "Fix the Shelfmark Base URL first, then rerun the test to load options."
+            ),
+            selected_probe_source=None,
+        )
+
+    client = (client_factory or ShelfmarkClient)(config_data)
+    checks: list[ShelfmarkDiagnosticCheck] = []
+    provider_options: list[ShelfmarkPreferredProviderOption] = []
+    release_sources_payload: tuple[Mapping[str, Any], ...] = tuple()
+    request_policy_payload: Mapping[str, Any] | None = None
+    release_lookup_payload: Mapping[str, Any] | None = None
+    probe_source: str | None = None
+    auth_ready = False
+
+    try:
+        auth_payload = client.auth_check()
+        checks.append(
+            _build_diagnostic_check(
+                "base_url",
+                _("Shelfmark base URL"),
+                "ok",
+                _("Shelfmark is reachable at %(url)s.", url=config_data.base_url),
+            )
+        )
+    except ShelfmarkIntegrationError as exc:
+        checks.extend(
+            (
+                _build_diagnostic_check(
+                    "base_url",
+                    _("Shelfmark base URL"),
+                    "error",
+                    str(exc),
+                ),
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "warning",
+                    _("The auth check could not run because Shelfmark was not reachable."),
+                ),
+                _build_diagnostic_check(
+                    "request_policy",
+                    _("Request policy"),
+                    "warning",
+                    _("The request policy check was skipped because Shelfmark was not reachable."),
+                ),
+                _build_diagnostic_check(
+                    "release_lookup",
+                    _("Release lookup"),
+                    "warning",
+                    _("The release lookup check was skipped because Shelfmark was not reachable."),
+                ),
+                _build_diagnostic_check(
+                    "provider_options",
+                    _("Preferred provider/indexer options"),
+                    "warning",
+                    _("No provider or indexer options could be loaded because Shelfmark was not reachable."),
+                ),
+            )
+        )
+        return ShelfmarkSettingsDiagnostics(
+            success=False,
+            checks=tuple(checks),
+            provider_options=tuple(),
+            provider_options_message=_(
+                "Provider/source options load only after the connection test can reach Shelfmark."
+            ),
+            selected_probe_source=None,
+        )
+
+    if config_data.username and config_data.password:
+        try:
+            client.authenticate_search_account()
+            auth_payload = client.auth_check()
+        except ShelfmarkIntegrationError as exc:
+            checks.append(
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "error",
+                    str(exc),
+                )
+            )
+        else:
+            authenticated = bool(auth_payload.get("authenticated"))
+            checks.append(
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "ok" if authenticated else "warning",
+                    _(
+                        "Search-account login succeeded and Shelfmark reports an authenticated session."
+                    )
+                    if authenticated
+                    else _(
+                        "Search-account login ran, but Shelfmark did not report an authenticated session."
+                    ),
+                )
+            )
+            auth_ready = authenticated
+    else:
+        authenticated = bool(isinstance(auth_payload, Mapping) and auth_payload.get("authenticated"))
+        auth_required = True if not isinstance(auth_payload, Mapping) else bool(
+            auth_payload.get("auth_required", True)
+        )
+        if authenticated or not auth_required:
+            checks.append(
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "ok",
+                    _("Shelfmark auth check works without needing a separate configured search login."),
+                )
+            )
+            auth_ready = True
+        else:
+            checks.append(
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "warning",
+                    _(
+                        "Shelfmark is reachable, but no authenticated server-side session is available yet. Configure a Shelfmark search account here if request policy or release discovery needs login."
+                    ),
+                )
+            )
+
+    if auth_ready:
+        try:
+            request_policy_payload = client.request_policy()
+        except ShelfmarkIntegrationError as exc:
+            checks.append(
+                _build_diagnostic_check(
+                    "request_policy",
+                    _("Request policy"),
+                    "error",
+                    str(exc),
+                )
+            )
+        else:
+            source_mode_count = len(_source_mode_map(request_policy_payload))
+            requests_enabled = bool(request_policy_payload.get("requests_enabled"))
+            checks.append(
+                _build_diagnostic_check(
+                    "request_policy",
+                    _("Request policy"),
+                    "ok" if requests_enabled else "warning",
+                    _(
+                        "Request policy loaded for %(count)s release sources.",
+                        count=source_mode_count,
+                    )
+                    if requests_enabled
+                    else _(
+                        "Request policy loaded, but Shelfmark currently reports that requests are disabled."
+                    ),
+                )
+            )
+
+        try:
+            release_sources_payload = client.release_sources()
+        except ShelfmarkIntegrationError:
+            release_sources_payload = tuple()
+
+        provider_options.extend(
+            _build_discovered_source_options(
+                content_type=preferred_settings.content_type,
+                release_sources_payload=release_sources_payload,
+                policy_payload=request_policy_payload,
+            )
+        )
+
+        probe_source = _pick_release_probe_source(
+            preferred_value=preferred_settings.provider,
+            content_type=preferred_settings.content_type,
+            release_sources_payload=release_sources_payload,
+            policy_payload=request_policy_payload,
+        )
+        if probe_source:
+            try:
+                release_lookup_ok, release_lookup_payload = client.probe_release_lookup(
+                    probe_source,
+                    content_type=preferred_settings.content_type,
+                )
+            except ShelfmarkIntegrationError as exc:
+                checks.append(
+                    _build_diagnostic_check(
+                        "release_lookup",
+                        _("Release lookup"),
+                        "error",
+                        str(exc),
+                    )
+                )
+            else:
+                checks.append(
+                    _build_diagnostic_check(
+                        "release_lookup",
+                        _("Release lookup"),
+                        "ok" if release_lookup_ok else "warning",
+                        _(
+                            "Release lookup responded for %(source)s.",
+                            source=probe_source.replace("_", " ").title(),
+                        )
+                        if release_lookup_ok
+                        else _(
+                            "Release lookup returned an error response for %(source)s.",
+                            source=probe_source.replace("_", " ").title(),
+                        ),
+                        detail=_normalize_text(
+                            release_lookup_payload.get("error")
+                            or release_lookup_payload.get("message")
+                        ),
+                    )
+                )
+                provider_options.extend(_extract_release_lookup_indexers(release_lookup_payload))
+        else:
+            checks.append(
+                _build_diagnostic_check(
+                    "release_lookup",
+                    _("Release lookup"),
+                    "warning",
+                    _(
+                        "No compatible release source was available to probe for %(content_type)s.",
+                        content_type=preferred_settings.content_type,
+                    ),
+                )
+            )
+    else:
+        checks.extend(
+            (
+                _build_diagnostic_check(
+                    "request_policy",
+                    _("Request policy"),
+                    "warning",
+                    _("Request policy was not tested because no authenticated server-side Shelfmark session was available."),
+                ),
+                _build_diagnostic_check(
+                    "release_lookup",
+                    _("Release lookup"),
+                    "warning",
+                    _("Release lookup was not tested because no authenticated server-side Shelfmark session was available."),
+                ),
+            )
+        )
+
+    deduped_provider_options: list[ShelfmarkPreferredProviderOption] = []
+    seen_provider_values: set[str] = set()
+    for option in provider_options:
+        if option.value in seen_provider_values:
+            continue
+        seen_provider_values.add(option.value)
+        deduped_provider_options.append(option)
+
+    if deduped_provider_options:
+        indexer_count = sum(1 for option in deduped_provider_options if option.kind == "indexer")
+        source_count = sum(1 for option in deduped_provider_options if option.kind == "source")
+        provider_status = "ok" if indexer_count > 0 else "warning"
+        provider_summary = (
+            _("Loaded %(sources)s sources and %(indexers)s indexers.", sources=source_count, indexers=indexer_count)
+            if indexer_count > 0
+            else _("Loaded %(sources)s Shelfmark sources. No indexer names were exposed by the tested release source.", sources=source_count)
+        )
+        provider_message = (
+            _("Provider/source options now include Shelfmark sources and discovered indexers.")
+            if indexer_count > 0
+            else _(
+                "Shelfmark exposed source choices, but not a global indexer list. Custom indexer fallback remains available."
+            )
+        )
+        checks.append(
+            _build_diagnostic_check(
+                "provider_options",
+                _("Preferred provider/indexer options"),
+                provider_status,
+                provider_summary,
+            )
+        )
+    else:
+        provider_message = _(
+            "Shelfmark did not expose any provider or indexer options from this test run, so custom fallback remains available."
+        )
+        checks.append(
+            _build_diagnostic_check(
+                "provider_options",
+                _("Preferred provider/indexer options"),
+                "warning",
+                _("No provider or indexer options were discovered from this test run."),
+            )
+        )
+
+    return ShelfmarkSettingsDiagnostics(
+        success=_diagnostics_success(checks),
+        checks=tuple(checks),
+        provider_options=tuple(deduped_provider_options),
+        provider_options_message=provider_message,
+        selected_probe_source=probe_source,
+    )
+
 
 def _normalize_text(value: Any) -> str | None:
     if value is None:
         return None
     text_value = str(value).strip()
     return text_value or None
+
+
+def _normalize_preferred_release_content_type(value: Any) -> str:
+    normalized = (_normalize_text(value) or "").lower()
+    if normalized == "audiobook":
+        return "audiobook"
+    return DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE
 
 
 def _normalize_int(value: Any) -> int | None:
@@ -1992,8 +3314,23 @@ def _normalize_authors(value: Any) -> list[str]:
     return authors
 
 
+def _iter_mapping_items(value: Any) -> tuple[Mapping[str, Any], ...]:
+    if isinstance(value, Mapping):
+        return (value,)
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return tuple()
+    return tuple(item for item in value if isinstance(item, Mapping))
+
+
 def _resolve_shelfmark_title(book: Mapping[str, Any]) -> str | None:
-    return _normalize_text(book.get("title")) or _normalize_text(book.get("search_title"))
+    direct_title = _normalize_text(book.get("title")) or _normalize_text(book.get("search_title"))
+    if direct_title:
+        return direct_title
+
+    canonical = book.get("canonical")
+    if isinstance(canonical, Mapping):
+        return _normalize_text(canonical.get("title"))
+    return None
 
 
 def _resolve_shelfmark_authors(book: Mapping[str, Any]) -> list[str]:
@@ -2009,11 +3346,403 @@ def _resolve_shelfmark_authors(book: Mapping[str, Any]) -> list[str]:
     return []
 
 
+def _normalize_cover_candidate(value: Any) -> str | None:
+    if isinstance(value, Mapping):
+        for key in ("url", "href", "src"):
+            normalized = _normalize_text(value.get(key))
+            if normalized:
+                return normalized
+        return None
+    return _normalize_text(value)
+
+
+def _normalize_year_from_value(value: Any) -> int | None:
+    direct_year = _normalize_int(value)
+    if direct_year is not None:
+        return direct_year
+
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+
+    match = re.search(r"\b(1[89]\d{2}|20\d{2}|21\d{2})\b", normalized)
+    if not match:
+        return None
+    return _normalize_int(match.group(1))
+
+
+def _normalize_tag_category(value: Any) -> str | None:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+    normalized = normalized.casefold().replace("_", " ").replace("-", " ")
+    return re.sub(r"\s+", " ", normalized).strip() or None
+
+
+def _tag_category_matches(category: Any, allowed_labels: Sequence[str]) -> bool:
+    normalized_category = _normalize_tag_category(category)
+    if not normalized_category:
+        return False
+    allowed = {_normalize_tag_category(label) for label in allowed_labels}
+    return normalized_category in allowed
+
+
+def _extract_schema_tag_label(tagging: Mapping[str, Any]) -> str | None:
+    tag = tagging.get("tag")
+    if isinstance(tag, Mapping):
+        return (
+            _normalize_text(tag.get("tag"))
+            or _normalize_text(tag.get("name"))
+            or _normalize_text(tag.get("title"))
+            or _normalize_text(tag.get("label"))
+        )
+    return None
+
+
+def _resolve_schema_tag_values(
+    book: Mapping[str, Any],
+    *,
+    categories: Sequence[str],
+    limit: int,
+    prefer_non_spoilers: bool = False,
+) -> tuple[str, ...]:
+    matches: list[tuple[int, int, str]] = []
+    seen: set[str] = set()
+
+    for index, tagging in enumerate(_iter_mapping_items(book.get("taggings"))):
+        tag = tagging.get("tag")
+        if not isinstance(tag, Mapping):
+            continue
+
+        tag_category = tag.get("tag_category")
+        category_value = None
+        if isinstance(tag_category, Mapping):
+            category_value = tag_category.get("category") or tag_category.get("slug")
+        if not _tag_category_matches(category_value, categories):
+            continue
+
+        label = _extract_schema_tag_label(tagging)
+        if not label:
+            continue
+
+        label_key = label.casefold()
+        if label_key in seen:
+            continue
+        seen.add(label_key)
+
+        spoiler_rank = 1 if bool(tagging.get("spoiler")) else 0
+        if not prefer_non_spoilers:
+            spoiler_rank = 0
+        matches.append((spoiler_rank, index, label))
+
+    if prefer_non_spoilers:
+        matches.sort(key=lambda item: (item[0], item[1]))
+
+    return tuple(label for _, _, label in matches[:limit])
+
+
+def _resolve_hardcover_slug(book: Mapping[str, Any]) -> str | None:
+    slug = _normalize_text(book.get("slug"))
+    if slug:
+        return slug
+
+    canonical = book.get("canonical")
+    if isinstance(canonical, Mapping):
+        return _normalize_text(canonical.get("slug"))
+    return None
+
+
+def _resolve_source_url(book: Mapping[str, Any]) -> str | None:
+    explicit_source_url = _normalize_text(book.get("source_url"))
+    if explicit_source_url:
+        return explicit_source_url
+
+    if (_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER) != SHELFMARK_METADATA_PROVIDER:
+        return None
+
+    slug = _resolve_hardcover_slug(book)
+    if not slug:
+        return None
+    return f"https://hardcover.app/books/{slug}"
+
+
+def _edition_identity(edition: Mapping[str, Any]) -> tuple[str | None, ...]:
+    return (
+        _normalize_text(edition.get("id")),
+        _normalize_text(edition.get("title")),
+        _normalize_text(edition.get("isbn_13")),
+        _normalize_text(edition.get("isbn_10")),
+    )
+
+
+def _iter_schema_editions(book: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    editions: list[Mapping[str, Any]] = []
+    seen: set[tuple[str | None, ...]] = set()
+
+    def add_candidate(candidate: Any) -> None:
+        if not isinstance(candidate, Mapping):
+            return
+        edition_key = _edition_identity(candidate)
+        if edition_key in seen:
+            return
+        seen.add(edition_key)
+        editions.append(candidate)
+
+    for key in (
+        "default_ebook_edition",
+        "edition",
+        "default_physical_edition",
+        "default_audio_edition",
+        "default_cover_edition",
+    ):
+        add_candidate(book.get(key))
+
+    for candidate in _iter_mapping_items(book.get("editions")):
+        add_candidate(candidate)
+
+    return tuple(editions)
+
+
+def _iter_media_signals(record: Mapping[str, Any]) -> tuple[str, ...]:
+    values: list[str] = []
+    for key in (
+        "content_type",
+        "format",
+        "edition_format",
+        "media_type",
+        "physical_format",
+        "object_type",
+    ):
+        normalized = _normalize_text(record.get(key))
+        if normalized:
+            values.append(normalized.casefold())
+
+    reading_format = record.get("reading_format")
+    if isinstance(reading_format, Mapping):
+        normalized = _normalize_text(reading_format.get("format"))
+        if normalized:
+            values.append(normalized.casefold())
+
+    return tuple(values)
+
+
+def _classify_schema_content_type(record: Mapping[str, Any]) -> str | None:
+    media_signals = _iter_media_signals(record)
+    if not media_signals:
+        return None
+
+    has_ebook_signal = any(
+        any(hint in signal for hint in SHELFMARK_EBOOK_HINTS)
+        for signal in media_signals
+    )
+    has_physical_signal = any(
+        any(hint in signal for hint in SHELFMARK_PHYSICAL_HINTS)
+        for signal in media_signals
+    )
+    has_audio_signal = any(
+        signal == "audiobook"
+        or any(hint in signal for hint in SHELFMARK_AUDIOBOOK_HINTS)
+        for signal in media_signals
+    )
+
+    if has_ebook_signal:
+        return "ebook"
+    if has_physical_signal:
+        return "physical"
+    if has_audio_signal:
+        return "audio"
+    return None
+
+
+def _select_edition_by_kind(book: Mapping[str, Any], kind: str) -> Mapping[str, Any] | None:
+    default_key_by_kind = {
+        "ebook": "default_ebook_edition",
+        "physical": "default_physical_edition",
+        "audio": "default_audio_edition",
+    }
+    default_candidate = book.get(default_key_by_kind[kind])
+    if isinstance(default_candidate, Mapping):
+        return default_candidate
+
+    inline_edition = book.get("edition")
+    if isinstance(inline_edition, Mapping):
+        inline_kind = _classify_schema_content_type(inline_edition)
+        if inline_kind == kind or (kind == "ebook" and inline_kind is None):
+            return inline_edition
+
+    for candidate in _iter_mapping_items(book.get("editions")):
+        if _classify_schema_content_type(candidate) == kind:
+            return candidate
+
+    return None
+
+
+def _resolve_display_edition(book: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    for kind in ("ebook", "physical", "audio"):
+        candidate = _select_edition_by_kind(book, kind)
+        if candidate is not None:
+            return candidate
+
+    default_cover_edition = book.get("default_cover_edition")
+    if isinstance(default_cover_edition, Mapping):
+        return default_cover_edition
+
+    all_editions = _iter_schema_editions(book)
+    return all_editions[0] if all_editions else None
+
+
+def _resolve_primary_content_type(book: Mapping[str, Any]) -> str | None:
+    explicit_type = _classify_schema_content_type(book)
+    if _select_edition_by_kind(book, "ebook") is not None:
+        return "ebook"
+    if explicit_type == "ebook":
+        return "ebook"
+
+    if _select_edition_by_kind(book, "physical") is not None:
+        return "physical"
+    if explicit_type == "physical":
+        return "physical"
+
+    if _select_edition_by_kind(book, "audio") is not None:
+        return "audio"
+    if explicit_type == "audio":
+        return "audio"
+
+    return None
+
+
+def _resolve_featured_series_row(book: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    featured = book.get("featured_book_series")
+    if isinstance(featured, Mapping):
+        return featured
+
+    for row in _iter_mapping_items(book.get("book_series")):
+        if bool(row.get("featured")) and isinstance(row.get("series"), Mapping):
+            return row
+
+    for row in _iter_mapping_items(book.get("book_series")):
+        if isinstance(row.get("series"), Mapping):
+            return row
+
+    return None
+
+
+def _resolve_featured_series(book: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    row = _resolve_featured_series_row(book)
+    if not row:
+        return None
+    series = row.get("series")
+    return series if isinstance(series, Mapping) else None
+
+
+def _build_series_entry(
+    *,
+    name: str | None,
+    position: float | None,
+    slug: str | None,
+    allow_generated_url: bool = True,
+    featured: bool = False,
+) -> dict[str, Any] | None:
+    normalized_name = _normalize_text(name)
+    if not normalized_name:
+        return None
+    normalized_slug = _normalize_text(slug)
+    fallback_slug = _slugify_hardcover_path_segment(normalized_name) if allow_generated_url else None
+    display = _format_series_display(normalized_name, position) or normalized_name
+    return {
+        "name": normalized_name,
+        "position": position,
+        "featured": bool(featured),
+        "display": display,
+        "url": (
+            f"https://hardcover.app/series/{normalized_slug}"
+            if allow_generated_url and normalized_slug
+            else f"https://hardcover.app/series/{fallback_slug}"
+            if fallback_slug
+            else None
+        ),
+    }
+
+
+def _resolve_series_entries(book: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    entries: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    allow_generated_url = (
+        (_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER)
+        == SHELFMARK_METADATA_PROVIDER
+    )
+
+    def append_entry(series_row: Mapping[str, Any] | None, *, force_featured: bool = False) -> None:
+        if not isinstance(series_row, Mapping):
+            return
+        series = series_row.get("series")
+        series_data = series if isinstance(series, Mapping) else {}
+        name = _normalize_text(series_data.get("name")) or _normalize_text(series_row.get("series_name"))
+        position = _normalize_series_position(series_row.get("position"))
+        slug = _normalize_text(series_data.get("slug")) or _normalize_text(series_row.get("series_slug"))
+        featured = force_featured or bool(series_row.get("featured"))
+        entry = _build_series_entry(
+            name=name,
+            position=position,
+            slug=slug,
+            allow_generated_url=allow_generated_url,
+            featured=featured,
+        )
+        if not entry:
+            return
+        key = (
+            _normalize_series_name_key(entry.get("name")) or "",
+            _format_series_position(entry.get("position")) or "",
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        entries.append(entry)
+
+    append_entry(_resolve_featured_series_row(book), force_featured=True)
+    for row in _iter_mapping_items(book.get("book_series")):
+        append_entry(row)
+
+    if not entries:
+        fallback_entry = _build_series_entry(
+            name=_resolve_series_name(book),
+            position=_resolve_series_position(book),
+            slug=_normalize_text(book.get("series_slug")),
+            allow_generated_url=allow_generated_url,
+        )
+        if fallback_entry:
+            entries.append(fallback_entry)
+
+    entries.sort(
+        key=lambda entry: (
+            0 if entry.get("featured") else 1,
+            entry.get("position") is None,
+            entry.get("position") or 0,
+            entry.get("name") or "",
+        )
+    )
+    return tuple(entries)
+
+
 def _resolve_shelfmark_cover_value(book: Mapping[str, Any]) -> Any:
     for key in ("cover_url", "preview", "cached_image", "image"):
-        value = _normalize_text(book.get(key))
+        value = _normalize_cover_candidate(book.get(key))
         if value:
             return value
+
+    default_cover_edition = book.get("default_cover_edition")
+    if isinstance(default_cover_edition, Mapping):
+        for key in ("cached_image", "image"):
+            value = _normalize_cover_candidate(default_cover_edition.get(key))
+            if value:
+                return value
+
+    display_edition = _resolve_display_edition(book)
+    if isinstance(display_edition, Mapping):
+        for key in ("cached_image", "image"):
+            value = _normalize_cover_candidate(display_edition.get(key))
+            if value:
+                return value
     return None
 
 
@@ -2047,15 +3776,54 @@ def _format_series_position(value: float | None) -> str | None:
 
 
 def _resolve_series_name(book: Mapping[str, Any]) -> str | None:
+    featured_series = _resolve_featured_series(book)
+    if isinstance(featured_series, Mapping):
+        name = _normalize_text(featured_series.get("name"))
+        if name:
+            return name
     return _normalize_text(book.get("series_name"))
 
 
 def _resolve_series_position(book: Mapping[str, Any]) -> float | None:
+    featured_series_row = _resolve_featured_series_row(book)
+    if isinstance(featured_series_row, Mapping):
+        position = _normalize_series_position(featured_series_row.get("position"))
+        if position is not None:
+            return position
     return _normalize_series_position(book.get("series_position"))
 
 
 def _resolve_series_count(book: Mapping[str, Any]) -> int | None:
+    featured_series = _resolve_featured_series(book)
+    if isinstance(featured_series, Mapping):
+        for key in ("primary_books_count", "books_count"):
+            count = _normalize_int(featured_series.get(key))
+            if count is not None:
+                return count
     return _normalize_int(book.get("series_count"))
+
+
+def _resolve_publish_year(book: Mapping[str, Any]) -> int | None:
+    for candidate in (
+        book.get("publish_year"),
+        book.get("release_year"),
+        book.get("release_date"),
+    ):
+        resolved_year = _normalize_year_from_value(candidate)
+        if resolved_year is not None:
+            return resolved_year
+
+    display_edition = _resolve_display_edition(book)
+    if isinstance(display_edition, Mapping):
+        for candidate in (
+            display_edition.get("release_year"),
+            display_edition.get("release_date"),
+        ):
+            resolved_year = _normalize_year_from_value(candidate)
+            if resolved_year is not None:
+                return resolved_year
+
+    return None
 
 
 def _lookup_display_field_value(book: Mapping[str, Any], *labels: str) -> str | None:
@@ -2071,6 +3839,12 @@ def _lookup_display_field_value(book: Mapping[str, Any], *labels: str) -> str | 
 
 
 def _resolve_pages(book: Mapping[str, Any]) -> int | None:
+    display_edition = _resolve_display_edition(book)
+    if isinstance(display_edition, Mapping):
+        edition_pages = _normalize_int(display_edition.get("pages"))
+        if edition_pages is not None:
+            return edition_pages
+
     pages = _normalize_int(book.get("pages"))
     if pages is not None:
         return pages
@@ -2085,6 +3859,14 @@ def _resolve_editions_count(book: Mapping[str, Any]) -> int | None:
     editions_count = _normalize_int(book.get("editions_count"))
     if editions_count is not None:
         return editions_count
+
+    editions_aggregate = book.get("editions_aggregate")
+    if isinstance(editions_aggregate, Mapping):
+        aggregate = editions_aggregate.get("aggregate")
+        if isinstance(aggregate, Mapping):
+            editions_count = _normalize_int(aggregate.get("count"))
+            if editions_count is not None:
+                return editions_count
 
     display_value = _lookup_display_field_value(book, "Editions")
     if not display_value:
@@ -2102,6 +3884,21 @@ def _resolve_lists_count(book: Mapping[str, Any]) -> int | None:
         return list_count
 
     display_value = _lookup_display_field_value(book, "Lists", "List count", "Lists count")
+    if not display_value:
+        return None
+    return _normalize_int(re.sub(r"[^\d]", "", display_value))
+
+
+def _resolve_reviews_count(book: Mapping[str, Any]) -> int | None:
+    reviews_count = _normalize_int(book.get("reviews_count"))
+    if reviews_count is not None:
+        return reviews_count
+
+    review_count = _normalize_int(book.get("review_count"))
+    if review_count is not None:
+        return review_count
+
+    display_value = _lookup_display_field_value(book, "Reviews", "Review count", "Reviews count")
     if not display_value:
         return None
     return _normalize_int(re.sub(r"[^\d]", "", display_value))
@@ -2144,10 +3941,35 @@ def _resolve_readers_count(book: Mapping[str, Any]) -> int | None:
     if readers_count is not None:
         return readers_count
 
+    readers_count = _normalize_int(book.get("users_read_count"))
+    if readers_count is not None:
+        return readers_count
+
     display_value = _lookup_display_field_value(book, "Readers", "Reader count")
     if not display_value:
         return None
     return _normalize_int(re.sub(r"[^\d]", "", display_value))
+
+
+def _resolve_shelfmark_subtitle(book: Mapping[str, Any]) -> str | None:
+    subtitle = _normalize_text(book.get("subtitle"))
+
+    if (_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER) != SHELFMARK_METADATA_PROVIDER:
+        return subtitle
+
+    display_edition = _resolve_display_edition(book)
+    edition_subtitle = None
+    if isinstance(display_edition, Mapping):
+        edition_subtitle = _normalize_text(display_edition.get("subtitle"))
+
+    if subtitle and edition_subtitle:
+        return subtitle if subtitle.casefold() == edition_subtitle.casefold() else None
+    if edition_subtitle and not subtitle:
+        return edition_subtitle
+
+    # Hardcover subtitles are often noisy unless we can confirm them against a
+    # schema-backed edition relationship.
+    return None
 
 
 def _format_series_display(series_name: str | None, series_position: float | None) -> str | None:
@@ -2157,6 +3979,34 @@ def _format_series_display(series_name: str | None, series_position: float | Non
     if position:
         return f"{series_name} ({position})"
     return series_name
+
+
+def _slugify_hardcover_path_segment(value: str | None) -> str | None:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return None
+    normalized = (
+        unicodedata.normalize("NFKD", normalized)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    normalized = normalized.casefold()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return normalized or None
+
+
+def _resolve_series_url(book: Mapping[str, Any]) -> str | None:
+    explicit_url = _normalize_text(book.get("series_url"))
+    if explicit_url:
+        return explicit_url
+
+    if (_normalize_text(book.get("provider")) or SHELFMARK_METADATA_PROVIDER) != SHELFMARK_METADATA_PROVIDER:
+        return None
+
+    primary_entry = next(iter(_resolve_series_entries(book)), None)
+    if isinstance(primary_entry, Mapping):
+        return _normalize_text(primary_entry.get("url"))
+    return None
 
 
 def _normalize_tag_list(value: Any, *, limit: int | None = None) -> tuple[str, ...]:
@@ -2200,6 +4050,33 @@ def _normalize_tag_list(value: Any, *, limit: int | None = None) -> tuple[str, .
         if limit and len(tags) >= limit:
             break
     return tuple(tags)
+
+
+def _resolve_genres(book: Mapping[str, Any]) -> tuple[str, ...]:
+    schema_values = _resolve_schema_tag_values(
+        book,
+        categories=SHELFMARK_GENRE_CATEGORY_HINTS,
+        limit=5,
+    )
+    if schema_values:
+        return schema_values
+
+    direct = _normalize_tag_list(book.get("genres"), limit=5)
+    if direct:
+        return direct
+
+    cached_tags = _normalize_tag_list(book.get("cached_tags"), limit=5)
+    if cached_tags:
+        return cached_tags
+
+    tag_fallback = _normalize_tag_list(book.get("tags"), limit=5)
+    if tag_fallback:
+        return tag_fallback
+
+    return _normalize_compact_values(
+        _lookup_display_field_value(book, "Genres", "Genre", "Tags", "Tag"),
+        limit=5,
+    )
 
 
 def _normalize_compact_values(value: Any, *, limit: int | None = None) -> tuple[str, ...]:
@@ -2250,6 +4127,14 @@ def _normalize_compact_values(value: Any, *, limit: int | None = None) -> tuple[
 
 
 def _resolve_moods(book: Mapping[str, Any]) -> tuple[str, ...]:
+    schema_values = _resolve_schema_tag_values(
+        book,
+        categories=SHELFMARK_MOOD_CATEGORY_HINTS,
+        limit=5,
+    )
+    if schema_values:
+        return schema_values
+
     direct = _normalize_compact_values(book.get("moods"), limit=5)
     if direct:
         return direct
@@ -2260,6 +4145,15 @@ def _resolve_moods(book: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _resolve_content_warnings(book: Mapping[str, Any]) -> tuple[str, ...]:
+    schema_values = _resolve_schema_tag_values(
+        book,
+        categories=SHELFMARK_CONTENT_WARNING_CATEGORY_HINTS,
+        limit=6,
+        prefer_non_spoilers=True,
+    )
+    if schema_values:
+        return schema_values
+
     direct = _normalize_compact_values(book.get("content_warnings"), limit=6)
     if direct:
         return direct
@@ -2412,6 +4306,7 @@ def _build_result_facts(book: Mapping[str, Any], *, publish_year: int | None) ->
     rating_value = _resolve_rating_value(book)
     ratings_count = _resolve_ratings_count(book)
     readers_count = _resolve_readers_count(book)
+    pages = _resolve_pages(book)
     series_display = _format_series_display(
         _resolve_series_name(book),
         _resolve_series_position(book),
@@ -2427,6 +4322,9 @@ def _build_result_facts(book: Mapping[str, Any], *, publish_year: int | None) ->
         facts.append(f"{readers_count:,} {label}")
     if publish_year:
         facts.append(str(publish_year))
+    if pages:
+        label = _("page") if pages == 1 else _("pages")
+        facts.append(f"{pages:,} {label}")
     if series_display:
         facts.append(series_display)
 
@@ -2435,21 +4333,12 @@ def _build_result_facts(book: Mapping[str, Any], *, publish_year: int | None) ->
 
 def _build_detail_stats(book: Mapping[str, Any], *, publish_year: int | None) -> tuple[dict[str, str], ...]:
     stats: list[dict[str, str]] = []
-    rating_value = _resolve_rating_value(book)
-    ratings_count = _resolve_ratings_count(book)
-    readers_count = _resolve_readers_count(book)
-    pages = _resolve_pages(book)
+    reviews_count = _resolve_reviews_count(book)
     editions_count = _resolve_editions_count(book)
     lists_count = _resolve_lists_count(book)
 
-    if rating_value is not None:
-        stats.append({"label": _("Rating"), "value": f"{rating_value:.1f} \u2605"})
-    if ratings_count:
-        stats.append({"label": _("Ratings"), "value": f"{ratings_count:,}"})
-    if readers_count:
-        stats.append({"label": _("Readers"), "value": f"{readers_count:,}"})
-    if pages:
-        stats.append({"label": _("Pages"), "value": f"{pages:,}"})
+    if reviews_count:
+        stats.append({"label": _("Reviews"), "value": f"{reviews_count:,}"})
     if editions_count:
         stats.append({"label": _("Editions"), "value": f"{editions_count:,}"})
     if lists_count:

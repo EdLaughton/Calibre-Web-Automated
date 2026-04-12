@@ -119,6 +119,10 @@ class _Settings(_Base):
     config_shelfmark_browser_url = Column(String, default="")
     config_shelfmark_username = Column(String, default="")
     config_shelfmark_password_e = Column(String)
+    config_shelfmark_preferred_release_enabled = Column(Boolean, default=False)
+    config_shelfmark_preferred_release_provider = Column(String, default="")
+    config_shelfmark_preferred_release_content_type = Column(String, default="ebook")
+    config_shelfmark_preferred_release_ranking = Column(String, default="seeders_desc")
     
     config_register_email = Column(Boolean, default=False)
     config_login_type = Column(Integer, default=0)

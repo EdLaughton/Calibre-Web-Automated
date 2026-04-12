@@ -150,7 +150,7 @@ def _base_context():
         "provider": "hardcover",
         "provider_id": "999",
         "title": "Already Present",
-        "subtitle": "Library duplicate",
+        "subtitle": None,
         "authors": ["Author One"],
         "cover_url": "https://covers.example.com/999.jpg",
         "description": "A duplicate already present in the library.",
@@ -160,8 +160,19 @@ def _base_context():
         "display_fields": [],
         "rating": None,
         "ratings_count": None,
+        "reviews_count": None,
         "readers_count": None,
         "series_display": "Dune (1)",
+        "series_url": "https://hardcover.app/series/dune",
+        "series_entries": [
+            {
+                "name": "Dune",
+                "position": 1.0,
+                "featured": True,
+                "display": "Dune (1)",
+                "url": "https://hardcover.app/series/dune",
+            }
+        ],
         "facts": ["2024", "Dune (1)"],
         "detail_stats": [],
         "genres": ["Science Fiction"],
@@ -187,7 +198,7 @@ def _base_context():
         "detail_url": f"/search/external/shelfmark/hardcover/999?query=dune&return_to={saved_state_return}",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
         "shelfmark_open_url": (
-            "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance"
+            "https://library.example.com/shelfmark/?content_type=ebook&sort=popularity"
             "&query=Already+Present+Author+One&title=Already+Present&author=Author+One"
         ),
         "request_payload": {
@@ -215,7 +226,7 @@ def _base_context():
         "provider": "hardcover",
         "provider_id": "222",
         "title": "External Candidate",
-        "subtitle": "Can be requested",
+        "subtitle": None,
         "authors": ["Author Two"],
         "cover_url": None,
         "description": "A result that can be requested in Shelfmark.",
@@ -233,14 +244,29 @@ def _base_context():
         ],
         "rating": 4.3,
         "ratings_count": 5900,
+        "reviews_count": 74,
         "readers_count": 9893,
         "series_display": "The Lord of the Rings (2)",
-        "facts": ["4.3 ★", "5,900 ratings", "9,893 readers", "2025", "The Lord of the Rings (2)"],
+        "series_url": "https://hardcover.app/series/the-lord-of-the-rings",
+        "series_entries": [
+            {
+                "name": "The Lord of the Rings",
+                "position": 2.0,
+                "featured": True,
+                "display": "The Lord of the Rings (2)",
+                "url": "https://hardcover.app/series/the-lord-of-the-rings",
+            },
+            {
+                "name": "Middle-earth",
+                "position": 5.0,
+                "featured": False,
+                "display": "Middle-earth (5)",
+                "url": "https://hardcover.app/series/middle-earth",
+            },
+        ],
+        "facts": ["4.3 ★", "5,900 ratings", "9,893 readers", "2025", "304 pages", "The Lord of the Rings (2)"],
         "detail_stats": [
-            {"label": "Rating", "value": "4.3 ★"},
-            {"label": "Ratings", "value": "5,900"},
-            {"label": "Readers", "value": "9,893"},
-            {"label": "Pages", "value": "304"},
+            {"label": "Reviews", "value": "74"},
             {"label": "Editions", "value": "42"},
             {"label": "Lists", "value": "128"},
         ],
@@ -260,8 +286,8 @@ def _base_context():
             "is_continuation": True,
             "is_next_missing": True,
             "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
-            "facts": ["1 book owned", "Owned through 1"],
-            "detail_value": "Next missing · 1 book owned · Owned through 1",
+            "facts": ["1 book owned in this series", "Owned through 1"],
+            "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
         },
         "workflow_state": {
             "key": "available",
@@ -292,7 +318,7 @@ def _base_context():
         "detail_url": f"/search/external/shelfmark/hardcover/222?query=dune&return_to={saved_state_return}",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
         "shelfmark_open_url": (
-            "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance"
+            "https://library.example.com/shelfmark/?content_type=ebook&sort=popularity"
             "&query=External+Candidate+Author+Two&title=External+Candidate&author=Author+Two"
         ),
         "request_payload": {
@@ -330,8 +356,11 @@ def _base_context():
         "display_fields": [],
         "rating": None,
         "ratings_count": None,
+        "reviews_count": None,
         "readers_count": None,
         "series_display": None,
+        "series_url": None,
+        "series_entries": [],
         "facts": [],
         "detail_stats": [],
         "genres": [],
@@ -353,7 +382,7 @@ def _base_context():
         "detail_url": f"/search/external/shelfmark/other/333?query=dune&return_to={saved_state_return}",
         "shelfmark_base_url": "https://library.example.com/shelfmark",
         "shelfmark_open_url": (
-            "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance"
+            "https://library.example.com/shelfmark/?content_type=ebook&sort=popularity"
             "&query=No+Hardcover+ID+Author+Three&title=No+Hardcover+ID&author=Author+Three"
         ),
         "request_payload": None,
@@ -375,6 +404,55 @@ def _base_context():
         },
     }
 
+    duplicate_result.update(
+        {
+            "needs_progressive_enrichment": False,
+            "progressive_filter_pending": False,
+            "row_index": 0,
+            "row_class_name": "shelfmark-result-card js-shelfmark-result-row shelfmark-result-card--success",
+            "row_status_provider": "",
+            "row_status_provider_id": "",
+            "row_status_in_library": "1",
+            "row_enrichment_url": None,
+        }
+    )
+    candidate_result.update(
+        {
+            "needs_progressive_enrichment": True,
+            "progressive_filter_pending": True,
+            "row_index": 1,
+            "row_class_name": (
+                "shelfmark-result-card js-shelfmark-result-row shelfmark-result-card--info "
+                "js-shelfmark-status-target js-shelfmark-batch-row "
+                "js-shelfmark-progressive-row shelfmark-result-card--refining"
+            ),
+            "row_status_provider": "hardcover",
+            "row_status_provider_id": "222",
+            "row_status_in_library": "0",
+            "row_enrichment_url": (
+                "/search/external/shelfmark/hardcover/222/row?query=Dune"
+                "&shelfmark_page=2&shelfmark_page_size=24&shelfmark_sort=rating"
+                "&shelfmark_filter_requestable=1&shelfmark_filter_has_cover=1"
+                "&shelfmark_series_filter=owned&return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"
+                "%26shelfmark_page%3D2%26shelfmark_page_size%3D24%26shelfmark_sort%3Drating"
+                "%26shelfmark_filter_requestable%3D1%26shelfmark_filter_has_cover%3D1"
+                "%26shelfmark_series_filter%3Downed"
+            ),
+        }
+    )
+    unavailable_result.update(
+        {
+            "needs_progressive_enrichment": False,
+            "progressive_filter_pending": False,
+            "row_index": 2,
+            "row_class_name": "shelfmark-result-card js-shelfmark-result-row shelfmark-result-card--warning",
+            "row_status_provider": "",
+            "row_status_provider_id": "",
+            "row_status_in_library": "0",
+            "row_enrichment_url": None,
+        }
+    )
+
     return {
         "entries": [local_entry],
         "adv_searchterm": "Dune",
@@ -392,12 +470,12 @@ def _base_context():
             "query": "Dune",
             "page": 1,
             "page_size": 12,
-            "selected_sort": "relevance",
+            "selected_sort": "popularity",
             "selected_series_filter": "all",
             "selected_triage_filter": "all",
             "sort_options": [
-                {"value": "relevance", "label": "Most relevant"},
                 {"value": "popularity", "label": "Most popular"},
+                {"value": "relevance", "label": "Most relevant"},
                 {"value": "rating", "label": "Highest rated"},
             ],
             "series_filter_options": [
@@ -418,22 +496,32 @@ def _base_context():
             "next_page": 2,
             "has_more": True,
             "total_available": 895,
+            "raw_total_available": 895,
             "page_result_count": 3,
             "filter_requestable": False,
             "filter_high_confidence": False,
             "filter_has_cover": True,
             "filters_active": False,
-            "open_search_url": "https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&limit=12&page=1&query=Dune",
+            "open_search_url": "https://library.example.com/shelfmark/?content_type=ebook&sort=popularity&limit=12&page=1&query=Dune",
             "previous_page_url": None,
             "next_page_url": "/search/stored/?query=Dune&shelfmark_page=2",
             "clear_filters_url": "/search/stored/?query=Dune&shelfmark_page=1",
             "requestable_toggle_url": "/search/stored/?query=Dune&shelfmark_page=1&shelfmark_filter_requestable=1",
             "requestable_toggle_label": "Focus on requestable",
+            "top_up_url": (
+                "/search/external/shelfmark/topup?query=Dune&shelfmark_page=1&shelfmark_page_size=12"
+                "&shelfmark_sort=popularity&return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"
+            ),
             "state_url": saved_state_url,
             "query_label": "External lookup query",
             "context_hint": "Duplicate awareness remains exact hardcover-id matching only.",
             "message": None,
             "message_level": "info",
+            "pagination_mode": "shelfmark",
+            "progressive_refinement": True,
+            "progressive_refinement_note": (
+                "Shelfmark totals are shown as-is. Visible rows refine as details load."
+            ),
             "summary": {
                 "total_results": 3,
                 "total_available": 895,
@@ -504,11 +592,13 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'name="shelfmark_page_size"' in html
     assert 'name="shelfmark_sort"' in html
     assert 'name="shelfmark_series_filter"' in html
-    assert 'name="shelfmark_triage_filter"' in html
-    assert 'name="shelfmark_filter_high_confidence"' in html
+    assert 'id="shelfmark_series_filter_owned"' in html
+    assert 'id="shelfmark_series_filter"' not in html
     assert "Owned series" in html
     assert "Next missing" in html
-    assert "Strong candidates" in html
+    assert "Strong candidates" not in html
+    assert "Candidates" not in html
+    assert "High confidence" not in html
     assert "0 selected" in html
     assert "0 ready on this page" in html
     assert "Request selected" in html
@@ -522,8 +612,10 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "CWA is previewing the first Shelfmark page here." not in html
     assert "Checking your browser for direct Shelfmark request availability." not in html
     assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
+    assert 'data-top-up-url="/search/external/shelfmark/topup?query=Dune&amp;shelfmark_page=1&amp;shelfmark_page_size=12&amp;shelfmark_sort=popularity&amp;return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"' in html
+    assert 'data-page-size="12"' in html
     assert html.index("Open search in Shelfmark") < html.index("External Candidate")
-    assert 'href="https://library.example.com/shelfmark/?content_type=ebook&amp;sort=relevance&amp;limit=12&amp;page=1&amp;query=Dune"' in html
+    assert 'href="https://library.example.com/shelfmark/?content_type=ebook&amp;sort=popularity&amp;limit=12&amp;page=1&amp;query=Dune"' in html
     assert "shelfmark_request_flow.js" in html
     assert "shelfmark_external_search.js" in html
     assert "shelfmark-section-pill" not in html
@@ -533,7 +625,8 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "Duplicate awareness remains exact hardcover-id matching only." not in html
     assert "duplicate awareness stays exact" not in html
     assert "shelfmark-group-panel" not in html
-    assert 'class="shelfmark-results-list"' in html
+    assert 'class="shelfmark-results-list js-shelfmark-results-list"' in html
+    assert "Shelfmark totals are shown as-is. Visible rows refine as details load." in html
     assert "Open existing CWA book" in html
     assert 'href="/book/7"' in html
     assert "Existing CWA book" not in html
@@ -555,20 +648,27 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'data-detail-title="External Candidate"' in html
     assert 'data-detail-provider="hardcover"' in html
     assert 'data-detail-provider-id="222"' in html
+    assert 'data-row-enrich-url="/search/external/shelfmark/hardcover/222/row?query=Dune' in html
     assert 'return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune%26shelfmark_page%3D2' in html
+    assert "No visible results remain on this page" in html
+    assert ">Go<" not in html
+    assert "shelfmark-pagination-footer__jump" not in html
     assert 'id="shelfmarkDetailModal"' in html
     assert 'id="shelfmarkDetailModalLabel"' in html
     assert 'class="modal fade shelfmark-detail-modal"' in html
     assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1&amp;shelfmark_series_filter=owned"' in html
     assert "4.3 ★" in html
     assert "The Lord of the Rings (2)" in html
-    assert "1 book owned" in html
+    assert "304 pages" in html
+    assert "1 book owned in this series" in html
     assert "Owned through 1" in html
     assert "Strong candidate" in html
     assert "Well rated" in html
     assert "Popular" in html
     assert "Complete metadata" in html
     assert "Next likely book in your library run" not in html
+    assert "Can be requested" not in html
+    assert "Library duplicate" not in html
     assert "No cover" in html
     candidate_chunk = html[html.index("External Candidate"):html.index("No Hardcover ID")]
     duplicate_chunk = html[html.index("Already Present"):html.index("External Candidate")]
@@ -673,6 +773,7 @@ def test_detail_template_renders_existing_book_jump_and_action_markup():
     assert "Open source page" not in html
     assert "Book details" in html
     assert "In library" in html
+    assert html.count("Hardcover ID") == 1
     assert 'class="shelfmark-detail-status"' in html
     assert 'class="btn btn-default btn-sm shelfmark-detail-page__back-action"' in html
     assert 'href="https://source.example.com/999"' in html
@@ -697,15 +798,28 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
     assert 'class="shelfmark-detail-pane shelfmark-detail-pane--modal js-shelfmark-status-target"' in html
     assert 'data-detail-title="External Candidate"' in html
     assert "Back to search results" not in html
+    assert "External Candidate" in html
+    assert "— Author Two" in html
     assert "Request in Shelfmark" in html
     assert "Available to request" in html
-    assert "Strong candidate" in html
+    assert "5,900 ratings" in html
+    assert "9,893 readers" in html
     assert "<i>Shelfmark</i>" in html
-    assert "Next missing" in html
+    assert "Strong candidate" not in html
+    assert "Next missing" not in html
+    assert "1 book owned in this series" in html
+    assert "Owned through 1" in html
     assert "Well rated" in html
     assert "Popular" in html
-    assert "Pages" in html
-    assert "304" in html
+    assert "Reviews" in html
+    assert "74" in html
+    assert "Rating</dt>" not in html
+    assert "Ratings</dt>" not in html
+    assert "Readers</dt>" not in html
+    assert 'href="https://hardcover.app/series/the-lord-of-the-rings"' in html
+    assert "The Lord of the Rings (2)" in html
+    assert "Middle-earth (5)" in html
+    assert 'class="shelfmark-detail-token-list shelfmark-detail-token-list--genres"' in html
     assert "Whimsical" in html
     assert "Lists" in html
     assert "128 lists" in html
@@ -737,17 +851,25 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "Not in your library" not in html
     assert "No exact Hardcover ID match found in metadata.db." not in html
     assert "4.3 ★" in html
+    assert "5,900 ratings" in html
+    assert "9,893 readers" in html
     assert "The Lord of the Rings (2)" in html
-    assert "Strong candidate" in html
+    assert "Middle-earth (5)" in html
+    assert "Strong candidate" not in html
+    assert "Next missing" not in html
     assert "Library series" in html
     assert "Available to request" in html
+    assert html.count("Hardcover ID") == 1
     assert 'class="shelfmark-detail-status is-hidden"' in html
     assert "Next likely book in your library run" not in html
-    assert "1 book owned" in html
+    assert "1 book owned in this series" in html
     assert "Owned through 1" in html
     assert "Well rated" in html
     assert "Popular" in html
     assert "Complete metadata" in html
+    assert "Ratings</dt>" not in html
+    assert "Readers</dt>" not in html
+    assert 'href="https://hardcover.app/series/the-lord-of-the-rings"' in html
     assert "Genres" in html
     assert "Fantasy" in html
     assert "304" in html
@@ -757,6 +879,25 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "Content notes" in html
     assert "Violence" in html
     assert "Death" in html
+
+
+def test_detail_template_renders_inline_page_title_and_author():
+    app = _create_app()
+    context = _base_context()
+    result = context["shelfmark_section"]["results"][1]
+
+    with app.test_request_context("/search/external/shelfmark/hardcover/222?query=Dune"):
+        html = render_template(
+            "shelfmark_external_detail.html",
+            title=result["title"],
+            result=result,
+            search_query="Dune",
+            return_to="/search?query=Dune",
+            shelfmark_error=None,
+        )
+
+    assert '<span class="shelfmark-detail-page__titletext">External Candidate</span>' in html
+    assert '<span class="shelfmark-detail-page__authorinline">— Author Two</span>' in html
 
 
 def test_detail_template_renders_sanitized_description_html():
@@ -785,10 +926,12 @@ def test_search_template_renders_intentional_zero_results_state():
         **context["shelfmark_section"],
         "has_more": False,
         "total_available": 0,
+        "raw_total_available": 0,
         "page_result_count": 0,
         "summary": {
             "total_results": 0,
             "total_available": 0,
+            "raw_total_available": 0,
             "has_more": False,
             "already_in_library": 0,
             "external_candidates": 0,
@@ -807,12 +950,12 @@ def test_search_template_renders_intentional_zero_results_state():
     assert "No Shelfmark external results found" in html
     assert "Shelfmark search completed for this query but did not return any external matches." in html
     assert "No matches" in html
-    assert "External lookup query" in html
-    assert "<code>Dune</code>" in html
+    assert "External lookup query" not in html
+    assert "<code>Dune</code>" not in html
     assert "Open search in Shelfmark" in html
 
 
-def test_search_template_renders_filter_toolbar_and_page_jump_state():
+def test_search_template_renders_filter_toolbar_and_footer_state():
     app = _create_app()
     context = _base_context()
     context["shelfmark_section"] = {
@@ -821,7 +964,6 @@ def test_search_template_renders_filter_toolbar_and_page_jump_state():
         "page_size": 24,
         "selected_sort": "rating",
         "filter_requestable": True,
-        "filter_high_confidence": True,
         "filter_has_cover": True,
         "filters_active": False,
         "page_result_count": 12,
@@ -832,7 +974,7 @@ def test_search_template_renders_filter_toolbar_and_page_jump_state():
     }
 
     with app.test_request_context(
-        "/search/stored/?query=Dune&shelfmark_page=2&shelfmark_page_size=24&shelfmark_sort=rating&shelfmark_filter_requestable=1&shelfmark_filter_high_confidence=1&shelfmark_filter_has_cover=1"
+        "/search/stored/?query=Dune&shelfmark_page=2&shelfmark_page_size=24&shelfmark_sort=rating&shelfmark_filter_requestable=1&shelfmark_filter_has_cover=1"
     ):
         g.shelves_access = []
         g.config_authors_max = 0
@@ -840,26 +982,26 @@ def test_search_template_renders_filter_toolbar_and_page_jump_state():
 
     assert 'value="rating" selected' in html
     assert 'value="24" selected' in html
-    assert 'name="shelfmark_filter_high_confidence" value="1"' in html
+    assert 'name="shelfmark_filter_high_confidence"' not in html
+    assert 'name="shelfmark_triage_filter"' not in html
     assert 'name="shelfmark_filter_has_cover" value="1" checked' in html
     assert "Show all matches" in html
     assert "Clear filters" not in html
-    assert "Page" in html
-    assert "of 75" in html
+    assert "Page 2 of 75" in html
+    assert ">Go<" not in html
+    assert "shelfmark-pagination-footer__jump" not in html
 
 
-def test_search_template_renders_high_confidence_filter_state():
+def test_search_template_strips_removed_filter_params_from_saved_state():
     app = _create_app()
     context = _base_context()
     context["shelfmark_section"] = {
         **context["shelfmark_section"],
-        "filter_high_confidence": True,
         "filters_active": True,
         "state_url": (
             "/search/stored/?query=Dune&shelfmark_page=2&shelfmark_page_size=24"
             "&shelfmark_sort=rating&shelfmark_filter_requestable=1"
-            "&shelfmark_filter_high_confidence=1&shelfmark_filter_has_cover=1"
-            "&shelfmark_series_filter=owned"
+            "&shelfmark_filter_has_cover=1&shelfmark_series_filter=owned"
         ),
         "clear_filters_url": "/search/stored/?query=Dune&shelfmark_page=1",
     }
@@ -867,45 +1009,15 @@ def test_search_template_renders_high_confidence_filter_state():
     with app.test_request_context(
         "/search/stored/?query=Dune&shelfmark_page=2&shelfmark_page_size=24"
         "&shelfmark_sort=rating&shelfmark_filter_requestable=1&shelfmark_filter_high_confidence=1"
-        "&shelfmark_filter_has_cover=1&shelfmark_series_filter=owned"
+        "&shelfmark_filter_has_cover=1&shelfmark_series_filter=owned&shelfmark_triage_filter=strong"
     ):
         g.shelves_access = []
         g.config_authors_max = 0
         html = render_template("search.html", **context)
 
-    assert 'name="shelfmark_filter_high_confidence" value="1" checked' in html
-    assert "Higher-confidence request candidates from Shelfmark." in html
-    assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_high_confidence=1&amp;shelfmark_filter_has_cover=1&amp;shelfmark_series_filter=owned"' in html
-
-
-def test_search_template_renders_strong_candidate_filter_state():
-    app = _create_app()
-    context = _base_context()
-    context["shelfmark_section"] = {
-        **context["shelfmark_section"],
-        "selected_triage_filter": "strong",
-        "filters_active": True,
-        "state_url": (
-            "/search/stored/?query=Dune&shelfmark_page=2&shelfmark_page_size=24"
-            "&shelfmark_sort=rating&shelfmark_filter_requestable=1"
-            "&shelfmark_filter_has_cover=1&shelfmark_series_filter=owned"
-            "&shelfmark_triage_filter=strong"
-        ),
-        "clear_filters_url": "/search/stored/?query=Dune&shelfmark_page=1",
-    }
-
-    with app.test_request_context(
-        "/search/stored/?query=Dune&shelfmark_page=2&shelfmark_page_size=24"
-        "&shelfmark_sort=rating&shelfmark_filter_requestable=1&shelfmark_filter_has_cover=1"
-        "&shelfmark_series_filter=owned&shelfmark_triage_filter=strong"
-    ):
-        g.shelves_access = []
-        g.config_authors_max = 0
-        html = render_template("search.html", **context)
-
-    assert 'value="strong" selected' in html
-    assert "Stronger request candidates from Shelfmark." in html
-    assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1&amp;shelfmark_series_filter=owned&amp;shelfmark_triage_filter=strong"' in html
+    assert 'name="shelfmark_filter_high_confidence"' not in html
+    assert 'name="shelfmark_triage_filter"' not in html
+    assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1&amp;shelfmark_series_filter=owned"' in html
 
 
 def test_search_template_omits_transient_modal_state_from_search_forms():

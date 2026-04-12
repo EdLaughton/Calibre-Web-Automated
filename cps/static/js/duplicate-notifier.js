@@ -8,13 +8,10 @@
     
     const STORAGE_KEY = 'cwa_duplicates_notification_shown';
     const LAST_COUNT_KEY = 'cwa_duplicates_last_count';
-    const POLL_INTERVAL_MS = 2500;
-    const POLL_MAX_ATTEMPTS = 60; // ~2.5 minutes
     
     let currentDuplicateCount = 0;
-    let pollAttempts = 0;
-    let pollTimer = null;
     let lastPreviewSignature = '';
+    let lastStatusWasStale = false;
     
     /**
      * Check if notification was already shown in this session
@@ -77,30 +74,6 @@
         });
     }
 
-    function startStatusPolling() {
-        if (pollTimer) {
-            return;
-        }
-        if (isModalActive()) {
-            return;
-        }
-        pollAttempts = 0;
-        pollTimer = setInterval(() => {
-            pollAttempts += 1;
-            fetchDuplicateStatus().then(handleStatusResponse);
-            if (pollAttempts >= POLL_MAX_ATTEMPTS) {
-                stopStatusPolling();
-            }
-        }, POLL_INTERVAL_MS);
-    }
-
-    function stopStatusPolling() {
-        if (pollTimer) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-        }
-    }
-
     function isModalActive() {
         const modal = document.getElementById('duplicate-notification-modal');
         return modal && modal.classList.contains('active');
@@ -158,7 +131,6 @@
                 // Mark as shown and store count
                 markNotificationShown();
                 setLastNotifiedCount(count);
-                stopStatusPolling();
             }, 500);
         }
     }
@@ -168,33 +140,19 @@
             return;
         }
 
+        lastStatusWasStale = Boolean(data.needs_scan || data.stale);
+
         if (isModalActive()) {
-            stopStatusPolling();
             return;
         }
 
         updateBadge(data.count);
 
         if (data.count > 0 && data.enabled) {
-            stopStatusPolling();
             showNotificationModal(data);
             if (isModalActive()) {
                 return;
             }
-        }
-
-        if ((data.needs_scan || data.stale) && !isModalActive()) {
-            startStatusPolling();
-            return;
-        }
-
-        if (data.count > 0) {
-            stopStatusPolling();
-            return;
-        }
-
-        if (data.enabled) {
-            startStatusPolling();
         }
     }
     
@@ -263,8 +221,9 @@
         // Initialize event listeners
         initializeEventListeners();
         
-        // Fetch initial status once on page load
-        // No periodic updates - badge refreshes after ingest operations only
+        // Use server-rendered bootstrap data on page load. Avoid immediately
+        // re-fetching duplicate status here because that endpoint is expensive
+        // and the server has already rendered the latest cached summary.
         const bootstrapData = window.cwaDuplicateBootstrap;
         if (bootstrapData && typeof bootstrapData === 'object') {
             handleStatusResponse({
@@ -276,13 +235,12 @@
                 stale: !!bootstrapData.stale,
                 needs_scan: !!bootstrapData.stale
             });
+        } else {
+            fetchDuplicateStatus().then(handleStatusResponse);
         }
 
-        fetchDuplicateStatus().then(handleStatusResponse);
-        startStatusPolling();
-
         document.addEventListener('visibilitychange', function() {
-            if (!document.hidden) {
+            if (!document.hidden && lastStatusWasStale) {
                 fetchDuplicateStatus().then(handleStatusResponse);
             }
         });

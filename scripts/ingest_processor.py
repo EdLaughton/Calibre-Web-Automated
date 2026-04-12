@@ -31,6 +31,8 @@ fetch_and_apply_metadata = None
 TaskAutoSend = None
 WorkerThread = None
 _ub = None
+extract_import_manifest_identifiers = None
+summarize_import_manifest_identifiers = None
 
 # Debounced duplicate scan timer
 _duplicate_scan_timer = None
@@ -230,6 +232,16 @@ try:
     if cps_path not in sys.path:
         sys.path.append(cps_path)
 
+    try:
+        from cps.utils.shelfmark_import_provenance import (
+            extract_import_manifest_identifiers,
+            summarize_import_manifest_identifiers,
+        )
+    except ImportError as e:
+        print(f"[ingest-processor] Provenance helper not available: {e}", flush=True)
+        extract_import_manifest_identifiers = None
+        summarize_import_manifest_identifiers = None
+
     # Import GDrive functionality
     try:
         from cps import gdriveutils as _gdriveutils, config as _cps_config
@@ -341,6 +353,21 @@ def get_internal_api_url(path):
 def get_internal_api_headers():
     """Provide headers that satisfy localhost-only internal endpoint checks."""
     return {"X-Forwarded-For": "127.0.0.1"}
+
+
+def _cleanup_consumed_manifest(manifest_path: str, *, success: bool) -> None:
+    """Delete consumed manifests on success and preserve them on failure."""
+    try:
+        if not manifest_path or not Path(manifest_path).exists():
+            return
+        if success:
+            os.remove(manifest_path)
+            return
+        failed_manifest_path = manifest_path.replace(".cwa.json", ".cwa.failed.json")
+        os.rename(manifest_path, failed_manifest_path)
+        print(f"[ingest-processor] Preserved failed manifest: {os.path.basename(failed_manifest_path)}", flush=True)
+    except Exception as e:
+        print(f"[ingest-processor] WARN: Failed to clean up consumed manifest {os.path.basename(manifest_path)}: {e}", flush=True)
 
 class NewBookProcessor:
     def __init__(self, filepath: str):
@@ -700,7 +727,14 @@ class NewBookProcessor:
 
 
 
-    def add_book_to_library(self, book_path:str, text: bool=True, format: str="text" ) -> None:
+    def add_book_to_library(
+        self,
+        book_path: str,
+        text: bool = True,
+        format: str = "text",
+        manifest: dict | None = None,
+        manifest_path: str | None = None,
+    ) -> None:
         # If kindle-epub-fixer is on, run it first and import the *fixed* file.
         if self.target_format == "epub" and self.is_kindle_epub_fixer:
             fixed_epub_path = Path(self.tmp_conversion_dir) / os.path.basename(book_path)
@@ -745,11 +779,45 @@ class NewBookProcessor:
             self.backup(self.filepath, backup_type="failed")
             return
 
+        manifest_identifiers: list[str] = []
+        manifest_identifier_summary = "no stable identifiers"
+        if manifest:
+            print(f"[ingest-processor] Found sidecar manifest for {source_path.name}", flush=True)
+        if manifest and extract_import_manifest_identifiers is not None:
+            try:
+                manifest_identifiers = extract_import_manifest_identifiers(manifest)
+                if summarize_import_manifest_identifiers is not None:
+                    manifest_identifier_summary = summarize_import_manifest_identifiers(manifest_identifiers)
+                elif manifest_identifiers:
+                    manifest_identifier_summary = f"{len(manifest_identifiers)} stable identifiers"
+                if manifest_identifiers:
+                    print(
+                        f"[ingest-processor] Using sidecar provenance for {source_path.name}: {manifest_identifier_summary}",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[ingest-processor] Sidecar manifest for {source_path.name} did not provide stable import identifiers",
+                        flush=True,
+                    )
+            except Exception as e:
+                print(f"[ingest-processor] WARN: Failed to extract import provenance identifiers: {e}", flush=True)
+                manifest_identifiers = []
+
+        if manifest_identifiers:
+            print(
+                f"[ingest-processor] Applying sidecar identifiers during import for {source_path.name}: {manifest_identifier_summary}",
+                flush=True,
+            )
+
         try:
             if text:
-                result = subprocess.run([
+                add_command = [
                     "calibredb", "add", str(staged_path), "--automerge", self.cwa_settings['auto_ingest_automerge'], f"--library-path={self.library_dir}"
-                ], env=self.calibre_env, check=True, capture_output=True, text=True)
+                ]
+                for ident in manifest_identifiers:
+                    add_command.extend(["--identifier", ident])
+                result = subprocess.run(add_command, env=self.calibre_env, check=True, capture_output=True, text=True)
                 added_ids = self._parse_added_book_ids((result.stdout or '') + '\n' + (result.stderr or ''))
                 if added_ids:
                     self.last_added_book_ids = added_ids
@@ -795,6 +863,8 @@ class NewBookProcessor:
                 for ident in identifiers_list:
                     if isinstance(ident, str) and ":" in ident and ident.strip():
                         add_command.extend(["--identifier", ident.strip()])
+                for ident in manifest_identifiers:
+                    add_command.extend(["--identifier", ident])
 
                 result = subprocess.run(add_command, env=self.calibre_env, check=True, capture_output=True, text=True)
                 added_ids = self._parse_added_book_ids((result.stdout or '') + '\n' + (result.stderr or ''))
@@ -804,6 +874,8 @@ class NewBookProcessor:
                 else:
                     self._fallback_last_added_book_id()
             print(f"[ingest-processor] Added {staged_path.stem} to Calibre database", flush=True)
+            if manifest_path and manifest_identifiers:
+                _cleanup_consumed_manifest(manifest_path, success=True)
 
             if self.cwa_settings['auto_backup_imports']:
                 self.backup(str(staged_path), backup_type="imported")
@@ -865,8 +937,12 @@ class NewBookProcessor:
         except subprocess.CalledProcessError as e:
             print(f"[ingest-processor] {staged_path.stem} was not able to be added to the Calibre Library due to the following error:\nCALIBREDB EXIT/ERROR CODE: {e.returncode}\n{e.stderr}", flush=True)
             self.backup(str(staged_path), backup_type="failed")
+            if manifest_path and manifest_identifiers:
+                _cleanup_consumed_manifest(manifest_path, success=False)
         except Exception as e:
             print(f"[ingest-processor] ingest-processor ran into the following error:\n{e}", flush=True)
+            if manifest_path and manifest_identifiers:
+                _cleanup_consumed_manifest(manifest_path, success=False)
         finally:
             if staged_path.exists():
                 os.remove(staged_path)
@@ -1308,6 +1384,8 @@ def main(filepath=None):
                 skip_delete = True
                 return
 
+        manifest = None
+
         # Sidecar manifest handling for explicit actions (e.g., add_format)
         manifest_path = filepath + ".cwa.json"
         try:
@@ -1363,16 +1441,22 @@ def main(filepath=None):
 
         if nbp.is_target_format: # File can just be imported
             print(f"\n[ingest-processor]: No conversion needed for {nbp.filename}, importing now...", flush=True)
-            nbp.add_book_to_library(filepath)
+            nbp.add_book_to_library(filepath, manifest=manifest, manifest_path=manifest_path)
         elif nbp.is_supported_audiobook():
             print(f"\n[ingest-processor]: No conversion needed for {nbp.filename}, is audiobook, importing now...", flush=True)
-            nbp.add_book_to_library(filepath, False, Path(nbp.filename).suffix)
+            nbp.add_book_to_library(
+                filepath,
+                False,
+                Path(nbp.filename).suffix,
+                manifest=manifest,
+                manifest_path=manifest_path,
+            )
         else:
             if nbp.auto_convert_on and nbp.can_convert: # File can be converted to target format and Auto-Converter is on
 
                 if nbp.input_format in nbp.convert_ignored_formats: # File could be converted & the converter is activated but the user has specified files of this format should not be converted
                     print(f"\n[ingest-processor]: {nbp.filename} not in target format but user has told CWA not to convert this format so importing the file anyway...", flush=True)
-                    nbp.add_book_to_library(filepath)
+                    nbp.add_book_to_library(filepath, manifest=manifest, manifest_path=manifest_path)
                     convert_successful = False
                 elif nbp.target_format == "kepub": # File is not in the convert ignore list and target is kepub, so we start the kepub conversion process
                     convert_successful, converted_filepath = nbp.convert_to_kepub()
@@ -1380,7 +1464,11 @@ def main(filepath=None):
                     convert_successful, converted_filepath = nbp.convert_book()
 
                 if convert_successful: # If previous conversion process was successful, remove tmp files and import into library
-                    nbp.add_book_to_library(converted_filepath) # type: ignore
+                    nbp.add_book_to_library(  # type: ignore[arg-type]
+                        converted_filepath,
+                        manifest=manifest,
+                        manifest_path=manifest_path,
+                    )
 
                     # If the original format should be retained, also add it as an additional format
                     if nbp.input_format in nbp.convert_retained_formats and nbp.input_format not in nbp.ingest_ignored_formats:
@@ -1409,7 +1497,7 @@ def main(filepath=None):
 
             elif nbp.can_convert and not nbp.auto_convert_on: # Books not in target format but Auto-Converter is off so files are imported anyway
                 print(f"\n[ingest-processor]: {nbp.filename} not in target format but CWA Auto-Convert is deactivated so importing the file anyway...", flush=True)
-                nbp.add_book_to_library(filepath)
+                nbp.add_book_to_library(filepath, manifest=manifest, manifest_path=manifest_path)
             else:
                 print(f"[ingest-processor]: Cannot convert {nbp.filepath}. {nbp.input_format} is currently unsupported / is not a known ebook format.", flush=True)
 

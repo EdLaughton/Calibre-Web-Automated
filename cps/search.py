@@ -21,14 +21,14 @@ from .usermanagement import login_required_if_no_ano
 from .render_template import render_title_template
 from .pagination import Pagination
 from .services.shelfmark_search import (
-    DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE,
     DEFAULT_SHELFMARK_FILTER_HAS_COVER,
     DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
     DEFAULT_SHELFMARK_SERIES_FILTER,
-    DEFAULT_SHELFMARK_TRIAGE_FILTER,
     ShelfmarkIntegrationError,
     build_shelfmark_advanced_query,
     fetch_shelfmark_detail,
+    get_shelfmark_preferred_release_settings,
+    result_matches_shelfmark_filters,
     search_shelfmark_results,
 )
 from .services.search_autocomplete import get_autocomplete_payload
@@ -41,6 +41,8 @@ log = logger.create()
 SHELFMARK_TRANSIENT_QUERY_KEYS = (
     "shelfmark_detail_provider",
     "shelfmark_detail_id",
+    "shelfmark_filter_high_confidence",
+    "shelfmark_triage_filter",
 )
 
 
@@ -509,6 +511,7 @@ def shelfmark_external_detail(provider, provider_id):
     query = (request.args.get("query") or "").strip()
     return_to = _safe_local_return_url(request.args.get("return_to"))
     modal_view = (request.args.get("view") or "").strip().lower() == "modal"
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
     detail_url = url_for(
         "search.shelfmark_external_detail",
         provider=provider,
@@ -528,6 +531,7 @@ def shelfmark_external_detail(provider, provider_id):
                 "shelfmark_external_detail_content.html",
                 result=result,
                 modal_mode=True,
+                preferred_release=preferred_release,
                 shelfmark_error=None,
             )
         return render_title_template(
@@ -538,6 +542,7 @@ def shelfmark_external_detail(provider, provider_id):
             search_query=query,
             return_to=return_to,
             modal_mode=False,
+            preferred_release=preferred_release,
         )
     except ShelfmarkIntegrationError as exc:
         flash(str(exc), category="error")
@@ -547,6 +552,7 @@ def shelfmark_external_detail(provider, provider_id):
                 title=_("Shelfmark External Result"),
                 result=None,
                 modal_mode=True,
+                preferred_release=preferred_release,
                 shelfmark_error=str(exc),
             )
         return render_title_template(
@@ -558,7 +564,136 @@ def shelfmark_external_detail(provider, provider_id):
             return_to=return_to,
             shelfmark_error=str(exc),
             modal_mode=False,
+            preferred_release=preferred_release,
         )
+
+
+@search.route("/search/external/shelfmark/<provider>/<provider_id>/row", methods=["GET"])
+@login_required_if_no_ano
+def shelfmark_external_row(provider, provider_id):
+    query = (request.args.get("query") or "").strip()
+    return_to = _safe_local_return_url(request.args.get("return_to"))
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
+    detail_url = url_for(
+        "search.shelfmark_external_detail",
+        provider=provider,
+        provider_id=provider_id,
+        query=query,
+        return_to=return_to,
+    )
+
+    try:
+        result_view = fetch_shelfmark_detail(
+            provider,
+            provider_id,
+            detail_url=detail_url,
+        )
+        result = result_view.to_template_dict()
+        result["row_class_name"] = _build_shelfmark_result_row_class_name(result)
+        result["row_status_provider"] = (
+            "hardcover"
+            if result.get("workflow_state") and not result.get("already_in_library")
+            else ""
+        )
+        result["row_status_provider_id"] = result.get("hardcover_id") or ""
+        result["row_status_in_library"] = "1" if result.get("already_in_library") else "0"
+        result["needs_progressive_enrichment"] = False
+        result["progressive_filter_pending"] = False
+        return jsonify(
+            {
+                "ok": True,
+                "matches_filters": result_matches_shelfmark_filters(
+                    result_view,
+                    requestable_only=_requested_shelfmark_flag(
+                        "shelfmark_filter_requestable",
+                        default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+                    ),
+                    has_cover_only=_requested_shelfmark_flag(
+                        "shelfmark_filter_has_cover",
+                        default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+                    ),
+                    series_filter=_requested_shelfmark_series_filter(),
+                ),
+                "row_class_name": result["row_class_name"],
+                "row_status_provider": result["row_status_provider"],
+                "row_status_provider_id": result["row_status_provider_id"],
+                "row_status_in_library": result["row_status_in_library"],
+                "html": render_template(
+                    "shelfmark_external_result_card_inner.html",
+                    result=result,
+                    preferred_release=preferred_release,
+                ),
+            }
+        )
+    except ShelfmarkIntegrationError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 503
+
+
+@search.route("/search/external/shelfmark/topup", methods=["GET"])
+@login_required_if_no_ano
+def shelfmark_external_topup():
+    query = (request.args.get("query") or "").strip()
+    return_to = _safe_local_return_url(request.args.get("return_to"))
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
+    try:
+        source_page = int(request.args.get("shelfmark_source_page", "1"))
+    except (TypeError, ValueError):
+        source_page = 1
+    if source_page < 1:
+        source_page = 1
+
+    try:
+        section = search_shelfmark_results(
+            query,
+            detail_url_builder=lambda book: _build_shelfmark_detail_url(
+                book,
+                query=query,
+                return_to=return_to,
+            ),
+            page=source_page,
+            page_size=_requested_shelfmark_page_size(),
+            sort=_requested_shelfmark_sort(),
+            series_filter=_requested_shelfmark_series_filter(),
+            filter_requestable=_requested_shelfmark_flag(
+                "shelfmark_filter_requestable",
+                default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+            ),
+            filter_has_cover=_requested_shelfmark_flag(
+                "shelfmark_filter_has_cover",
+                default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+            ),
+        ).to_template_dict()
+        section["state_url"] = return_to
+        _decorate_shelfmark_result_rows(section, query=query)
+        rows = []
+        for result in section.get("results") or []:
+            rows.append(
+                {
+                    "provider": result.get("provider") or "",
+                    "provider_id": result.get("provider_id") or "",
+                    "row_class_name": result.get("row_class_name") or "",
+                    "row_status_provider": result.get("row_status_provider") or "",
+                    "row_status_provider_id": result.get("row_status_provider_id") or "",
+                    "row_status_in_library": result.get("row_status_in_library") or "0",
+                    "row_enrichment_url": result.get("row_enrichment_url") or "",
+                    "html": render_template(
+                        "shelfmark_external_result_card_inner.html",
+                        result=result,
+                        preferred_release=preferred_release,
+                    ),
+                }
+            )
+        return jsonify(
+            {
+                "ok": True,
+                "page": source_page,
+                "has_more": bool(section.get("has_more")),
+                "next_page": section.get("next_page"),
+                "rows": rows,
+            }
+        )
+    except ShelfmarkIntegrationError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 503
 
 
 def _build_shelfmark_detail_url(book, *, query, return_to=None):
@@ -573,6 +708,81 @@ def _build_shelfmark_detail_url(book, *, query, return_to=None):
         query=query,
         return_to=_safe_local_return_url(return_to),
     )
+
+
+def _build_shelfmark_row_enrichment_url(book, *, query, return_to=None):
+    provider = (book or {}).get("provider")
+    provider_id = (book or {}).get("provider_id")
+    if not provider or not provider_id:
+        return None
+
+    params = _current_request_params(include_transient=False)
+    params["query"] = query
+    safe_return_to = _safe_local_return_url(return_to)
+    if safe_return_to:
+        params["return_to"] = safe_return_to
+    else:
+        params.pop("return_to", None)
+    return url_for(
+        "search.shelfmark_external_row",
+        provider=provider,
+        provider_id=provider_id,
+        **params,
+    )
+
+
+def _build_shelfmark_top_up_url(*, query, return_to=None):
+    params = _current_request_params(include_transient=False)
+    params["query"] = query
+    params.pop("shelfmark_source_page", None)
+    safe_return_to = _safe_local_return_url(return_to)
+    if safe_return_to:
+        params["return_to"] = safe_return_to
+    else:
+        params.pop("return_to", None)
+    return url_for("search.shelfmark_external_topup", **params)
+
+
+def _build_shelfmark_result_row_class_name(result):
+    library_state = result.get("library_state") or {}
+    classes = [
+        "shelfmark-result-card",
+        "js-shelfmark-result-row",
+        "shelfmark-result-card--%s" % (library_state.get("row_class") or "info"),
+    ]
+    if result.get("workflow_state") and not result.get("already_in_library"):
+        classes.append("js-shelfmark-status-target")
+    if result.get("request_payload") and not result.get("already_in_library"):
+        classes.append("js-shelfmark-batch-row")
+    if result.get("needs_progressive_enrichment"):
+        classes.append("js-shelfmark-progressive-row")
+    if result.get("needs_progressive_enrichment") or result.get("progressive_filter_pending"):
+        classes.append("shelfmark-result-card--refining")
+    return " ".join(classes)
+
+
+def _decorate_shelfmark_result_rows(section, *, query):
+    results = section.get("results") or []
+    state_url = section.get("state_url")
+    for index, result in enumerate(results):
+        result["row_index"] = index
+        result["row_class_name"] = _build_shelfmark_result_row_class_name(result)
+        result["row_status_provider"] = (
+            "hardcover"
+            if result.get("workflow_state") and not result.get("already_in_library")
+            else ""
+        )
+        result["row_status_provider_id"] = result.get("hardcover_id") or ""
+        result["row_status_in_library"] = "1" if result.get("already_in_library") else "0"
+        result["row_enrichment_url"] = (
+            _build_shelfmark_row_enrichment_url(
+                result,
+                query=query,
+                return_to=state_url,
+            )
+            if result.get("needs_progressive_enrichment")
+            else None
+        )
 
 
 def _current_request_params(*, include_transient=True):
@@ -617,15 +827,14 @@ def _requested_shelfmark_page_size():
 
 
 def _requested_shelfmark_sort():
-    return (request.args.get("shelfmark_sort", "relevance") or "relevance").strip().lower()
+    return (request.args.get("shelfmark_sort", "popularity") or "popularity").strip().lower()
 
 
 def _requested_shelfmark_series_filter():
-    return (request.args.get("shelfmark_series_filter", DEFAULT_SHELFMARK_SERIES_FILTER) or DEFAULT_SHELFMARK_SERIES_FILTER).strip().lower()
-
-
-def _requested_shelfmark_triage_filter():
-    return (request.args.get("shelfmark_triage_filter", DEFAULT_SHELFMARK_TRIAGE_FILTER) or DEFAULT_SHELFMARK_TRIAGE_FILTER).strip().lower()
+    values = request.args.getlist("shelfmark_series_filter")
+    if not values:
+        return DEFAULT_SHELFMARK_SERIES_FILTER
+    return (values[-1] or DEFAULT_SHELFMARK_SERIES_FILTER).strip().lower()
 
 
 def _requested_shelfmark_flag(name, default=False):
@@ -645,20 +854,16 @@ def _current_request_url_with(**updates):
 
 
 def _build_shelfmark_section(query, **kwargs):
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
     section = search_shelfmark_results(
         query,
         page=_requested_shelfmark_page(),
         page_size=_requested_shelfmark_page_size(),
         sort=_requested_shelfmark_sort(),
         series_filter=_requested_shelfmark_series_filter(),
-        triage_filter=_requested_shelfmark_triage_filter(),
         filter_requestable=_requested_shelfmark_flag(
             "shelfmark_filter_requestable",
             default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
-        ),
-        filter_high_confidence=_requested_shelfmark_flag(
-            "shelfmark_filter_high_confidence",
-            default=DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE,
         ),
         filter_has_cover=_requested_shelfmark_flag(
             "shelfmark_filter_has_cover",
@@ -669,7 +874,14 @@ def _build_shelfmark_section(query, **kwargs):
     if not section.get("enabled"):
         return section
 
-    section["state_url"] = _current_shelfmark_search_state_url()
+    section["state_url"] = _current_request_url_with(
+        shelfmark_page=section.get("page") or 1,
+        shelfmark_page_size=section.get("page_size") or 12,
+        shelfmark_sort=section.get("selected_sort"),
+        shelfmark_series_filter=section.get("selected_series_filter"),
+        shelfmark_filter_requestable="1" if section.get("filter_requestable") else "0",
+        shelfmark_filter_has_cover="1" if section.get("filter_has_cover") else "0",
+    )
 
     previous_page = section.get("previous_page")
     next_page = section.get("next_page")
@@ -686,9 +898,7 @@ def _build_shelfmark_section(query, **kwargs):
     section["clear_filters_url"] = _current_request_url_with(
         shelfmark_page=1,
         shelfmark_series_filter=None,
-        shelfmark_triage_filter=None,
         shelfmark_filter_requestable=None,
-        shelfmark_filter_high_confidence=None,
         shelfmark_filter_has_cover=None,
     )
     section["requestable_toggle_url"] = _current_request_url_with(
@@ -700,6 +910,12 @@ def _build_shelfmark_section(query, **kwargs):
         if section.get("filter_requestable")
         else _("Focus on requestable")
     )
+    section["top_up_url"] = _build_shelfmark_top_up_url(
+        query=query,
+        return_to=section.get("state_url"),
+    )
+    section["preferred_release_settings"] = preferred_release
+    _decorate_shelfmark_result_rows(section, query=query)
     return section
 
 

@@ -152,6 +152,10 @@ class FakeDocument {
     this.listeners = {};
   }
 
+  createElement(tagName) {
+    return new FakeElement(tagName);
+  }
+
   querySelector(selector) {
     return this.root.querySelector(selector);
   }
@@ -200,8 +204,12 @@ function createResultNode(options) {
     dataset: {
       baseUrl: options.baseUrl,
       openUrl: options.openUrl,
-    requestPayload: options.requestPayload ? JSON.stringify(options.requestPayload) : '',
-      mode: options.mode
+      requestPayload: options.requestPayload ? JSON.stringify(options.requestPayload) : '',
+      mode: options.mode,
+      preferredReleaseEnabled: options.preferredReleaseEnabled ? '1' : '0',
+      preferredReleaseProvider: options.preferredReleaseProvider || '',
+      preferredReleaseContentType: options.preferredReleaseContentType || 'ebook',
+      preferredReleaseRanking: options.preferredReleaseRanking || 'seeders_desc'
     },
     attributes: {
       href: options.openUrl,
@@ -287,7 +295,11 @@ function createDom(options) {
     statusChipText: options.statusChipText,
     statusChipKey: options.statusChipKey,
     statusChipClass: options.statusChipClass,
-    batchToggle: options.batchToggle
+    batchToggle: options.batchToggle,
+    preferredReleaseEnabled: options.preferredReleaseEnabled,
+    preferredReleaseProvider: options.preferredReleaseProvider,
+    preferredReleaseContentType: options.preferredReleaseContentType,
+    preferredReleaseRanking: options.preferredReleaseRanking
   });
   root.appendChild(first.wrapper);
 
@@ -298,6 +310,64 @@ function createDom(options) {
     batchToolbar,
     batchToggle: first.wrapper.querySelector('.js-shelfmark-batch-toggle'),
     batchSelect: first.wrapper.querySelector('.js-shelfmark-batch-select')
+  };
+}
+
+function createProgressiveDom() {
+  const root = new FakeElement('div', { className: 'page-root' });
+  const visibleCount = root.appendChild(new FakeElement('span', {
+    className: 'js-shelfmark-visible-count',
+    textContent: '3 shown'
+  }));
+  const pageSummary = root.appendChild(new FakeElement('span', {
+    className: 'js-shelfmark-page-summary',
+    textContent: '3 shown on this page'
+  }));
+  const emptyState = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-progressive-empty-state is-hidden'
+  }));
+  const resultsList = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-results-list',
+    dataset: {
+      pageSize: '3',
+      nextPage: '2',
+      topUpUrl: '/search/external/shelfmark/topup?query=terry+pratchett'
+    }
+  }));
+
+  function buildProgressiveRow(rowIndex) {
+    const row = createResultNode({
+      baseUrl: 'https://shelfmark.example.com',
+      openUrl: `https://shelfmark.example.com/book/${rowIndex}`,
+      mode: 'open',
+      label: 'Open in Shelfmark',
+      hint: '',
+      buttonClass: 'btn-default',
+      iconClass: 'glyphicon glyphicon-new-window',
+      statusTarget: false,
+      batchToggle: false
+    }).wrapper;
+    row.className += ' js-shelfmark-result-row js-shelfmark-progressive-row shelfmark-result-card--refining';
+    row.dataset.rowIndex = String(rowIndex);
+    row.dataset.provider = 'hardcover';
+    row.dataset.providerId = String(rowIndex);
+    row.dataset.rowEnrichUrl = `/row/${rowIndex}`;
+    return row;
+  }
+
+  const rows = {
+    2: resultsList.appendChild(buildProgressiveRow(2)),
+    0: resultsList.appendChild(buildProgressiveRow(0)),
+    1: resultsList.appendChild(buildProgressiveRow(1))
+  };
+
+  return {
+    document: new FakeDocument(root, 'complete'),
+    rows,
+    visibleCount,
+    pageSummary,
+    emptyState,
+    resultsList
   };
 }
 
@@ -314,7 +384,10 @@ async function runScenario(options) {
   delete require.cache[searchModulePath];
 
   global.window = {
-    location: { origin: options.currentOrigin },
+    location: {
+      origin: options.currentOrigin,
+      href: `${options.currentOrigin}/search/stored/?query=test`
+    },
     CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS: 0,
     CwaShelfmarkRequestFlow: require(flowModulePath)
   };
@@ -353,6 +426,100 @@ async function runScenario(options) {
       await flush();
     }
   };
+}
+
+async function runProgressiveScenario() {
+  const dom = createProgressiveDom();
+  const fetchCalls = [];
+  const responses = [
+    {
+      payload: {
+        ok: true,
+        matches_filters: true,
+        row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        html: ''
+      }
+    },
+    {
+      payload: {
+        ok: true,
+        matches_filters: true,
+        row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        html: ''
+      }
+    },
+    {
+      payload: {
+        ok: true,
+        matches_filters: false,
+        row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        html: ''
+      }
+    },
+    {
+      payload: {
+        ok: true,
+        next_page: null,
+        rows: [
+          {
+            provider: 'hardcover',
+            provider_id: '99',
+            row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+            row_status_provider: '',
+            row_status_provider_id: '',
+            row_status_in_library: '0',
+            row_enrichment_url: '',
+            html: ''
+          },
+          {
+            provider: 'hardcover',
+            provider_id: '100',
+            row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+            row_status_provider: '',
+            row_status_provider_id: '',
+            row_status_in_library: '0',
+            row_enrichment_url: '',
+            html: ''
+          }
+        ]
+      }
+    }
+  ];
+
+  delete require.cache[flowModulePath];
+  delete require.cache[searchModulePath];
+
+  global.window = {
+    location: {
+      origin: 'https://library.example.com',
+      href: 'https://library.example.com/search/stored/?query=terry+pratchett'
+    },
+    CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS: 0,
+    CwaShelfmarkRequestFlow: require(flowModulePath)
+  };
+  global.document = dom.document;
+  global.fetch = (url, fetchOptions) => {
+    fetchCalls.push({ url, options: fetchOptions || {} });
+    const next = responses.shift();
+    if (!next) {
+      return Promise.reject(new Error(`Unexpected fetch call for ${url}`));
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => next.payload
+    });
+  };
+
+  require(searchModulePath);
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+
+  return { dom, fetchCalls };
 }
 
 (async function main() {
@@ -395,6 +562,125 @@ async function runScenario(options) {
   assert.equal(sameOrigin.dom.status.classList.contains('is-hidden'), false);
   assert.equal(sameOrigin.dom.status.classList.contains('is-settled'), true);
   assert.equal(sameOrigin.dom.action.getAttribute('target'), '_blank');
+
+  const preferredRelease = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=Mort+Terry+Pratchett&title=Mort&author=Terry+Pratchett',
+    requestPayload: {
+      book_data: {
+        provider: 'hardcover',
+        provider_id: '444',
+        title: 'Mort',
+        author: 'Terry Pratchett'
+      },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    preferredReleaseEnabled: true,
+    preferredReleaseProvider: 'MyAnonamouse',
+    preferredReleaseContentType: 'ebook',
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      {
+        payload: {
+          requests_enabled: true,
+          defaults: { ebook: 'request_book' },
+          source_modes: [
+            {
+              source: 'prowlarr',
+              browse_results_are_releases: false,
+              modes: { ebook: 'request_release' }
+            }
+          ]
+        }
+      },
+      {
+        payload: {
+          releases: [
+            { source: 'prowlarr', source_id: 'audio-1', indexer: 'MyAnonamouse', format: 'm4b', seeders: 90 },
+            { source: 'prowlarr', source_id: 'ebook-1', indexer: 'MyAnonamouse', format: 'epub', seeders: 70 },
+            { source: 'prowlarr', source_id: 'ebook-2', indexer: 'OtherIndexer', format: 'epub', seeders: 500 }
+          ]
+        }
+      },
+      {
+        payload: {
+          id: 95,
+          status: 'pending',
+          request_level: 'release',
+          policy_mode: 'request_release',
+          release_data: {
+            source: 'prowlarr',
+            source_id: 'ebook-1',
+            indexer: 'MyAnonamouse'
+          }
+        }
+      }
+    ]
+  });
+
+  await preferredRelease.clickPrimaryAction();
+
+  assert.equal(preferredRelease.fetchCalls.length, 4);
+  assert.match(preferredRelease.fetchCalls[2].url, /\/api\/releases\?/);
+  assert.match(preferredRelease.fetchCalls[2].url, /indexers=MyAnonamouse/);
+  const preferredRequestBody = JSON.parse(preferredRelease.fetchCalls[3].options.body);
+  assert.equal(preferredRequestBody.context.request_level, 'release');
+  assert.equal(preferredRequestBody.context.source, 'prowlarr');
+  assert.equal(preferredRequestBody.release_data.source_id, 'ebook-1');
+  assert.equal(preferredRequestBody.release_data.indexer, 'MyAnonamouse');
+  assert.equal(
+    preferredRelease.dom.action.querySelector('.js-shelfmark-action-label').textContent,
+    'Requested'
+  );
+
+  const preferredFallback = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=Mort+Terry+Pratchett&title=Mort&author=Terry+Pratchett',
+    requestPayload: {
+      book_data: {
+        provider: 'hardcover',
+        provider_id: '445',
+        title: 'Mort',
+        author: 'Terry Pratchett'
+      },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    preferredReleaseEnabled: true,
+    preferredReleaseProvider: 'MyAnonamouse',
+    preferredReleaseContentType: 'ebook',
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      {
+        payload: {
+          requests_enabled: true,
+          defaults: { ebook: 'request_book' },
+          source_modes: [
+            {
+              source: 'prowlarr',
+              browse_results_are_releases: false,
+              modes: { ebook: 'request_release' }
+            }
+          ]
+        }
+      },
+      {
+        payload: {
+          releases: [
+            { source: 'prowlarr', source_id: 'nonmatch-1', indexer: 'Elsewhere', format: 'epub', seeders: 50 }
+          ]
+        }
+      },
+      { payload: { success: true } }
+    ]
+  });
+
+  await preferredFallback.clickPrimaryAction();
+
+  const fallbackRequestBody = JSON.parse(preferredFallback.fetchCalls[3].options.body);
+  assert.equal(fallbackRequestBody.context.request_level, 'book');
+  assert.equal(fallbackRequestBody.release_data, undefined);
 
   const crossOrigin = await runScenario({
     currentOrigin: 'https://library.example.com',
@@ -669,6 +955,104 @@ async function runScenario(options) {
   assert.equal(batchBlocked.dom.batchToolbar.classList.contains('is-hidden'), true);
   assert.equal(batchBlocked.dom.batchSelect.classList.contains('is-hidden'), true);
   assert.equal(batchBlocked.dom.batchToggle.disabled, true);
+  assert.equal(
+    batchBlocked.dom.action.querySelector('.js-shelfmark-action-label').textContent,
+    'Requested'
+  );
+
+  const directQueued = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=Queued+Book',
+    requestPayload: {
+      book_data: { provider: 'hardcover', provider_id: '333', title: 'Queued Book' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    preferredReleaseEnabled: true,
+    preferredReleaseProvider: 'direct_download',
+    preferredReleaseContentType: 'ebook',
+    mode: 'request',
+    statusTarget: true,
+    statusProviderId: '333',
+    statusChipText: 'Available to request',
+    statusChipKey: 'available',
+    statusChipClass: 'shelfmark-status-chip--available',
+    includeBatchToolbar: true,
+    batchToggle: true,
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      { payload: { requests: [] } },
+      {
+        payload: {
+          requests_enabled: true,
+          defaults: { ebook: 'request_book' },
+          source_modes: [
+            {
+              source: 'direct_download',
+              browse_results_are_releases: true,
+              modes: { ebook: 'download' }
+            }
+          ]
+        }
+      },
+      {
+        payload: {
+          releases: [
+            { source: 'direct_download', source_id: 'dd-1', format: 'epub', seeders: 0 }
+          ]
+        }
+      },
+      {
+        payload: {
+          kind: 'download',
+          status: 'queued',
+          source: 'direct_download',
+          source_id: 'dd-1',
+          content_type: 'ebook'
+        }
+      }
+    ]
+  });
+
+  await directQueued.clickPrimaryAction();
+
+  assert.equal(
+    directQueued.dom.action.querySelector('.js-shelfmark-action-label').textContent,
+    'In queue'
+  );
+  assert.equal(
+    directQueued.dom.document.querySelector('.js-shelfmark-status-chip').textContent,
+    'In queue'
+  );
+  assert.equal(directQueued.dom.batchToggle.disabled, true);
+  assert.equal(directQueued.dom.batchSelect.classList.contains('is-hidden'), true);
+  assert.equal(
+    directQueued.dom.document.querySelector('.js-shelfmark-status-target').classList.contains('is-shelfmark-handled'),
+    true
+  );
+
+  const progressive = await runProgressiveScenario();
+
+  assert.deepEqual(
+    progressive.fetchCalls.map((call) => call.url),
+    [
+      '/row/0',
+      '/row/1',
+      '/row/2',
+      'https://library.example.com/search/external/shelfmark/topup?query=terry+pratchett&shelfmark_source_page=2'
+    ]
+  );
+  assert.equal(progressive.dom.rows[0].classList.contains('is-shelfmark-filter-hidden'), false);
+  assert.equal(progressive.dom.rows[1].classList.contains('is-shelfmark-filter-hidden'), false);
+  assert.equal(progressive.dom.rows[2].classList.contains('is-shelfmark-filter-hidden'), true);
+  assert.equal(progressive.dom.visibleCount.textContent, '3 shown');
+  assert.equal(progressive.dom.pageSummary.textContent, '3 shown on this page');
+  assert.equal(progressive.dom.emptyState.classList.contains('is-hidden'), true);
+  assert.equal(progressive.dom.resultsList.children.length, 4);
+  assert.equal(
+    progressive.dom.resultsList.querySelectorAll('.js-shelfmark-result-row').length,
+    4
+  );
 
   console.log('test_shelfmark_external_search_dom.js: ok');
 })().catch((error) => {

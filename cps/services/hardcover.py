@@ -57,6 +57,110 @@ USER_BOOK_FRAGMENT = """
         }
     }"""
 
+BOOK_BY_ID_QUERY = """
+    query HardcoverBookById($id: Int!) {
+        books_by_pk(id: $id) {
+            id
+            title
+            subtitle
+            slug
+            description
+            release_date
+            pages
+            rating
+            ratings_count
+            reviews_count
+            users_count
+            editions_count
+            lists_count
+            cached_image
+            default_cover_edition {
+                id
+                title
+                subtitle
+                release_date
+                pages
+                edition_format
+                physical_format
+                audio_seconds
+                cached_image
+            }
+            featured_book_series {
+                featured
+                position
+                series {
+                    name
+                    slug
+                    primary_books_count
+                }
+            }
+            book_series {
+                featured
+                position
+                series {
+                    name
+                    slug
+                    primary_books_count
+                }
+            }
+            default_ebook_edition {
+                id
+                title
+                subtitle
+                release_date
+                pages
+                edition_format
+                physical_format
+                audio_seconds
+                cached_image
+            }
+            default_physical_edition {
+                id
+                title
+                subtitle
+                release_date
+                pages
+                edition_format
+                physical_format
+                audio_seconds
+                cached_image
+            }
+            default_audio_edition {
+                id
+                title
+                subtitle
+                release_date
+                pages
+                edition_format
+                physical_format
+                audio_seconds
+                cached_image
+            }
+            editions {
+                id
+                title
+                subtitle
+                release_date
+                pages
+                edition_format
+                physical_format
+                audio_seconds
+                cached_image
+            }
+            taggings {
+                spoiler
+                tag {
+                    tag
+                    slug
+                    tag_category {
+                        category
+                        slug
+                    }
+                }
+            }
+        }
+    }"""
+
 
 def escape_markdown(text):
     """Escape markdown special characters to prevent injection.
@@ -81,7 +185,7 @@ class MissingHardcoverToken(Exception):
 
 
 class HardcoverClient:
-    def __init__(self, token: str):
+    def __init__(self, token: str, *, load_privacy: bool = True):
         if not token:
             raise MissingHardcoverToken("Hardcover API token is required")
         self.endpoint = GRAPHQL_ENDPOINT
@@ -89,11 +193,13 @@ class HardcoverClient:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
         }
-        try:
-            self.privacy = self.get_privacy()
-        except Exception as e:
-            log.error(f"Error fetching Hardcover account privacy setting: {e}")
-            raise
+        self.privacy = None
+        if load_privacy:
+            try:
+                self.privacy = self.get_privacy()
+            except Exception as e:
+                log.error(f"Error fetching Hardcover account privacy setting: {e}")
+                raise
 
     def get_privacy(self):
         query = """
@@ -147,6 +253,13 @@ class HardcoverClient:
         query += USER_BOOK_FRAGMENT
         response = self.execute(query, variables)
         return next(iter(response.get("me")[0].get("user_books")), None)
+
+    def get_book_by_id(self, hardcover_id):
+        if hardcover_id is None:
+            return None
+        response = self.execute(BOOK_BY_ID_QUERY, {"id": int(hardcover_id)})
+        book = response.get("books_by_pk")
+        return book if isinstance(book, dict) else None
 
     # TODO Add option for autocreate if missing books instead of forcing it.
     def update_reading_progress(self, identifiers, progress_percent):
@@ -522,7 +635,7 @@ class HardcoverClient:
 
     def execute(self, query, variables=None):
         payload = {"query": query, "variables": variables or {}}
-        response = requests.post(self.endpoint, json=payload, headers=self.headers)
+        response = requests.post(self.endpoint, json=payload, headers=self.headers, timeout=REQUEST_TIMEOUT)
         try:
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:

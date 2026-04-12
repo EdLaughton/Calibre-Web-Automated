@@ -149,12 +149,12 @@
 .shelfmark-empty-state {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 12px;
   margin-bottom: 12px;
-  padding: 16px 18px;
-  border: 1px solid #dbe4eb;
+  padding: 14px 16px;
+  border: 1px solid rgba(226, 236, 242, 0.14);
   border-radius: 12px;
-  background: #f8fbfd;
+  background: rgba(13, 21, 29, 0.34);
   box-shadow: none;
 }
 
@@ -162,13 +162,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-  border-radius: 12px;
-  background: #e8f0f7;
-  color: #416785;
-  font-size: 17px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(225, 235, 242, 0.9);
+  font-size: 15px;
 }
 
 .shelfmark-empty-state__body {
@@ -177,14 +177,14 @@
 
 .shelfmark-empty-state__title {
   margin: 1px 0 4px;
-  color: #25394d;
-  font-size: 17px;
-  font-weight: 700;
+  color: var(--shelfmark-shell-text);
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .shelfmark-empty-state__message {
   margin: 0 0 8px;
-  color: #55697b;
+  color: var(--shelfmark-shell-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -199,10 +199,16 @@
   margin-left: 4px;
   padding: 3px 8px;
   border-radius: 8px;
-  border: 1px solid #d3dfeb;
-  background: #f8fbfd;
-  color: #214b72;
+  border: 1px solid rgba(226, 236, 242, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--shelfmark-shell-text);
   font-size: 12px;
+}
+
+.shelfmark-empty-state--progressive {
+  margin-top: 14px;
+  border-color: rgba(236, 244, 248, 0.12);
+  background: rgba(11, 18, 25, 0.22);
 }
 
 .shelfmark-external-toolbar {
@@ -212,6 +218,11 @@
   justify-content: space-between;
   gap: 12px 16px;
   margin-top: 12px;
+}
+
+.shelfmark-external-toolbar__note {
+  margin: 10px 0 0;
+  color: var(--shelfmark-shell-muted);
 }
 
 .shelfmark-external-controls {
@@ -240,8 +251,7 @@
   white-space: nowrap;
 }
 
-.shelfmark-external-controls__select,
-.shelfmark-pagination-footer__jump-input {
+.shelfmark-external-controls__select {
   min-width: 88px;
   height: 32px;
   border-color: rgba(255, 255, 255, 0.14);
@@ -253,21 +263,12 @@
   min-width: 146px;
 }
 
-#shelfmark_series_filter.shelfmark-external-controls__select {
-  min-width: 134px;
-}
-
-#shelfmark_triage_filter.shelfmark-external-controls__select {
-  min-width: 146px;
-}
-
 #shelfmark_page_size.shelfmark-external-controls__select {
   min-width: 74px;
   width: 74px;
 }
 
-.shelfmark-external-controls__select option,
-.shelfmark-pagination-footer__jump-input option {
+.shelfmark-external-controls__select option {
   color: #1e2c38;
 }
 
@@ -284,6 +285,10 @@
   white-space: nowrap;
 }
 
+.shelfmark-external-controls__checkbox-label--series {
+  padding-right: 2px;
+}
+
 .shelfmark-external-controls__checkbox {
   margin: 0;
   accent-color: rgba(93, 170, 222, 0.92);
@@ -292,8 +297,7 @@
 .shelfmark-external-controls__apply,
 .shelfmark-external-toolbar__open-search,
 .shelfmark-batch-toolbar__request,
-.shelfmark-pagination-footer__page-link,
-.shelfmark-pagination-footer__jump-button {
+.shelfmark-pagination-footer__page-link {
   padding: 6px 12px;
   min-height: 32px;
   border-color: rgba(255, 255, 255, 0.14);
@@ -314,9 +318,7 @@
 .shelfmark-batch-toolbar__request:hover,
 .shelfmark-batch-toolbar__request:focus,
 .shelfmark-pagination-footer__page-link:hover,
-.shelfmark-pagination-footer__page-link:focus,
-.shelfmark-pagination-footer__jump-button:hover,
-.shelfmark-pagination-footer__jump-button:focus {
+.shelfmark-pagination-footer__page-link:focus {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
@@ -729,6 +731,14 @@
   opacity: 0.84;
 }
 
+.shelfmark-results-list > .shelfmark-result-card.shelfmark-result-card--refining {
+  opacity: 0.82;
+}
+
+.shelfmark-results-list > .shelfmark-result-card.is-shelfmark-filter-hidden {
+  display: none;
+}
+
 .shelfmark-result-card--success {
   border-left-color: rgba(93, 195, 131, 0.92);
 }
@@ -889,9 +899,9 @@
 }
 
 .shelfmark-result-card__secondary-action {
-  border-color: rgba(126, 160, 210, 0.24);
-  background: rgba(126, 160, 210, 0.08);
-  color: rgba(228, 238, 247, 0.96);
+  border-color: rgba(154, 178, 204, 0.22);
+  background: rgba(154, 178, 204, 0.1);
+  color: rgba(232, 239, 246, 0.96);
 }
 
 .shelfmark-result-card__secondary-action {
@@ -910,8 +920,8 @@
 .shelfmark-detail-hero__primary-action.btn-default:focus,
 .shelfmark-result-card__secondary-action:hover,
 .shelfmark-result-card__secondary-action:focus {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(184, 204, 224, 0.28);
+  background: rgba(184, 204, 224, 0.14);
   color: #fff;
 }
 
@@ -1051,44 +1061,6 @@
   align-items: center;
 }
 
-.shelfmark-pagination-footer__jump {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-  flex-wrap: nowrap;
-}
-
-.shelfmark-pagination-footer__jump-label {
-  margin: 0;
-  color: var(--shelfmark-shell-muted);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.shelfmark-pagination-footer__jump-total {
-  color: var(--shelfmark-shell-muted);
-  font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.shelfmark-pagination-footer__jump-input {
-  width: 54px;
-  min-width: 54px;
-  padding-left: 6px;
-  padding-right: 6px;
-  text-align: center;
-}
-
-.shelfmark-pagination-footer__jump-button {
-  min-width: 38px;
-  padding-left: 10px;
-  padding-right: 10px;
-  text-align: center;
-}
-
 .shelfmark-pagination-footer__page-link .glyphicon {
   margin-right: 6px;
 }
@@ -1113,6 +1085,16 @@
   line-height: 1.2;
 }
 
+.shelfmark-detail-page__titletext {
+  display: inline;
+}
+
+.shelfmark-detail-page__authorinline {
+  color: var(--shelfmark-shell-muted);
+  font-size: 0.72em;
+  font-weight: 500;
+}
+
 .shelfmark-detail-page__header {
   display: flex;
   align-items: flex-start;
@@ -1127,18 +1109,11 @@
   min-width: 0;
 }
 
-.shelfmark-detail-page__subtitle,
-.shelfmark-detail-page__authorline {
+.shelfmark-detail-page__subtitle {
   margin: 6px 0 0;
   color: var(--shelfmark-shell-muted);
   font-size: 15px;
   line-height: 1.45;
-}
-
-.shelfmark-detail-page__authorline {
-  font-size: 18px;
-  font-weight: 600;
-  color: rgba(236, 243, 248, 0.9);
 }
 
 .shelfmark-detail-page__header-actions {
@@ -1151,27 +1126,34 @@
   color: var(--shelfmark-shell-text);
 }
 
-.shelfmark-detail-pane__lead {
-  margin: 0 0 16px;
-}
-
-.shelfmark-detail-pane__subtitle,
-.shelfmark-detail-pane__authorline {
-  margin: 0;
-}
-
 .shelfmark-detail-pane__subtitle {
+  margin: 4px 0 0;
   color: var(--shelfmark-shell-muted);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
-.shelfmark-detail-pane__authorline {
-  margin-top: 6px;
-  color: rgba(236, 243, 248, 0.92);
-  font-size: 18px;
+.shelfmark-detail-pane__titleblock {
+  margin: 0 0 12px;
+}
+
+.shelfmark-detail-pane__titleline {
+  margin: 0;
+  color: var(--shelfmark-shell-text);
+  font-size: 26px;
+  line-height: 1.22;
   font-weight: 600;
-  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+.shelfmark-detail-pane__titletext {
+  display: inline;
+}
+
+.shelfmark-detail-pane__authorinline {
+  color: var(--shelfmark-shell-muted);
+  font-size: 0.72em;
+  font-weight: 500;
 }
 
 .shelfmark-detail-layout {
@@ -1201,7 +1183,7 @@
 }
 
 .shelfmark-detail-hero {
-  padding: 2px 0 14px;
+  padding: 0 0 14px;
   border-top: 0;
   border-bottom: 1px solid var(--shelfmark-shell-soft-border);
 }
@@ -1245,7 +1227,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .shelfmark-detail-hero__badges .label .glyphicon {
@@ -1256,13 +1238,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .shelfmark-detail-status {
   display: grid;
   gap: 6px;
-  margin: 0 0 12px;
+  margin: 0 0 10px;
 }
 
 .shelfmark-detail-status.is-hidden {
@@ -1287,6 +1269,18 @@
   color: rgba(229, 236, 242, 0.9);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.shelfmark-detail-meta-list__series-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 0;
+}
+
+.shelfmark-detail-meta-list__separator {
+  margin: 0 8px;
+  color: rgba(215, 226, 234, 0.46);
 }
 
 .shelfmark-detail-top-stats {
@@ -1451,6 +1445,49 @@
   line-height: 1.5;
 }
 
+.shelfmark-detail-meta-list__inline-fact + .shelfmark-detail-meta-list__inline-fact::before {
+  content: "\00b7";
+  margin: 0 8px 0 6px;
+  color: var(--shelfmark-shell-muted);
+}
+
+.shelfmark-detail-meta-list__link {
+  color: rgba(213, 231, 246, 0.96);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(213, 231, 246, 0.24);
+}
+
+.shelfmark-detail-meta-list__link:hover,
+.shelfmark-detail-meta-list__link:focus {
+  color: #fff;
+  text-decoration: none;
+  border-bottom-color: rgba(255, 255, 255, 0.52);
+}
+
+.shelfmark-detail-token-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  vertical-align: top;
+}
+
+.shelfmark-detail-token {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(244, 248, 251, 0.94);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.shelfmark-detail-token-list--warnings .shelfmark-detail-token {
+  background: rgba(173, 123, 58, 0.18);
+  color: rgba(255, 235, 214, 0.96);
+}
+
 @media (max-width: 767px) {
   .shelfmark-external-shell,
   .shelfmark-detail-page__shell {
@@ -1529,11 +1566,6 @@
     align-items: stretch;
   }
 
-  .shelfmark-pagination-footer__jump {
-    display: inline-flex;
-    flex-wrap: wrap;
-  }
-
   .shelfmark-result-card__primary-action,
   .shelfmark-detail-hero__primary-action {
     min-width: 0;
@@ -1577,6 +1609,11 @@
   .shelfmark-detail-modal__body {
     max-height: calc(100vh - 82px);
     padding: 16px 14px 20px;
+  }
+
+  .shelfmark-detail-page__title,
+  .shelfmark-detail-pane__titleline {
+    font-size: 24px;
   }
 
   .shelfmark-detail-meta-list {
