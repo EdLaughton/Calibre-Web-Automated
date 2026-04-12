@@ -184,6 +184,168 @@ def test_get_preferred_release_settings_normalizes_invalid_values(shelfmark_modu
     assert settings.ranking == "seeders_desc"
 
 
+def test_get_shelfmark_client_config_uses_stored_password_when_diagnostic_password_blank(shelfmark_module):
+    shelfmark_module.config.config_shelfmark_password_e = "stored-secret"
+
+    config_data = shelfmark_module.get_shelfmark_client_config(
+        {
+            "config_shelfmark_url": "https://shelfmark.example.com",
+            "config_shelfmark_password_e": "",
+        }
+    )
+
+    assert config_data.base_url == "https://shelfmark.example.com"
+    assert config_data.password == "stored-secret"
+
+
+def test_run_shelfmark_settings_diagnostics_discovers_sources_and_indexers(shelfmark_module):
+    class FakeClient:
+        def __init__(self, config_data):
+            self.config = config_data
+            self.authenticated = False
+
+        def auth_check(self):
+            return {"authenticated": self.authenticated, "auth_required": True}
+
+        def authenticate_search_account(self):
+            self.authenticated = True
+            return None
+
+        def request_policy(self):
+            return {
+                "requests_enabled": True,
+                "source_modes": [
+                    {
+                        "source": "prowlarr",
+                        "supported_content_types": ["ebook"],
+                        "modes": {"ebook": "request_release"},
+                    },
+                    {
+                        "source": "direct_download",
+                        "supported_content_types": ["ebook"],
+                        "modes": {"ebook": "download"},
+                    },
+                ],
+            }
+
+        def release_sources(self):
+            return (
+                {
+                    "name": "prowlarr",
+                    "display_name": "Prowlarr",
+                    "enabled": True,
+                    "supported_content_types": ["ebook"],
+                },
+                {
+                    "name": "direct_download",
+                    "display_name": "Direct Download",
+                    "enabled": True,
+                    "supported_content_types": ["ebook"],
+                },
+            )
+
+        def probe_release_lookup(self, source, *, content_type, **kwargs):
+            assert source == "prowlarr"
+            assert content_type == "ebook"
+            return True, {
+                "column_config": {
+                    "available_indexers": ["MyAnonamouse", "Bibliotik"],
+                },
+                "releases": [],
+            }
+
+    diagnostics = shelfmark_module.run_shelfmark_settings_diagnostics(
+        {
+            "config_shelfmark_url": "https://shelfmark.example.com",
+            "config_shelfmark_username": "search",
+            "config_shelfmark_password_e": "secret",
+            "config_shelfmark_preferred_release_content_type": "ebook",
+            "config_shelfmark_preferred_release_provider": "prowlarr",
+        },
+        client_factory=FakeClient,
+    )
+
+    assert diagnostics.success is True
+    assert diagnostics.selected_probe_source == "prowlarr"
+    assert [check.key for check in diagnostics.checks] == [
+        "base_url",
+        "auth",
+        "request_policy",
+        "release_lookup",
+        "provider_options",
+    ]
+    assert diagnostics.checks[-1].status == "ok"
+    assert [option.value for option in diagnostics.provider_options] == [
+        "direct_download",
+        "prowlarr",
+        "Bibliotik",
+        "MyAnonamouse",
+    ]
+
+
+def test_run_shelfmark_settings_diagnostics_reports_missing_base_url(shelfmark_module):
+    diagnostics = shelfmark_module.run_shelfmark_settings_diagnostics(
+        {
+            "config_shelfmark_url": "",
+            "config_shelfmark_preferred_release_content_type": "ebook",
+        }
+    )
+
+    assert diagnostics.success is False
+    assert diagnostics.checks[0].key == "base_url"
+    assert diagnostics.checks[0].status == "error"
+    assert diagnostics.provider_options == ()
+
+
+def test_run_shelfmark_settings_diagnostics_keeps_manual_fallback_when_indexers_not_exposed(shelfmark_module):
+    class FakeClient:
+        def __init__(self, config_data):
+            self.config = config_data
+
+        def auth_check(self):
+            return {"authenticated": True, "auth_required": False}
+
+        def request_policy(self):
+            return {
+                "requests_enabled": True,
+                "source_modes": [
+                    {
+                        "source": "direct_download",
+                        "supported_content_types": ["ebook"],
+                        "modes": {"ebook": "download"},
+                    }
+                ],
+            }
+
+        def release_sources(self):
+            return (
+                {
+                    "name": "direct_download",
+                    "display_name": "Direct Download",
+                    "enabled": True,
+                    "supported_content_types": ["ebook"],
+                },
+            )
+
+        def probe_release_lookup(self, source, *, content_type, **kwargs):
+            assert source == "direct_download"
+            return True, {"releases": []}
+
+    diagnostics = shelfmark_module.run_shelfmark_settings_diagnostics(
+        {
+            "config_shelfmark_url": "https://shelfmark.example.com",
+            "config_shelfmark_preferred_release_content_type": "ebook",
+        },
+        client_factory=FakeClient,
+    )
+
+    assert diagnostics.success is True
+    assert [option.value for option in diagnostics.provider_options] == ["direct_download"]
+    assert diagnostics.checks[-1].key == "provider_options"
+    assert diagnostics.checks[-1].status == "warning"
+    assert "custom" in diagnostics.provider_options_message.lower()
+
+
 def test_select_action_uses_view_library_for_exact_duplicate(shelfmark_module):
     action = shelfmark_module.select_shelfmark_action(
         already_in_library=True,

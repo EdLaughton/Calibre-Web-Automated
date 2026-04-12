@@ -40,6 +40,7 @@ from .helper import check_valid_domain, send_test_mail, reset_password, generate
 from .embed_helper import get_calibre_binarypath
 from .gdriveutils import is_gdrive_ready, gdrive_support
 from .render_template import render_title_template, get_sidebar_config
+from .services.shelfmark_search import run_shelfmark_settings_diagnostics
 from .services.worker import WorkerThread
 from .usermanagement import user_login_required
 from .cw_babel import get_available_translations, get_available_locale, get_user_locale_language
@@ -2971,6 +2972,15 @@ def test_metadata():
     except Exception as e:
         log.error("Metadata test failed: %s", e)
         return json.dumps({'success': False, 'message': _('An unknown error occurred.')}), 200
+
+
+@admi.route("/admin/test_shelfmark_connection", methods=["POST"])
+@user_login_required
+@admin_required
+def test_shelfmark_connection():
+    payload = request.get_json(silent=True) or {}
+    diagnostics = run_shelfmark_settings_diagnostics(payload)
+    return jsonify(diagnostics.to_template_dict())
 
 # --- Last Resort Calibre DB Restore ---
 @admi.route("/admin/restore_calibre_db", methods=["POST"])

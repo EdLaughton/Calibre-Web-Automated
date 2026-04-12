@@ -93,6 +93,69 @@
     padding: 10px 20px;
     font-size: 14px;
 }
+
+.shelfmark-settings-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.shelfmark-settings-diagnostics {
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: rgba(21, 30, 38, 0.6);
+    padding: 12px 14px;
+    margin-top: 12px;
+}
+
+.shelfmark-settings-diagnostics.is-hidden {
+    display: none;
+}
+
+.shelfmark-settings-diagnostics--success {
+    border-color: #3c763d;
+}
+
+.shelfmark-settings-diagnostics--warning {
+    border-color: #8a6d3b;
+}
+
+.shelfmark-settings-diagnostics--danger {
+    border-color: #a94442;
+}
+
+.shelfmark-settings-diagnostics__summary {
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.shelfmark-settings-diagnostics__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.shelfmark-settings-diagnostics__item {
+    padding: 8px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.shelfmark-settings-diagnostics__item:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.shelfmark-settings-diagnostics__label {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.shelfmark-settings-diagnostics__detail,
+.shelfmark-settings-diagnostics__note {
+    color: #c7cbd1;
+    margin-top: 6px;
+}
 </style>
 {% endblock %}
 {% block body %}
@@ -272,13 +335,28 @@
       <div class="form-group">
         <input type="checkbox" id="config_shelfmark_preferred_release_enabled" name="config_shelfmark_preferred_release_enabled" data-control="shelfmark-preferred-release-settings" {% if config.config_shelfmark_preferred_release_enabled %}checked{% endif %}>
         <label for="config_shelfmark_preferred_release_enabled">{{_('Enable Preferred Shelfmark Auto-Download Workflow')}}</label>
-        <div class="help-block">{{_('Optional browser-side upgrade for Request in Shelfmark. When enabled, CWA tries to pick a concrete release before submitting the request action. This only changes request-time release choice; exact Hardcover IDs and Shelfmark/CWA sidecar provenance still drive the later import metadata match.') }}</div>
+        <div class="help-block">{{_('Optional browser-side upgrade for Request in Shelfmark. Use the test button below to verify the current Shelfmark settings and load discoverable source/indexer choices. When preferred routing is unavailable, CWA falls back to the normal request flow.') }}</div>
       </div>
       <div data-related="shelfmark-preferred-release-settings">
         <div class="form-group">
-          <label for="config_shelfmark_preferred_release_provider">{{_('Preferred Provider/Indexer Name')}}</label>
-          <input type="text" class="form-control" id="config_shelfmark_preferred_release_provider" name="config_shelfmark_preferred_release_provider" value="{% if config.config_shelfmark_preferred_release_provider != None %}{{ config.config_shelfmark_preferred_release_provider }}{% endif %}" autocomplete="off" placeholder="MyAnonamouse">
-          <div class="help-block">{{_('Optional. Match a Shelfmark release source or an indexer name such as MyAnonamouse. Leave blank to choose from any compatible ebook release.') }}</div>
+          <div class="shelfmark-settings-actions">
+            <button type="button" class="btn btn-default js-test-shelfmark-connection">{{_('Test Shelfmark connection')}}</button>
+            <span class="help-block">{{_('Checks the current Shelfmark settings, request policy, release lookup support, and discoverable source/indexer options.') }}</span>
+          </div>
+          <div class="shelfmark-settings-diagnostics js-shelfmark-settings-diagnostics is-hidden" data-diagnostics-url="{{ url_for('admin.test_shelfmark_connection') }}"></div>
+        </div>
+        <div class="form-group">
+          <label for="config_shelfmark_preferred_release_provider_select">{{_('Preferred Source / Indexer')}}</label>
+          <input type="hidden" id="config_shelfmark_preferred_release_provider" name="config_shelfmark_preferred_release_provider" value="{% if config.config_shelfmark_preferred_release_provider != None %}{{ config.config_shelfmark_preferred_release_provider }}{% endif %}">
+          <select class="form-control" id="config_shelfmark_preferred_release_provider_select">
+            <option value="">{{_('Any compatible source or indexer')}}</option>
+            <option value="__custom__">{{_('Custom source or indexer…')}}</option>
+          </select>
+          <div id="config_shelfmark_preferred_release_provider_manual_group" class="form-group is-hidden" style="margin-top: 10px;">
+            <label for="config_shelfmark_preferred_release_provider_manual">{{_('Custom Source / Indexer')}}</label>
+            <input type="text" class="form-control" id="config_shelfmark_preferred_release_provider_manual" value="{% if config.config_shelfmark_preferred_release_provider != None %}{{ config.config_shelfmark_preferred_release_provider }}{% endif %}" autocomplete="off" placeholder="MyAnonamouse">
+          </div>
+          <div class="help-block">{{_('Shelfmark can directly expose release sources, and some sources can expose indexers during the connection test. If Shelfmark does not expose a global indexer list, custom fallback remains available.') }}</div>
         </div>
         <div class="form-group">
           <label for="config_shelfmark_preferred_release_content_type">{{_('Preferred Content Type')}}</label>
@@ -292,7 +370,7 @@
           <select class="form-control" id="config_shelfmark_preferred_release_ranking" name="config_shelfmark_preferred_release_ranking">
             <option value="seeders_desc" {% if (config.config_shelfmark_preferred_release_ranking or 'seeders_desc') == 'seeders_desc' %}selected{% endif %}>{{_('Highest seeders')}}</option>
           </select>
-          <div class="help-block">{{_('If no preferred release matches, or Shelfmark policy still requires a book-level request, CWA falls back to the normal Request in Shelfmark flow.') }}</div>
+          <div class="help-block">{{_('Exact Hardcover sidecar provenance still drives the later import metadata handoff. This setting only affects request-time release choice.') }}</div>
         </div>
       </div>
     </div>
@@ -680,6 +758,7 @@
 {% endblock %}
 
 {% block js %}
+<script src="{{ url_for('static', filename='js/shelfmark_settings.js') }}"></script>
 <script>
 $(document).ready(function() {
   // Check for authentication switching warning

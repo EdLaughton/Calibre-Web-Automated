@@ -430,6 +430,46 @@ class ShelfmarkPreferredReleaseSettings:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class ShelfmarkDiagnosticCheck:
+    key: str
+    label: str
+    status: str
+    summary: str
+    detail: str | None = None
+
+    def to_template_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ShelfmarkPreferredProviderOption:
+    value: str
+    label: str
+    kind: str
+
+    def to_template_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ShelfmarkSettingsDiagnostics:
+    success: bool
+    checks: tuple[ShelfmarkDiagnosticCheck, ...] = field(default_factory=tuple)
+    provider_options: tuple[ShelfmarkPreferredProviderOption, ...] = field(default_factory=tuple)
+    provider_options_message: str | None = None
+    selected_probe_source: str | None = None
+
+    def to_template_dict(self) -> dict[str, Any]:
+        return {
+            "success": self.success,
+            "checks": [check.to_template_dict() for check in self.checks],
+            "provider_options": [option.to_template_dict() for option in self.provider_options],
+            "provider_options_message": self.provider_options_message,
+            "selected_probe_source": self.selected_probe_source,
+        }
+
+
 def clear_shelfmark_detail_cache() -> None:
     _SHELFMARK_DETAIL_CACHE.clear()
 
@@ -442,12 +482,40 @@ def clear_shelfmark_scan_cache() -> None:
     _SHELFMARK_SCAN_CACHE.clear()
 
 
-def get_shelfmark_client_config() -> ShelfmarkClientConfig:
-    base_url = str(getattr(config, "config_shelfmark_url", "") or "").strip()
-    browser_base_url = str(getattr(config, "config_shelfmark_browser_url", "") or "").strip() or base_url
-    username = str(getattr(config, "config_shelfmark_username", "") or "").strip() or None
-    password = str(getattr(config, "config_shelfmark_password_e", "") or "").strip() or None
-    enabled = bool(getattr(config, "config_shelfmark_search", False) and base_url)
+def get_shelfmark_client_config(values: Mapping[str, Any] | None = None) -> ShelfmarkClientConfig:
+    raw_values = values or {}
+    base_url = str(
+        raw_values.get("config_shelfmark_url", getattr(config, "config_shelfmark_url", "")) or ""
+    ).strip()
+    browser_base_url = str(
+        raw_values.get(
+            "config_shelfmark_browser_url",
+            getattr(config, "config_shelfmark_browser_url", ""),
+        )
+        or ""
+    ).strip() or base_url
+    username = str(
+        raw_values.get(
+            "config_shelfmark_username",
+            getattr(config, "config_shelfmark_username", ""),
+        )
+        or ""
+    ).strip() or None
+    password_value = raw_values.get("config_shelfmark_password_e")
+    if password_value is None:
+        password = str(getattr(config, "config_shelfmark_password_e", "") or "").strip() or None
+    else:
+        password = str(password_value or "").strip() or (
+            str(getattr(config, "config_shelfmark_password_e", "") or "").strip() or None
+        )
+    enabled_flag = raw_values.get(
+        "config_shelfmark_search",
+        getattr(config, "config_shelfmark_search", False),
+    )
+    enabled = (
+        (_normalize_flag(enabled_flag) if isinstance(enabled_flag, (str, bytes)) else bool(enabled_flag))
+        and bool(base_url)
+    )
     return ShelfmarkClientConfig(
         enabled=enabled,
         base_url=base_url,
@@ -457,23 +525,36 @@ def get_shelfmark_client_config() -> ShelfmarkClientConfig:
     )
 
 
-def get_shelfmark_preferred_release_settings() -> ShelfmarkPreferredReleaseSettings:
+def get_shelfmark_preferred_release_settings(
+    values: Mapping[str, Any] | None = None,
+) -> ShelfmarkPreferredReleaseSettings:
+    raw_values = values or {}
     provider = _normalize_text(
-        getattr(config, "config_shelfmark_preferred_release_provider", "") or ""
+        raw_values.get(
+            "config_shelfmark_preferred_release_provider",
+            getattr(config, "config_shelfmark_preferred_release_provider", ""),
+        )
+        or ""
     ) or ""
     content_type = _normalize_preferred_release_content_type(
-        getattr(
-            config,
+        raw_values.get(
             "config_shelfmark_preferred_release_content_type",
-            DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE,
+            getattr(
+                config,
+                "config_shelfmark_preferred_release_content_type",
+                DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE,
+            ),
         )
     )
     ranking = (
         _normalize_text(
-            getattr(
-                config,
+            raw_values.get(
                 "config_shelfmark_preferred_release_ranking",
-                DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING,
+                getattr(
+                    config,
+                    "config_shelfmark_preferred_release_ranking",
+                    DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING,
+                ),
             )
         )
         or DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING
@@ -482,8 +563,26 @@ def get_shelfmark_preferred_release_settings() -> ShelfmarkPreferredReleaseSetti
         ranking = DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING
 
     return ShelfmarkPreferredReleaseSettings(
-        enabled=bool(
-            getattr(config, "config_shelfmark_preferred_release_enabled", False)
+        enabled=(
+            _normalize_flag(
+                raw_values.get(
+                    "config_shelfmark_preferred_release_enabled",
+                    getattr(config, "config_shelfmark_preferred_release_enabled", False),
+                )
+            )
+            if isinstance(
+                raw_values.get(
+                    "config_shelfmark_preferred_release_enabled",
+                    getattr(config, "config_shelfmark_preferred_release_enabled", False),
+                ),
+                (str, bytes),
+            )
+            else bool(
+                raw_values.get(
+                    "config_shelfmark_preferred_release_enabled",
+                    getattr(config, "config_shelfmark_preferred_release_enabled", False),
+                )
+            )
         ),
         provider=provider,
         content_type=content_type,
@@ -2411,6 +2510,89 @@ class ShelfmarkClient:
             payload,
         )
 
+    def auth_check(self) -> Mapping[str, Any]:
+        response = self._perform_request(
+            "get",
+            _join_base_url(self.config.base_url, "/api/auth/check"),
+            _("Shelfmark auth check failed."),
+        )
+        return self._parse_json_response(
+            response,
+            _("Shelfmark auth check failed."),
+            invalid_payload_message=_("Shelfmark returned an unexpected auth check response."),
+        )
+
+    def request_policy(self) -> Mapping[str, Any]:
+        self._ensure_authenticated()
+        response = self._perform_request(
+            "get",
+            _join_base_url(self.config.base_url, "/api/request-policy"),
+            _("Shelfmark request policy check failed."),
+        )
+        return self._parse_json_response(
+            response,
+            _("Shelfmark request policy check failed."),
+            invalid_payload_message=_("Shelfmark returned an unexpected request policy response."),
+        )
+
+    def release_sources(self) -> tuple[Mapping[str, Any], ...]:
+        self._ensure_authenticated()
+        response = self._perform_request(
+            "get",
+            _join_base_url(self.config.base_url, "/api/release-sources"),
+            _("Shelfmark release source discovery failed."),
+        )
+        payload = self._parse_json_body(
+            response,
+            _("Shelfmark release source discovery failed."),
+            invalid_payload_message=_("Shelfmark returned an unexpected release source response."),
+        )
+        if not response.ok:
+            raw_error = _normalize_text(payload.get("error") or payload.get("message"))
+            raise ShelfmarkIntegrationError(
+                raw_error or _("Shelfmark release source discovery failed.")
+            )
+        sources = payload if isinstance(payload, Sequence) else []
+        return tuple(item for item in sources if isinstance(item, Mapping))
+
+    def probe_release_lookup(
+        self,
+        source: str,
+        *,
+        content_type: str,
+        title: str = "Settings Diagnostic",
+        author: str = "Calibre-Web Automated",
+        manual_query: str = "settings diagnostic",
+    ) -> tuple[bool, Mapping[str, Any]]:
+        self._ensure_authenticated()
+        response = self._perform_request(
+            "get",
+            _join_base_url(self.config.base_url, "/api/releases"),
+            _("Shelfmark release lookup check failed."),
+            params={
+                "provider": "manual",
+                "book_id": "cwa-settings-diagnostic",
+                "source": source,
+                "title": title,
+                "author": author,
+                "manual_query": manual_query,
+                "content_type": content_type,
+            },
+        )
+        payload = self._parse_json_body(
+            response,
+            _("Shelfmark release lookup check failed."),
+            invalid_payload_message=_("Shelfmark returned an unexpected release lookup response."),
+        )
+        if not isinstance(payload, Mapping):
+            raise ShelfmarkIntegrationError(
+                _("Shelfmark returned an unexpected release lookup response.")
+            )
+        return bool(response.ok), payload
+
+    def authenticate_search_account(self) -> None:
+        self._ensure_authenticated()
+
     def _ensure_authenticated(self) -> None:
         if self._authenticated:
             return
@@ -2511,6 +2693,579 @@ class ShelfmarkClient:
             if normalized:
                 message = normalized
         raise ShelfmarkIntegrationError(message)
+
+    @staticmethod
+    def _parse_json_body(
+        response: Any,
+        default_message: str,
+        *,
+        invalid_payload_message: str | None = None,
+    ) -> Any:
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ShelfmarkIntegrationError(invalid_payload_message or default_message) from exc
+        if payload is None:
+            raise ShelfmarkIntegrationError(invalid_payload_message or default_message)
+        return payload
+
+
+def _build_diagnostic_check(
+    key: str,
+    label: str,
+    status: str,
+    summary: str,
+    detail: str | None = None,
+) -> ShelfmarkDiagnosticCheck:
+    return ShelfmarkDiagnosticCheck(
+        key=key,
+        label=label,
+        status=status,
+        summary=summary,
+        detail=detail,
+    )
+
+
+def _preferred_provider_option_label(
+    *,
+    display_name: str,
+    kind: str,
+) -> str:
+    if kind == "indexer":
+        return _("%(name)s (indexer)", name=display_name)
+    return _("%(name)s (source)", name=display_name)
+
+
+def _build_preferred_provider_option(
+    value: str,
+    *,
+    display_name: str | None = None,
+    kind: str,
+) -> ShelfmarkPreferredProviderOption | None:
+    normalized_value = _normalize_text(value)
+    if not normalized_value:
+        return None
+    label_text = _normalize_text(display_name) or normalized_value.replace("_", " ").title()
+    return ShelfmarkPreferredProviderOption(
+        value=normalized_value,
+        label=_preferred_provider_option_label(display_name=label_text, kind=kind),
+        kind=kind,
+    )
+
+
+def _source_mode_map(policy_payload: Mapping[str, Any] | None) -> dict[str, Mapping[str, Any]]:
+    if not isinstance(policy_payload, Mapping):
+        return {}
+    source_modes = policy_payload.get("source_modes")
+    if not isinstance(source_modes, Sequence) or isinstance(source_modes, (str, bytes)):
+        return {}
+
+    mapped: dict[str, Mapping[str, Any]] = {}
+    for entry in source_modes:
+        if not isinstance(entry, Mapping):
+            continue
+        source_name = _normalize_text(entry.get("source"))
+        if source_name:
+            mapped[source_name] = entry
+    return mapped
+
+
+def _release_source_map(
+    release_sources_payload: Sequence[Mapping[str, Any]] | None,
+) -> dict[str, Mapping[str, Any]]:
+    mapped: dict[str, Mapping[str, Any]] = {}
+    for entry in release_sources_payload or ():
+        if not isinstance(entry, Mapping):
+            continue
+        source_name = _normalize_text(entry.get("name"))
+        if source_name:
+            mapped[source_name] = entry
+    return mapped
+
+
+def _supports_content_type(entry: Mapping[str, Any], content_type: str) -> bool:
+    supported = entry.get("supported_content_types")
+    if not isinstance(supported, Sequence) or isinstance(supported, (str, bytes)):
+        return True
+    normalized_supported = {
+        (_normalize_text(item) or "").lower()
+        for item in supported
+        if _normalize_text(item)
+    }
+    return not normalized_supported or content_type in normalized_supported
+
+
+def _build_discovered_source_options(
+    *,
+    content_type: str,
+    release_sources_payload: Sequence[Mapping[str, Any]] | None,
+    policy_payload: Mapping[str, Any] | None,
+) -> tuple[ShelfmarkPreferredProviderOption, ...]:
+    source_map = _release_source_map(release_sources_payload)
+    mode_map = _source_mode_map(policy_payload)
+
+    candidates: list[ShelfmarkPreferredProviderOption] = []
+    seen_values: set[str] = set()
+
+    candidate_names = set(source_map.keys()) | set(mode_map.keys())
+    for source_name in sorted(candidate_names):
+        release_source_entry = source_map.get(source_name)
+        policy_entry = mode_map.get(source_name)
+        if release_source_entry is not None and not bool(release_source_entry.get("enabled", True)):
+            continue
+        if release_source_entry is not None and not _supports_content_type(release_source_entry, content_type):
+            continue
+        if policy_entry is not None and not _supports_content_type(policy_entry, content_type):
+            continue
+        if policy_entry is not None:
+            modes = policy_entry.get("modes")
+            mode_value = None
+            if isinstance(modes, Mapping):
+                mode_value = _normalize_text(modes.get(content_type))
+            if mode_value and mode_value.lower() == "blocked":
+                continue
+
+        option = _build_preferred_provider_option(
+            source_name,
+            display_name=(
+                _normalize_text(release_source_entry.get("display_name"))
+                if isinstance(release_source_entry, Mapping)
+                else None
+            ),
+            kind="source",
+        )
+        if option is None or option.value in seen_values:
+            continue
+        seen_values.add(option.value)
+        candidates.append(option)
+
+    return tuple(candidates)
+
+
+def _extract_release_lookup_indexers(
+    release_lookup_payload: Mapping[str, Any] | None,
+) -> tuple[ShelfmarkPreferredProviderOption, ...]:
+    if not isinstance(release_lookup_payload, Mapping):
+        return tuple()
+
+    values: list[str] = []
+    column_config = release_lookup_payload.get("column_config")
+    if isinstance(column_config, Mapping):
+        available_indexers = column_config.get("available_indexers")
+        if isinstance(available_indexers, Sequence) and not isinstance(available_indexers, (str, bytes)):
+            values.extend(
+                normalized
+                for normalized in (_normalize_text(item) for item in available_indexers)
+                if normalized
+            )
+
+    if not values:
+        releases = release_lookup_payload.get("releases")
+        if isinstance(releases, Sequence) and not isinstance(releases, (str, bytes)):
+            for release in releases:
+                if not isinstance(release, Mapping):
+                    continue
+                normalized_indexer = _normalize_text(release.get("indexer"))
+                if normalized_indexer:
+                    values.append(normalized_indexer)
+
+    options: list[ShelfmarkPreferredProviderOption] = []
+    seen_values: set[str] = set()
+    for value in sorted(set(values), key=lambda item: item.casefold()):
+        option = _build_preferred_provider_option(value, display_name=value, kind="indexer")
+        if option is None or option.value in seen_values:
+            continue
+        seen_values.add(option.value)
+        options.append(option)
+    return tuple(options)
+
+
+def _pick_release_probe_source(
+    *,
+    preferred_value: str,
+    content_type: str,
+    release_sources_payload: Sequence[Mapping[str, Any]] | None,
+    policy_payload: Mapping[str, Any] | None,
+) -> str | None:
+    source_options = _build_discovered_source_options(
+        content_type=content_type,
+        release_sources_payload=release_sources_payload,
+        policy_payload=policy_payload,
+    )
+    available_values = [option.value for option in source_options]
+    if preferred_value and preferred_value in available_values:
+        return preferred_value
+    if "prowlarr" in available_values:
+        return "prowlarr"
+    return available_values[0] if available_values else None
+
+
+def _diagnostics_success(checks: Sequence[ShelfmarkDiagnosticCheck]) -> bool:
+    return not any(check.status == "error" for check in checks)
+
+
+def run_shelfmark_settings_diagnostics(
+    values: Mapping[str, Any] | None = None,
+    *,
+    client_factory: Callable[[ShelfmarkClientConfig], ShelfmarkClient] | None = None,
+) -> ShelfmarkSettingsDiagnostics:
+    config_data = get_shelfmark_client_config(values)
+    preferred_settings = get_shelfmark_preferred_release_settings(values)
+
+    if not config_data.base_url:
+        checks = (
+            _build_diagnostic_check(
+                "base_url",
+                _("Shelfmark base URL"),
+                "error",
+                _("Enter a Shelfmark Base URL before running the test."),
+            ),
+            _build_diagnostic_check(
+                "auth",
+                _("Auth/session"),
+                "warning",
+                _("No auth check was attempted because the Shelfmark Base URL is missing."),
+            ),
+            _build_diagnostic_check(
+                "request_policy",
+                _("Request policy"),
+                "warning",
+                _("No request policy check was attempted because the Shelfmark Base URL is missing."),
+            ),
+            _build_diagnostic_check(
+                "release_lookup",
+                _("Release lookup"),
+                "warning",
+                _("No release lookup was attempted because the Shelfmark Base URL is missing."),
+            ),
+            _build_diagnostic_check(
+                "provider_options",
+                _("Preferred provider/indexer options"),
+                "warning",
+                _("No provider or indexer options could be loaded yet."),
+            ),
+        )
+        return ShelfmarkSettingsDiagnostics(
+            success=False,
+            checks=checks,
+            provider_options=tuple(),
+            provider_options_message=_(
+                "Provider/source options are loaded from Shelfmark only when the connection test succeeds."
+            ),
+            selected_probe_source=None,
+        )
+
+    try:
+        _base_url_host_port(config_data.base_url)
+    except ShelfmarkIntegrationError as exc:
+        checks = (
+            _build_diagnostic_check(
+                "base_url",
+                _("Shelfmark base URL"),
+                "error",
+                str(exc),
+            ),
+        )
+        return ShelfmarkSettingsDiagnostics(
+            success=False,
+            checks=checks,
+            provider_options=tuple(),
+            provider_options_message=_(
+                "Fix the Shelfmark Base URL first, then rerun the test to load options."
+            ),
+            selected_probe_source=None,
+        )
+
+    client = (client_factory or ShelfmarkClient)(config_data)
+    checks: list[ShelfmarkDiagnosticCheck] = []
+    provider_options: list[ShelfmarkPreferredProviderOption] = []
+    release_sources_payload: tuple[Mapping[str, Any], ...] = tuple()
+    request_policy_payload: Mapping[str, Any] | None = None
+    release_lookup_payload: Mapping[str, Any] | None = None
+    probe_source: str | None = None
+    auth_ready = False
+
+    try:
+        auth_payload = client.auth_check()
+        checks.append(
+            _build_diagnostic_check(
+                "base_url",
+                _("Shelfmark base URL"),
+                "ok",
+                _("Shelfmark is reachable at %(url)s.", url=config_data.base_url),
+            )
+        )
+    except ShelfmarkIntegrationError as exc:
+        checks.extend(
+            (
+                _build_diagnostic_check(
+                    "base_url",
+                    _("Shelfmark base URL"),
+                    "error",
+                    str(exc),
+                ),
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "warning",
+                    _("The auth check could not run because Shelfmark was not reachable."),
+                ),
+                _build_diagnostic_check(
+                    "request_policy",
+                    _("Request policy"),
+                    "warning",
+                    _("The request policy check was skipped because Shelfmark was not reachable."),
+                ),
+                _build_diagnostic_check(
+                    "release_lookup",
+                    _("Release lookup"),
+                    "warning",
+                    _("The release lookup check was skipped because Shelfmark was not reachable."),
+                ),
+                _build_diagnostic_check(
+                    "provider_options",
+                    _("Preferred provider/indexer options"),
+                    "warning",
+                    _("No provider or indexer options could be loaded because Shelfmark was not reachable."),
+                ),
+            )
+        )
+        return ShelfmarkSettingsDiagnostics(
+            success=False,
+            checks=tuple(checks),
+            provider_options=tuple(),
+            provider_options_message=_(
+                "Provider/source options load only after the connection test can reach Shelfmark."
+            ),
+            selected_probe_source=None,
+        )
+
+    if config_data.username and config_data.password:
+        try:
+            client.authenticate_search_account()
+            auth_payload = client.auth_check()
+        except ShelfmarkIntegrationError as exc:
+            checks.append(
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "error",
+                    str(exc),
+                )
+            )
+        else:
+            authenticated = bool(auth_payload.get("authenticated"))
+            checks.append(
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "ok" if authenticated else "warning",
+                    _(
+                        "Search-account login succeeded and Shelfmark reports an authenticated session."
+                    )
+                    if authenticated
+                    else _(
+                        "Search-account login ran, but Shelfmark did not report an authenticated session."
+                    ),
+                )
+            )
+            auth_ready = authenticated
+    else:
+        authenticated = bool(isinstance(auth_payload, Mapping) and auth_payload.get("authenticated"))
+        auth_required = True if not isinstance(auth_payload, Mapping) else bool(
+            auth_payload.get("auth_required", True)
+        )
+        if authenticated or not auth_required:
+            checks.append(
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "ok",
+                    _("Shelfmark auth check works without needing a separate configured search login."),
+                )
+            )
+            auth_ready = True
+        else:
+            checks.append(
+                _build_diagnostic_check(
+                    "auth",
+                    _("Auth/session"),
+                    "warning",
+                    _(
+                        "Shelfmark is reachable, but no authenticated server-side session is available yet. Configure a Shelfmark search account here if request policy or release discovery needs login."
+                    ),
+                )
+            )
+
+    if auth_ready:
+        try:
+            request_policy_payload = client.request_policy()
+        except ShelfmarkIntegrationError as exc:
+            checks.append(
+                _build_diagnostic_check(
+                    "request_policy",
+                    _("Request policy"),
+                    "error",
+                    str(exc),
+                )
+            )
+        else:
+            source_mode_count = len(_source_mode_map(request_policy_payload))
+            requests_enabled = bool(request_policy_payload.get("requests_enabled"))
+            checks.append(
+                _build_diagnostic_check(
+                    "request_policy",
+                    _("Request policy"),
+                    "ok" if requests_enabled else "warning",
+                    _(
+                        "Request policy loaded for %(count)s release sources.",
+                        count=source_mode_count,
+                    )
+                    if requests_enabled
+                    else _(
+                        "Request policy loaded, but Shelfmark currently reports that requests are disabled."
+                    ),
+                )
+            )
+
+        try:
+            release_sources_payload = client.release_sources()
+        except ShelfmarkIntegrationError:
+            release_sources_payload = tuple()
+
+        provider_options.extend(
+            _build_discovered_source_options(
+                content_type=preferred_settings.content_type,
+                release_sources_payload=release_sources_payload,
+                policy_payload=request_policy_payload,
+            )
+        )
+
+        probe_source = _pick_release_probe_source(
+            preferred_value=preferred_settings.provider,
+            content_type=preferred_settings.content_type,
+            release_sources_payload=release_sources_payload,
+            policy_payload=request_policy_payload,
+        )
+        if probe_source:
+            try:
+                release_lookup_ok, release_lookup_payload = client.probe_release_lookup(
+                    probe_source,
+                    content_type=preferred_settings.content_type,
+                )
+            except ShelfmarkIntegrationError as exc:
+                checks.append(
+                    _build_diagnostic_check(
+                        "release_lookup",
+                        _("Release lookup"),
+                        "error",
+                        str(exc),
+                    )
+                )
+            else:
+                checks.append(
+                    _build_diagnostic_check(
+                        "release_lookup",
+                        _("Release lookup"),
+                        "ok" if release_lookup_ok else "warning",
+                        _(
+                            "Release lookup responded for %(source)s.",
+                            source=probe_source.replace("_", " ").title(),
+                        )
+                        if release_lookup_ok
+                        else _(
+                            "Release lookup returned an error response for %(source)s.",
+                            source=probe_source.replace("_", " ").title(),
+                        ),
+                        detail=_normalize_text(
+                            release_lookup_payload.get("error")
+                            or release_lookup_payload.get("message")
+                        ),
+                    )
+                )
+                provider_options.extend(_extract_release_lookup_indexers(release_lookup_payload))
+        else:
+            checks.append(
+                _build_diagnostic_check(
+                    "release_lookup",
+                    _("Release lookup"),
+                    "warning",
+                    _(
+                        "No compatible release source was available to probe for %(content_type)s.",
+                        content_type=preferred_settings.content_type,
+                    ),
+                )
+            )
+    else:
+        checks.extend(
+            (
+                _build_diagnostic_check(
+                    "request_policy",
+                    _("Request policy"),
+                    "warning",
+                    _("Request policy was not tested because no authenticated server-side Shelfmark session was available."),
+                ),
+                _build_diagnostic_check(
+                    "release_lookup",
+                    _("Release lookup"),
+                    "warning",
+                    _("Release lookup was not tested because no authenticated server-side Shelfmark session was available."),
+                ),
+            )
+        )
+
+    deduped_provider_options: list[ShelfmarkPreferredProviderOption] = []
+    seen_provider_values: set[str] = set()
+    for option in provider_options:
+        if option.value in seen_provider_values:
+            continue
+        seen_provider_values.add(option.value)
+        deduped_provider_options.append(option)
+
+    if deduped_provider_options:
+        indexer_count = sum(1 for option in deduped_provider_options if option.kind == "indexer")
+        source_count = sum(1 for option in deduped_provider_options if option.kind == "source")
+        provider_status = "ok" if indexer_count > 0 else "warning"
+        provider_summary = (
+            _("Loaded %(sources)s sources and %(indexers)s indexers.", sources=source_count, indexers=indexer_count)
+            if indexer_count > 0
+            else _("Loaded %(sources)s Shelfmark sources. No indexer names were exposed by the tested release source.", sources=source_count)
+        )
+        provider_message = (
+            _("Provider/source options now include Shelfmark sources and discovered indexers.")
+            if indexer_count > 0
+            else _(
+                "Shelfmark exposed source choices, but not a global indexer list. Custom indexer fallback remains available."
+            )
+        )
+        checks.append(
+            _build_diagnostic_check(
+                "provider_options",
+                _("Preferred provider/indexer options"),
+                provider_status,
+                provider_summary,
+            )
+        )
+    else:
+        provider_message = _(
+            "Shelfmark did not expose any provider or indexer options from this test run, so custom fallback remains available."
+        )
+        checks.append(
+            _build_diagnostic_check(
+                "provider_options",
+                _("Preferred provider/indexer options"),
+                "warning",
+                _("No provider or indexer options were discovered from this test run."),
+            )
+        )
+
+    return ShelfmarkSettingsDiagnostics(
+        success=_diagnostics_success(checks),
+        checks=tuple(checks),
+        provider_options=tuple(deduped_provider_options),
+        provider_options_message=provider_message,
+        selected_probe_source=probe_source,
+    )
 
 
 def _normalize_text(value: Any) -> str | None:
