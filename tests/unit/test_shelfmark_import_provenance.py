@@ -106,3 +106,18 @@ def test_select_exact_hardcover_result_returns_none_without_matching_book_id():
     )
 
     assert selected is None
+
+
+def test_summarize_import_manifest_identifiers_surfaces_hardcover_fields():
+    module = _load_module()
+
+    summary = module.summarize_import_manifest_identifiers(
+        [
+            "isbn:9780552131063",
+            "hardcover-id:379631",
+            "hardcover-edition:91234",
+            "hardcover-slug:mort",
+        ]
+    )
+
+    assert summary == "hardcover-id=379631, hardcover-edition=91234, hardcover-slug=mort"

@@ -32,6 +32,7 @@ TaskAutoSend = None
 WorkerThread = None
 _ub = None
 extract_import_manifest_identifiers = None
+summarize_import_manifest_identifiers = None
 
 # Debounced duplicate scan timer
 _duplicate_scan_timer = None
@@ -232,10 +233,14 @@ try:
         sys.path.append(cps_path)
 
     try:
-        from cps.utils.shelfmark_import_provenance import extract_import_manifest_identifiers
+        from cps.utils.shelfmark_import_provenance import (
+            extract_import_manifest_identifiers,
+            summarize_import_manifest_identifiers,
+        )
     except ImportError as e:
         print(f"[ingest-processor] Provenance helper not available: {e}", flush=True)
         extract_import_manifest_identifiers = None
+        summarize_import_manifest_identifiers = None
 
     # Import GDrive functionality
     try:
@@ -775,12 +780,35 @@ class NewBookProcessor:
             return
 
         manifest_identifiers: list[str] = []
+        manifest_identifier_summary = "no stable identifiers"
+        if manifest:
+            print(f"[ingest-processor] Found sidecar manifest for {source_path.name}", flush=True)
         if manifest and extract_import_manifest_identifiers is not None:
             try:
                 manifest_identifiers = extract_import_manifest_identifiers(manifest)
+                if summarize_import_manifest_identifiers is not None:
+                    manifest_identifier_summary = summarize_import_manifest_identifiers(manifest_identifiers)
+                elif manifest_identifiers:
+                    manifest_identifier_summary = f"{len(manifest_identifiers)} stable identifiers"
+                if manifest_identifiers:
+                    print(
+                        f"[ingest-processor] Using sidecar provenance for {source_path.name}: {manifest_identifier_summary}",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[ingest-processor] Sidecar manifest for {source_path.name} did not provide stable import identifiers",
+                        flush=True,
+                    )
             except Exception as e:
                 print(f"[ingest-processor] WARN: Failed to extract import provenance identifiers: {e}", flush=True)
                 manifest_identifiers = []
+
+        if manifest_identifiers:
+            print(
+                f"[ingest-processor] Applying sidecar identifiers during import for {source_path.name}: {manifest_identifier_summary}",
+                flush=True,
+            )
 
         try:
             if text:

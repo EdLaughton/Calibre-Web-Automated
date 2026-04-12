@@ -97,6 +97,33 @@ def extract_import_manifest_identifiers(manifest: Mapping[str, Any] | None) -> l
     return list(ordered_identifiers.keys())
 
 
+def summarize_import_manifest_identifiers(identifiers: Sequence[str] | None) -> str:
+    """Return a concise log-friendly summary of extracted sidecar identifiers."""
+    if not identifiers:
+        return "no stable identifiers"
+
+    interesting_types = ("hardcover-id", "hardcover-edition", "hardcover-slug")
+    summary_fields: OrderedDict[str, str] = OrderedDict()
+    stable_identifier_count = 0
+
+    for identifier in identifiers:
+        normalized_identifier = _normalize_text(identifier)
+        if normalized_identifier is None or ":" not in normalized_identifier:
+            continue
+        stable_identifier_count += 1
+        identifier_type, identifier_value = normalized_identifier.split(":", 1)
+        normalized_type = _normalize_text(identifier_type)
+        normalized_value = _normalize_text(identifier_value)
+        if normalized_type in interesting_types and normalized_value is not None:
+            summary_fields.setdefault(normalized_type, normalized_value)
+
+    if summary_fields:
+        return ", ".join(f"{identifier_type}={identifier_value}" for identifier_type, identifier_value in summary_fields.items())
+
+    noun = "identifier" if stable_identifier_count == 1 else "identifiers"
+    return f"{stable_identifier_count} stable {noun}"
+
+
 def select_exact_hardcover_result(results: Sequence[Any], existing_identifiers: Mapping[str, Any] | None) -> Any | None:
     """Choose the most exact Hardcover metadata result for an imported book.
 

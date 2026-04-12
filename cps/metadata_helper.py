@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
+from dataclasses import dataclass, field
 import json
 
 from cps import logger, db
@@ -15,6 +16,16 @@ sys.path.insert(1, '/app/calibre-web-automated/scripts/')
 from cwa_db import CWA_DB
 
 log = logger.create()
+
+
+@dataclass
+class ExactHardcoverLookupOutcome:
+    attempted: bool = False
+    metadata: object | None = None
+    existing_identifiers: dict[str, str] = field(default_factory=dict)
+    match_basis: str | None = None
+    reason: str | None = None
+    error: str | None = None
 
 
 def _get_book_identifier_map(book) -> dict[str, str]:
@@ -34,6 +45,26 @@ def _find_metadata_provider(provider_id: str):
     return None
 
 
+def _determine_exact_hardcover_match_basis(metadata, existing_identifiers: dict[str, str]) -> str | None:
+    metadata_identifiers = getattr(metadata, 'identifiers', None)
+    if not isinstance(metadata_identifiers, dict):
+        metadata_identifiers = {}
+
+    hardcover_edition = existing_identifiers.get('hardcover-edition')
+    if hardcover_edition and metadata_identifiers.get('hardcover-edition') == hardcover_edition:
+        return 'hardcover-edition'
+
+    hardcover_slug = existing_identifiers.get('hardcover-slug')
+    if hardcover_slug and metadata_identifiers.get('hardcover-slug') == hardcover_slug:
+        return 'hardcover-slug'
+
+    hardcover_id = existing_identifiers.get('hardcover-id')
+    if hardcover_id and metadata_identifiers.get('hardcover-id') == hardcover_id:
+        return 'hardcover-id'
+
+    return None
+
+
 def _fetch_exact_hardcover_metadata(book, provider_hierarchy, enabled_map):
     """Fetch metadata through the exact Hardcover path when stable identifiers exist.
 
@@ -44,25 +75,83 @@ def _fetch_exact_hardcover_metadata(book, provider_hierarchy, enabled_map):
     existing_identifiers = _get_book_identifier_map(book)
     hardcover_id = existing_identifiers.get('hardcover-id')
     if not hardcover_id:
-        return None
+        return ExactHardcoverLookupOutcome(
+            existing_identifiers=existing_identifiers,
+            reason='no_provenance',
+        )
 
     if 'hardcover' not in provider_hierarchy:
-        return None
+        return ExactHardcoverLookupOutcome(
+            existing_identifiers=existing_identifiers,
+            reason='provider_not_configured',
+        )
 
     if not enabled_map.get('hardcover', True):
-        return None
+        return ExactHardcoverLookupOutcome(
+            existing_identifiers=existing_identifiers,
+            reason='provider_disabled',
+        )
 
     provider = _find_metadata_provider('hardcover')
     if not provider or not provider.active:
-        return None
+        return ExactHardcoverLookupOutcome(
+            existing_identifiers=existing_identifiers,
+            reason='provider_unavailable',
+        )
+
+    log.info(
+        "Metadata fetch: using exact Hardcover lookup for book_id=%s hardcover-id=%s",
+        getattr(book, 'id', 'unknown'),
+        hardcover_id,
+    )
+
+    hardcover_edition = existing_identifiers.get('hardcover-edition')
+    if hardcover_edition:
+        log.info(
+            "Metadata fetch: preferring Hardcover result matching hardcover-edition=%s for book_id=%s",
+            hardcover_edition,
+            getattr(book, 'id', 'unknown'),
+        )
+    else:
+        hardcover_slug = existing_identifiers.get('hardcover-slug')
+        if hardcover_slug:
+            log.info(
+                "Metadata fetch: preferring Hardcover result matching hardcover-slug=%s for book_id=%s",
+                hardcover_slug,
+                getattr(book, 'id', 'unknown'),
+            )
 
     try:
         results = provider.search(f"hardcover-id:{hardcover_id}", "", "en") or []
     except Exception as e:
-        log.warning(f"Exact Hardcover metadata lookup failed for book {getattr(book, 'id', 'unknown')}: {e}")
-        return None
+        return ExactHardcoverLookupOutcome(
+            attempted=True,
+            existing_identifiers=existing_identifiers,
+            reason='lookup_error',
+            error=str(e),
+        )
 
-    return select_exact_hardcover_result(results, existing_identifiers)
+    if not results:
+        return ExactHardcoverLookupOutcome(
+            attempted=True,
+            existing_identifiers=existing_identifiers,
+            reason='no_results',
+        )
+
+    metadata = select_exact_hardcover_result(results, existing_identifiers)
+    if metadata is None:
+        return ExactHardcoverLookupOutcome(
+            attempted=True,
+            existing_identifiers=existing_identifiers,
+            reason='no_exact_match',
+        )
+
+    return ExactHardcoverLookupOutcome(
+        attempted=True,
+        metadata=metadata,
+        existing_identifiers=existing_identifiers,
+        match_basis=_determine_exact_hardcover_match_basis(metadata, existing_identifiers),
+    )
 
 def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
     """
@@ -116,24 +205,93 @@ def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
 
         metadata_found = False
 
-        exact_hardcover_metadata = _fetch_exact_hardcover_metadata(
+        exact_hardcover_lookup = _fetch_exact_hardcover_metadata(
             book,
             provider_hierarchy=provider_hierarchy,
             enabled_map=enabled_map,
         )
-        if exact_hardcover_metadata is not None:
-            existing_identifiers = _get_book_identifier_map(book)
+        exact_identifiers = exact_hardcover_lookup.existing_identifiers
+        if exact_hardcover_lookup.reason == 'no_provenance':
             log.info(
-                "Fetching metadata via exact Hardcover provenance for book %s: "
-                "hardcover-id=%s, hardcover-edition=%s, hardcover-slug=%s",
+                "Metadata fetch: no exact Hardcover provenance present for book_id=%s; falling back to fuzzy lookup",
                 book.id,
-                existing_identifiers.get('hardcover-id'),
-                existing_identifiers.get('hardcover-edition'),
-                existing_identifiers.get('hardcover-slug'),
             )
-            if _apply_metadata_to_book(book, exact_hardcover_metadata, calibre_db_instance):
+        elif exact_hardcover_lookup.reason == 'provider_not_configured':
+            log.info(
+                "Metadata fetch: exact Hardcover provenance present for book_id=%s hardcover-id=%s, "
+                "but Hardcover is not in the metadata provider hierarchy; falling back to fuzzy lookup",
+                book.id,
+                exact_identifiers.get('hardcover-id'),
+            )
+        elif exact_hardcover_lookup.reason == 'provider_disabled':
+            log.info(
+                "Metadata fetch: exact Hardcover provenance present for book_id=%s hardcover-id=%s, "
+                "but the Hardcover provider is disabled; falling back to fuzzy lookup",
+                book.id,
+                exact_identifiers.get('hardcover-id'),
+            )
+        elif exact_hardcover_lookup.reason == 'provider_unavailable':
+            log.info(
+                "Metadata fetch: exact Hardcover provenance present for book_id=%s hardcover-id=%s, "
+                "but the Hardcover provider is unavailable; falling back to fuzzy lookup",
+                book.id,
+                exact_identifiers.get('hardcover-id'),
+            )
+        elif exact_hardcover_lookup.reason == 'lookup_error':
+            log.warning(
+                "Metadata fetch: exact Hardcover lookup failed for book_id=%s hardcover-id=%s: %s",
+                book.id,
+                exact_identifiers.get('hardcover-id'),
+                exact_hardcover_lookup.error,
+            )
+            log.info(
+                "Metadata fetch: falling back to fuzzy lookup for book_id=%s after exact Hardcover lookup failure",
+                book.id,
+            )
+        elif exact_hardcover_lookup.reason == 'no_results':
+            log.info(
+                "Metadata fetch: exact Hardcover lookup returned no results for book_id=%s hardcover-id=%s; "
+                "falling back to fuzzy lookup",
+                book.id,
+                exact_identifiers.get('hardcover-id'),
+            )
+        elif exact_hardcover_lookup.reason == 'no_exact_match':
+            log.info(
+                "Metadata fetch: exact Hardcover lookup found no matching result for book_id=%s hardcover-id=%s; "
+                "falling back to fuzzy lookup",
+                book.id,
+                exact_identifiers.get('hardcover-id'),
+            )
+
+        if exact_hardcover_lookup.metadata is not None:
+            if exact_hardcover_lookup.match_basis == 'hardcover-edition':
+                log.info(
+                    "Metadata fetch: exact Hardcover result matched via hardcover-edition=%s for book_id=%s",
+                    exact_identifiers.get('hardcover-edition'),
+                    book.id,
+                )
+            elif exact_hardcover_lookup.match_basis == 'hardcover-slug':
+                log.info(
+                    "Metadata fetch: exact Hardcover result matched via hardcover-slug=%s for book_id=%s",
+                    exact_identifiers.get('hardcover-slug'),
+                    book.id,
+                )
+            elif exact_hardcover_lookup.match_basis == 'hardcover-id':
+                log.info(
+                    "Metadata fetch: exact Hardcover result matched via hardcover-id=%s for book_id=%s",
+                    exact_identifiers.get('hardcover-id'),
+                    book.id,
+                )
+
+            if _apply_metadata_to_book(book, exact_hardcover_lookup.metadata, calibre_db_instance):
                 log.info(f"Successfully applied exact Hardcover metadata for book: {book.title}")
                 metadata_found = True
+            else:
+                log.info(
+                    "Metadata fetch: exact Hardcover metadata produced no applied changes for book_id=%s; "
+                    "falling back to fuzzy lookup",
+                    book.id,
+                )
 
         if metadata_found:
             calibre_db_instance.session.close()
