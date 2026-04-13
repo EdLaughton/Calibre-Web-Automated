@@ -6,6 +6,7 @@
 # See CONTRIBUTORS for full list of authors.
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import json
 
 from cps import logger, db
@@ -428,6 +429,72 @@ def _determine_exact_hardcover_match_basis(metadata, existing_identifiers: dict[
     return None
 
 
+def _load_cover_update_dependencies():
+    from cps import helper as helper_module
+    from cps.cover_utils import apply_selected_cover_url
+
+    return helper_module, apply_selected_cover_url
+
+
+def _apply_hardcover_cover_to_book(book, metadata) -> bool:
+    if _metadata_source_id(metadata) != 'hardcover':
+        return False
+
+    cover_url = _normalize_text(getattr(metadata, 'cover', None))
+    book_id = getattr(book, 'id', 'unknown')
+    cover_source = _normalize_text(getattr(metadata, 'hardcover_cover_source', None)) or 'provider cover'
+
+    if not cover_url:
+        log.info(
+            "No safe preferred exact cover found; preserving existing/imported cover for book_id=%s",
+            book_id,
+        )
+        return False
+
+    try:
+        helper_module, apply_selected_cover_url = _load_cover_update_dependencies()
+    except Exception as exc:
+        log.warning(
+            "Metadata fetch: cover helpers unavailable for book_id=%s; skipping exact Hardcover cover update: %s",
+            book_id,
+            exc,
+        )
+        return False
+
+    log.info(
+        "Applying exact Hardcover cover during ingest for book_id=%s from %s",
+        book_id,
+        cover_source,
+    )
+    outcome = apply_selected_cover_url(
+        book_id=book_id,
+        book_path=getattr(book, 'path', ''),
+        cover_url=cover_url,
+        logger=log,
+        save_cover_from_url=helper_module.save_cover_from_url,
+        refresh_thumbnail_cache=helper_module.replace_cover_thumbnail_cache,
+    )
+    if not outcome.applied:
+        if outcome.error:
+            log.warning(
+                "Metadata fetch: exact Hardcover cover update failed for book_id=%s error=%s",
+                book_id,
+                outcome.error,
+            )
+        return False
+
+    if outcome.cleared_cover:
+        book.has_cover = 0
+    else:
+        book.has_cover = 1
+
+    log.info(
+        "Queued cover thumbnail invalidation after exact Hardcover ingest cover update for book_id=%s",
+        book_id,
+    )
+    return True
+
+
 def _fetch_exact_hardcover_metadata(book, provider_hierarchy, enabled_map):
     """Fetch metadata through the exact Hardcover path when stable identifiers exist.
 
@@ -756,6 +823,7 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
         use_smart_application = cwa_settings.get('auto_metadata_smart_application', False)
         
         updated = False
+        cover_updated = False
         
         # Update title - only if enabled in settings
         if (cwa_settings.get('auto_metadata_update_title', True) and 
@@ -860,7 +928,6 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
         if (cwa_settings.get('auto_metadata_update_published_date', True) and 
             hasattr(metadata, 'publishedDate') and metadata.publishedDate):
             try:
-                from datetime import datetime
                 if isinstance(metadata.publishedDate, str):
                     # Try to parse various date formats
                     for fmt in ['%Y-%m-%d', '%Y-%m', '%Y']:
@@ -924,16 +991,17 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
                         )
                     updated = True
         
-        # Handle cover image - only if enabled in settings
-        if (cwa_settings.get('auto_metadata_update_cover', True) and 
-            hasattr(metadata, 'cover') and metadata.cover):
-            # TODO: Implement cover resolution checking for smart mode
-            # For now, just apply the cover in normal mode
-            if not use_smart_application:
-                # Apply cover (implementation depends on how covers are handled in Calibre-Web)
-                pass
+        # Handle cover image for exact Hardcover metadata - only if enabled in settings
+        if cwa_settings.get('auto_metadata_update_cover', True):
+            cover_updated = _apply_hardcover_cover_to_book(book, metadata)
+            updated |= cover_updated
         
         if updated:
+            if cover_updated and hasattr(book, 'last_modified'):
+                book.last_modified = datetime.now(timezone.utc)
+                set_dirty = getattr(calibre_db_instance, 'set_metadata_dirty', None)
+                if callable(set_dirty):
+                    set_dirty(getattr(book, 'id', None))
             calibre_db_instance.session.commit()
             
         return updated
