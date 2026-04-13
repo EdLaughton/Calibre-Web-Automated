@@ -49,6 +49,7 @@ from . import gdriveutils as gd
 from .constants import (STATIC_DIR as _STATIC_DIR, CACHE_TYPE_THUMBNAILS, THUMBNAIL_TYPE_COVER, THUMBNAIL_TYPE_SERIES,
                         SUPPORTED_CALIBRE_BINARIES)
 from .subproc_wrapper import process_wait
+from .cover_utils import is_cached_thumbnail_stale
 
 # Track books with pending thumbnail generation to prevent duplicate tasks
 _pending_thumbnail_books = set()
@@ -863,8 +864,8 @@ def get_book_cover_with_uuid(book_uuid, resolution=None):
 def get_book_cover_internal(book, resolution=None):
     """Serve book cover with improved thumbnail generation fallback.
 
-    When a thumbnail is requested but missing, generate it synchronously
-    instead of falling back to the original cover.jpg.
+    When a thumbnail is requested but missing or stale, queue regeneration
+    and fall back to the freshly written cover.jpg until the cache catches up.
     """
     if book and book.has_cover:
 
@@ -875,12 +876,40 @@ def get_book_cover_internal(book, resolution=None):
             webp_thumb = get_book_cover_thumbnail_by_format(book, resolution, 'webp')
             jpg_thumb = get_book_cover_thumbnail_by_format(book, resolution, 'jpg')
 
-            # Check if files actually exist on disk
+            # Check if files actually exist on disk and are still current
             webp_exists = webp_thumb and cache.get_cache_file_exists(webp_thumb.filename, CACHE_TYPE_THUMBNAILS)
             jpg_exists = jpg_thumb and cache.get_cache_file_exists(jpg_thumb.filename, CACHE_TYPE_THUMBNAILS)
+            webp_stale = bool(
+                webp_exists and is_cached_thumbnail_stale(
+                    getattr(book, 'last_modified', None),
+                    getattr(webp_thumb, 'generated_at', None),
+                )
+            )
+            jpg_stale = bool(
+                jpg_exists and is_cached_thumbnail_stale(
+                    getattr(book, 'last_modified', None),
+                    getattr(jpg_thumb, 'generated_at', None),
+                )
+            )
 
-            # Generate missing thumbnails on-demand (skip for Kobo requests to avoid delays)
-            if not webp_exists or not jpg_exists:
+            if webp_stale:
+                log.debug(
+                    "Ignoring stale cached webp cover thumbnail for book %s resolution=%s",
+                    book.id,
+                    resolution,
+                )
+            if jpg_stale:
+                log.debug(
+                    "Ignoring stale cached jpg cover thumbnail for book %s resolution=%s",
+                    book.id,
+                    resolution,
+                )
+
+            webp_ready = bool(webp_exists and not webp_stale)
+            jpg_ready = bool(jpg_exists and not jpg_stale)
+
+            # Generate missing or stale thumbnails on-demand (skip for Kobo requests to avoid delays)
+            if not webp_ready or not jpg_ready:
                 try:
                     from flask import has_request_context, request
                     is_kobo_request = (has_request_context() and
@@ -917,12 +946,12 @@ def get_book_cover_internal(book, resolution=None):
 
                 # Prefer jpg for Kobo requests, webp for web requests
                 if is_kobo_request:
-                    thumbnail_to_serve = jpg_thumb if jpg_exists else (webp_thumb if webp_exists else None)
+                    thumbnail_to_serve = jpg_thumb if jpg_ready else (webp_thumb if webp_ready else None)
                 else:
-                    thumbnail_to_serve = webp_thumb if webp_exists else (jpg_thumb if jpg_exists else None)
+                    thumbnail_to_serve = webp_thumb if webp_ready else (jpg_thumb if jpg_ready else None)
             except:
                 # Fallback if we can't determine request context
-                thumbnail_to_serve = webp_thumb if webp_exists else (jpg_thumb if jpg_exists else None)
+                thumbnail_to_serve = webp_thumb if webp_ready else (jpg_thumb if jpg_ready else None)
             if thumbnail_to_serve:
                 return send_from_directory(cache.get_cache_file_dir(thumbnail_to_serve.filename, CACHE_TYPE_THUMBNAILS),
                                            thumbnail_to_serve.filename)

@@ -833,3 +833,255 @@ def test_apply_metadata_persists_resolved_hardcover_edition_identifier(monkeypat
         in message
         for message in info_messages
     )
+def test_apply_metadata_applies_exact_hardcover_cover_during_ingest(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Equal Rites",
+        authors=[],
+        comments=[],
+        publishers=[],
+        tags=[],
+        series=[],
+        ratings=[],
+        identifiers=[],
+        languages=[],
+        path="Pratchett/Equal Rites (1)",
+        has_cover=0,
+        last_modified=None,
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "auto_metadata_update_title": False,
+            "auto_metadata_update_authors": False,
+            "auto_metadata_update_description": False,
+            "auto_metadata_update_publisher": False,
+            "auto_metadata_update_tags": False,
+            "auto_metadata_update_series": False,
+            "auto_metadata_update_published_date": False,
+            "auto_metadata_update_rating": False,
+            "auto_metadata_update_identifiers": False,
+            "auto_metadata_update_cover": True,
+        },
+    )
+
+    save_cover_from_url = mock.Mock(return_value=(True, None))
+    replace_cover_thumbnail_cache = mock.Mock()
+
+    def fake_apply_selected_cover_url(**kwargs):
+        kwargs["save_cover_from_url"](kwargs["cover_url"], kwargs["book_path"])
+        kwargs["refresh_thumbnail_cache"](kwargs["book_id"])
+        return types.SimpleNamespace(
+            applied=True,
+            modify_date=True,
+            error=None,
+            cleared_cover=False,
+            normalized_cover_url=kwargs["cover_url"],
+        )
+
+    monkeypatch.setattr(
+        module,
+        "_load_cover_update_dependencies",
+        lambda: (
+            types.SimpleNamespace(
+                save_cover_from_url=save_cover_from_url,
+                replace_cover_thumbnail_cache=replace_cover_thumbnail_cache,
+            ),
+            fake_apply_selected_cover_url,
+        ),
+    )
+
+    session = types.SimpleNamespace(
+        add=lambda *args, **kwargs: None,
+        commit=mock.Mock(),
+        rollback=lambda: None,
+    )
+    set_metadata_dirty = mock.Mock()
+    calibre_db_instance = types.SimpleNamespace(
+        session=session,
+        set_metadata_dirty=set_metadata_dirty,
+    )
+    metadata = types.SimpleNamespace(
+        identifiers={},
+        title="",
+        authors=[],
+        description="",
+        publisher="",
+        tags=[],
+        series="",
+        publishedDate="",
+        source=types.SimpleNamespace(id="hardcover"),
+        cover="https://covers.example/17801818.jpg",
+        hardcover_cover_source="chosen edition cover",
+    )
+
+    assert module._apply_metadata_to_book(book, metadata, calibre_db_instance) is True
+    assert book.has_cover == 1
+    assert book.last_modified is not None
+    save_cover_from_url.assert_called_once_with(
+        "https://covers.example/17801818.jpg",
+        "Pratchett/Equal Rites (1)",
+    )
+    replace_cover_thumbnail_cache.assert_called_once_with(1)
+    set_metadata_dirty.assert_called_once_with(1)
+    session.commit.assert_called_once()
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "Applying exact Hardcover cover during ingest for book_id=1 from chosen edition cover"
+        in message
+        for message in info_messages
+    )
+    assert any(
+        "Queued cover thumbnail invalidation after exact Hardcover ingest cover update for book_id=1"
+        in message
+        for message in info_messages
+    )
+
+
+def test_apply_metadata_preserves_existing_cover_when_exact_hardcover_cover_missing(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Equal Rites",
+        authors=[],
+        comments=[],
+        publishers=[],
+        tags=[],
+        series=[],
+        ratings=[],
+        identifiers=[],
+        languages=[],
+        path="Pratchett/Equal Rites (1)",
+        has_cover=1,
+        last_modified=None,
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "auto_metadata_update_title": False,
+            "auto_metadata_update_authors": False,
+            "auto_metadata_update_description": False,
+            "auto_metadata_update_publisher": False,
+            "auto_metadata_update_tags": False,
+            "auto_metadata_update_series": False,
+            "auto_metadata_update_published_date": False,
+            "auto_metadata_update_rating": False,
+            "auto_metadata_update_identifiers": False,
+            "auto_metadata_update_cover": True,
+        },
+    )
+
+    load_cover_deps = mock.Mock()
+    monkeypatch.setattr(module, "_load_cover_update_dependencies", load_cover_deps)
+
+    session = types.SimpleNamespace(
+        add=lambda *args, **kwargs: None,
+        commit=mock.Mock(),
+        rollback=lambda: None,
+    )
+    calibre_db_instance = types.SimpleNamespace(
+        session=session,
+        set_metadata_dirty=mock.Mock(),
+    )
+    metadata = types.SimpleNamespace(
+        identifiers={},
+        title="",
+        authors=[],
+        description="",
+        publisher="",
+        tags=[],
+        series="",
+        publishedDate="",
+        source=types.SimpleNamespace(id="hardcover"),
+        cover="",
+        hardcover_cover_source="no cover resolved",
+    )
+
+    assert module._apply_metadata_to_book(book, metadata, calibre_db_instance) is False
+    assert book.has_cover == 1
+    assert book.last_modified is None
+    load_cover_deps.assert_not_called()
+    session.commit.assert_not_called()
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "No safe preferred exact cover found; preserving existing/imported cover for book_id=1"
+        in message
+        for message in info_messages
+    )
+
+
+def test_apply_metadata_does_not_enable_auto_cover_for_non_hardcover_provider(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Equal Rites",
+        authors=[],
+        comments=[],
+        publishers=[],
+        tags=[],
+        series=[],
+        ratings=[],
+        identifiers=[],
+        languages=[],
+        path="Pratchett/Equal Rites (1)",
+        has_cover=0,
+        last_modified=None,
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "auto_metadata_update_title": False,
+            "auto_metadata_update_authors": False,
+            "auto_metadata_update_description": False,
+            "auto_metadata_update_publisher": False,
+            "auto_metadata_update_tags": False,
+            "auto_metadata_update_series": False,
+            "auto_metadata_update_published_date": False,
+            "auto_metadata_update_rating": False,
+            "auto_metadata_update_identifiers": False,
+            "auto_metadata_update_cover": True,
+        },
+    )
+
+    load_cover_deps = mock.Mock()
+    monkeypatch.setattr(module, "_load_cover_update_dependencies", load_cover_deps)
+
+    session = types.SimpleNamespace(
+        add=lambda *args, **kwargs: None,
+        commit=mock.Mock(),
+        rollback=lambda: None,
+    )
+    calibre_db_instance = types.SimpleNamespace(
+        session=session,
+        set_metadata_dirty=mock.Mock(),
+    )
+    metadata = types.SimpleNamespace(
+        identifiers={},
+        title="",
+        authors=[],
+        description="",
+        publisher="",
+        tags=[],
+        series="",
+        publishedDate="",
+        source=types.SimpleNamespace(id="google"),
+        cover="https://covers.example/google.jpg",
+    )
+
+    assert module._apply_metadata_to_book(book, metadata, calibre_db_instance) is False
+    assert book.has_cover == 0
+    load_cover_deps.assert_not_called()
+    session.commit.assert_not_called()
+    assert _flatten_log_messages(logger_instance.info) == []

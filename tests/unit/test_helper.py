@@ -20,9 +20,11 @@ are tested in integration tests instead.
 import pytest
 from unittest.mock import Mock, patch, MagicMock, PropertyMock
 import re
+from datetime import datetime, timezone
 
 # Import config for accessing in tests
 from cps import config
+import cps.helper as helper_module
 
 # Import functions from helper.py
 from cps.helper import (
@@ -555,3 +557,77 @@ class TestUniq:
 
 # Mark all tests in this module as unit tests
 pytestmark = pytest.mark.unit
+
+
+class TestBookCoverServing:
+    """Test cover-serving behavior after cover updates."""
+
+    @patch('cps.helper.send_from_directory')
+    @patch('cps.helper.os.path.isfile', return_value=True)
+    @patch('cps.helper.get_book_cover_thumbnail_by_format')
+    @patch('cps.helper.fs.FileSystem')
+    def test_stale_cached_thumbnail_falls_back_to_fresh_cover(
+        self,
+        mock_fs,
+        mock_get_thumbnail,
+        mock_isfile,
+        mock_send_from_directory,
+    ):
+        book = Mock(
+            id=1116,
+            has_cover=True,
+            path="Pratchett/Night Watch (1116)",
+            last_modified=datetime(2026, 4, 13, 15, 30, tzinfo=timezone.utc),
+        )
+        stale_thumbnail = Mock(
+            filename="book_1116_sm.webp",
+            generated_at=datetime(2026, 4, 13, 15, 0),
+        )
+
+        cache = mock_fs.return_value
+        cache.get_cache_file_exists.side_effect = lambda filename, _: filename == "book_1116_sm.webp"
+        cache.get_cache_file_dir.return_value = "/tmp/thumbs"
+        mock_get_thumbnail.side_effect = [stale_thumbnail, None]
+
+        with patch.object(helper_module.config, "config_use_google_drive", False), \
+             patch.object(helper_module.config, "get_book_path", return_value="/library"), \
+             patch.object(helper_module, "use_IM", False):
+            helper_module.get_book_cover_internal(book, resolution="sm")
+
+        mock_send_from_directory.assert_called_once_with(
+            "/library/Pratchett/Night Watch (1116)",
+            "cover.jpg",
+        )
+
+    @patch('cps.helper.send_from_directory')
+    @patch('cps.helper.get_book_cover_thumbnail_by_format')
+    @patch('cps.helper.fs.FileSystem')
+    def test_fresh_cached_thumbnail_is_still_served(
+        self,
+        mock_fs,
+        mock_get_thumbnail,
+        mock_send_from_directory,
+    ):
+        book = Mock(
+            id=1117,
+            has_cover=True,
+            path="Pratchett/Men at Arms (1117)",
+            last_modified=datetime(2026, 4, 13, 15, 30, tzinfo=timezone.utc),
+        )
+        fresh_thumbnail = Mock(
+            filename="book_1117_sm.webp",
+            generated_at=datetime(2026, 4, 13, 15, 45),
+        )
+
+        cache = mock_fs.return_value
+        cache.get_cache_file_exists.return_value = True
+        cache.get_cache_file_dir.return_value = "/tmp/thumbs"
+        mock_get_thumbnail.side_effect = [fresh_thumbnail, None]
+
+        with patch.object(helper_module, "use_IM", False):
+            helper_module.get_book_cover_internal(book, resolution="sm")
+
+        mock_send_from_directory.assert_called_once_with(
+            "/tmp/thumbs",
+            "book_1117_sm.webp",
+        )
