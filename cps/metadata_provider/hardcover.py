@@ -134,11 +134,21 @@ class Hardcover(Metadata):
     EDITION_QUERY = (
         "query BookEditions($query: Int!) { "
         "books(where: {id: {_eq: $query}}) { "
-        "  id slug description "
+        "  id title subtitle slug description release_date "
         "  book_series { position series { name } } "
         "  cached_tags(path: \"Genre\") "
+        "  default_cover_edition { "
+        "    id title subtitle "
+        "    image { url } "
+        "    language { code3 } "
+        "  } "
+        "  default_ebook_edition { "
+        "    id title subtitle "
+        "    image { url } "
+        "    language { code3 } "
+        "  } "
         "  editions { "
-        "    id title release_date isbn_13 isbn_10 reading_format_id "
+        "    id title subtitle release_date pages isbn_13 isbn_10 reading_format_id "
         "    image { url } "
         "    language { code3 } "
         "    publisher { name } "
@@ -267,6 +277,10 @@ class Hardcover(Metadata):
     ) -> List[MetaRecord]:
         editions: List[MetaRecord] = []
         book_id = result.get("id", "")
+        book_title = result.get("title", "")
+        book_subtitle = result.get("subtitle", "")
+        default_cover_edition = result.get("default_cover_edition") or {}
+        default_ebook_edition = result.get("default_ebook_edition") or {}
         for edition in result.get("editions", []) or []:
             match = MetaRecord(
                 id=book_id,
@@ -300,6 +314,37 @@ class Hardcover(Metadata):
                 match.format = Hardcover.FORMATS[rf_id]
             else:
                 match.format = ""
+            # Carry exact-title context forward so metadata_helper can choose a stable
+            # canonical title when only book-level provenance is known.
+            match.hardcover_book_title = book_title
+            match.hardcover_book_subtitle = book_subtitle
+            match.hardcover_book_release_date = result.get("release_date", "")
+            match.hardcover_default_cover_title = default_cover_edition.get("title", "")
+            match.hardcover_default_cover_edition_id = default_cover_edition.get("id", "")
+            match.hardcover_default_cover_url = self._safe_get(
+                default_cover_edition, "image", "url", default=""
+            )
+            match.hardcover_default_cover_language = self._safe_get(
+                default_cover_edition, "language", "code3", default=""
+            )
+            match.hardcover_default_ebook_title = default_ebook_edition.get("title", "")
+            match.hardcover_default_ebook_edition_id = default_ebook_edition.get("id", "")
+            match.hardcover_default_ebook_cover_url = self._safe_get(
+                default_ebook_edition, "image", "url", default=""
+            )
+            match.hardcover_default_ebook_language = self._safe_get(
+                default_ebook_edition, "language", "code3", default=""
+            )
+            match.hardcover_matched_edition_title = edition.get("title", "")
+            match.hardcover_matched_edition_subtitle = edition.get("subtitle", "")
+            match.hardcover_matched_edition_cover_url = (edition.get("image") or {}).get("url", "")
+            match.hardcover_matched_edition_language = self._safe_get(
+                edition, "language", "code3", default=""
+            )
+            match.hardcover_matched_edition_pages = edition.get("pages")
+            match.hardcover_matched_edition_release_date = edition.get("release_date", "")
+            match.hardcover_matched_edition_publisher = (edition.get("publisher") or {}).get("name", "")
+            match.hardcover_matched_edition_format = match.format
             editions.append(match)
         return editions
 
