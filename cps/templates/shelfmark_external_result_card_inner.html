@@ -29,34 +29,13 @@
         {% if result.subtitle %}
           <p class="text-muted shelfmark-result-card__subtitle">{{ result.subtitle }}</p>
         {% endif %}
-      </div>
-      <div class="shelfmark-result-card__badges">
         {% if result.workflow_state and not result.already_in_library %}
           <span
-            class="label shelfmark-status-chip {{ result.workflow_state.chip_class }} js-shelfmark-status-chip{% if result.workflow_state.key == 'available' %} is-hidden{% endif %}"
+            class="shelfmark-result-card__workflow-state shelfmark-status-chip {{ result.workflow_state.chip_class }} js-shelfmark-status-chip{% if result.workflow_state.key == 'available' %} is-hidden{% endif %}"
             data-status-key="{{ result.workflow_state.key }}"
+            aria-hidden="true"
           >
             {{ result.workflow_state.label }}
-          </span>
-        {% endif %}
-        {% if result.triage_state and result.triage_state.strong_candidate %}
-          <span class="label shelfmark-triage-chip shelfmark-triage-chip--strong">
-            {{ _('Strong candidate') }}
-          </span>
-        {% elif result.quality_state and result.quality_state.high_confidence %}
-          <span class="label shelfmark-quality-chip shelfmark-quality-chip--high">
-            {{ _('High confidence') }}
-          </span>
-        {% endif %}
-        {% if result.series_context and result.series_context.badges %}
-          {% for badge in result.series_context.badges %}
-            <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
-          {% endfor %}
-        {% endif %}
-        {% if result.library_state.label and result.library_state.badge_class %}
-          <span class="label {{ result.library_state.badge_class }}">
-            <span class="{{ result.library_state.icon_class }}" aria-hidden="true"></span>
-            {{ result.library_state.label }}
           </span>
         {% endif %}
       </div>
@@ -68,26 +47,6 @@
       <p class="shelfmark-result-card__facts" aria-label="{{ _('Shelfmark facts') }}">
         {% for fact in result.facts %}
           <span class="shelfmark-result-card__fact">{{ fact }}</span>
-        {% endfor %}
-      </p>
-    {% endif %}
-    {% if result.series_context and result.series_context.facts %}
-      <p class="shelfmark-result-card__series-context" aria-label="{{ _('Library series context') }}">
-        {% for fact in result.series_context.facts %}
-          <span class="shelfmark-result-card__series-context-fact">{{ fact }}</span>
-        {% endfor %}
-      </p>
-    {% endif %}
-    {% if result.quality_state and result.quality_state.facts %}
-      <p class="shelfmark-result-card__triage" aria-label="{{ _('Request quality') }}">
-        {% for fact in result.quality_state.facts %}
-          <span class="shelfmark-result-card__triage-fact">{{ fact }}</span>
-        {% endfor %}
-      </p>
-    {% elif result.triage_state and result.triage_state.facts %}
-      <p class="shelfmark-result-card__triage" aria-label="{{ _('Request triage') }}">
-        {% for fact in result.triage_state.facts %}
-          <span class="shelfmark-result-card__triage-fact">{{ fact }}</span>
         {% endfor %}
       </p>
     {% endif %}
@@ -123,13 +82,12 @@
       {% endif %}
       {% if result.detail_url %}
         <a
-          class="btn btn-default btn-sm shelfmark-result-card__secondary-action js-shelfmark-detail-link"
+          class="btn btn-link btn-sm shelfmark-result-card__secondary-action js-shelfmark-detail-link"
           href="{{ result.detail_url }}"
           data-detail-title="{{ result.title }}"
           data-detail-provider="{{ result.provider }}"
           data-detail-provider-id="{{ result.provider_id }}"
         >
-          <span class="glyphicon glyphicon-info-sign" aria-hidden="true"></span>
           <span>{{ _('Details') }}</span>
         </a>
       {% endif %}

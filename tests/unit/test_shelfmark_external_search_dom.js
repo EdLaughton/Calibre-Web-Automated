@@ -236,7 +236,12 @@ function createResultNode(options) {
 function createDom(options) {
   const root = new FakeElement('div', { className: 'page-root' });
   let batchToolbar = null;
+  let batchModeButton = null;
   if (options.includeBatchToolbar) {
+    batchModeButton = root.appendChild(new FakeElement('button', {
+      className: 'js-shelfmark-batch-mode',
+      textContent: 'Bulk mode'
+    }));
     batchToolbar = root.appendChild(new FakeElement('div', {
       className: 'shelfmark-batch-toolbar js-shelfmark-batch-toolbar is-hidden'
     }));
@@ -257,10 +262,6 @@ function createDom(options) {
 
     const actions = batchToolbar.appendChild(new FakeElement('div', {
       className: 'shelfmark-batch-toolbar__actions'
-    }));
-    actions.appendChild(new FakeElement('button', {
-      className: 'js-shelfmark-batch-mode',
-      textContent: 'Bulk mode'
     }));
     actions.appendChild(new FakeElement('button', {
       className: 'js-shelfmark-batch-select-visible',
@@ -313,7 +314,7 @@ function createDom(options) {
     status,
     action: first.action,
     batchToolbar,
-    batchModeButton: batchToolbar ? batchToolbar.querySelector('.js-shelfmark-batch-mode') : null,
+    batchModeButton,
     batchToggle: first.wrapper.querySelector('.js-shelfmark-batch-toggle'),
     batchSelect: first.wrapper.querySelector('.js-shelfmark-batch-select')
   };
@@ -385,6 +386,7 @@ async function runScenario(options) {
   const dom = createDom(options);
   const fetchCalls = [];
   const responses = options.responses ? options.responses.slice() : [];
+  const libraryStatusPayloads = options.libraryStatusPayloads ? options.libraryStatusPayloads.slice() : [];
 
   delete require.cache[flowModulePath];
   delete require.cache[searchModulePath];
@@ -399,6 +401,17 @@ async function runScenario(options) {
   };
   global.document = dom.document;
   global.fetch = (url, fetchOptions) => {
+    if (url.indexOf('/search/external/shelfmark/library-status') !== -1) {
+      const nextLibraryPayload = libraryStatusPayloads.length
+        ? libraryStatusPayloads.shift()
+        : { ok: true, matches: {} };
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => nextLibraryPayload
+      });
+    }
     if (typeof options.fetchImpl === 'function') {
       return options.fetchImpl(url, fetchOptions || {}, fetchCalls, responses);
     }
@@ -587,7 +600,7 @@ async function runProgressiveScenario() {
 
   await sameOrigin.clickPrimaryAction();
 
-  assert.equal(sameOrigin.fetchCalls.length, 3);
+  assert.equal(sameOrigin.fetchCalls.length, 4);
   assert.equal(sameOrigin.fetchCalls[2].options.method, 'POST');
   assert.equal(sameOrigin.dom.action.dataset.mode, 'open');
   assert.match(sameOrigin.dom.action.className, /btn-success/);
@@ -599,6 +612,76 @@ async function runProgressiveScenario() {
   assert.equal(sameOrigin.dom.status.classList.contains('is-hidden'), false);
   assert.equal(sameOrigin.dom.status.classList.contains('is-settled'), true);
   assert.equal(sameOrigin.dom.action.getAttribute('target'), '_blank');
+
+  let singleRequestResolver = null;
+  const immediatePending = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=Pending+Book',
+    requestPayload: {
+      book_data: { provider: 'hardcover', provider_id: '224', title: 'Pending Book' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    mode: 'request',
+    statusTarget: true,
+    statusProviderId: '224',
+    statusChipText: 'Available to request',
+    statusChipKey: 'available',
+    statusChipClass: 'shelfmark-status-chip--available',
+    fetchImpl: (url, fetchOptions, fetchCalls) => {
+      fetchCalls.push({ url, options: fetchOptions || {} });
+      if (url.endsWith('/api/auth/check')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ authenticated: true, auth_required: true })
+        });
+      }
+      if (url.endsWith('/api/request-policy')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ requests_enabled: true, defaults: { ebook: 'request_book' } })
+        });
+      }
+      if (url.endsWith('/api/activity/snapshot')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ requests: [] })
+        });
+      }
+      if (url.endsWith('/api/requests') && fetchOptions && fetchOptions.method === 'POST') {
+        return new Promise((resolve) => {
+          singleRequestResolver = resolve;
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch call for ${url}`));
+    }
+  });
+
+  immediatePending.dom.action.dispatchEvent('click');
+  await flush();
+  await flush();
+
+  assert.equal(
+    immediatePending.dom.action.querySelector('.js-shelfmark-action-label').textContent,
+    'Requesting...'
+  );
+  assert.equal(immediatePending.dom.action.getAttribute('aria-disabled'), 'true');
+
+  singleRequestResolver({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => ({ success: true })
+  });
+  await flush();
+  await flush();
+  await flush();
 
   const preferredRelease = await runScenario({
     currentOrigin: 'https://library.example.com',
@@ -658,7 +741,7 @@ async function runProgressiveScenario() {
 
   await preferredRelease.clickPrimaryAction();
 
-  assert.equal(preferredRelease.fetchCalls.length, 4);
+  assert.equal(preferredRelease.fetchCalls.length, 5);
   assert.match(preferredRelease.fetchCalls[2].url, /\/api\/releases\?/);
   assert.match(preferredRelease.fetchCalls[2].url, /indexers=MyAnonamouse/);
   const preferredRequestBody = JSON.parse(preferredRelease.fetchCalls[3].options.body);
@@ -910,7 +993,7 @@ async function runProgressiveScenario() {
   const batchMessage = batchReady.dom.batchToolbar.querySelector('.js-shelfmark-batch-message');
   const batchModeButton = batchReady.dom.batchModeButton;
 
-  assert.equal(batchReady.dom.batchToolbar.classList.contains('is-hidden'), false);
+  assert.equal(batchReady.dom.batchToolbar.classList.contains('is-hidden'), true);
   assert.equal(batchReady.dom.batchSelect.classList.contains('is-hidden'), true);
   assert.equal(batchReady.dom.batchToggle.disabled, true);
   assert.equal(batchModeButton.textContent, 'Bulk mode');
@@ -927,6 +1010,7 @@ async function runProgressiveScenario() {
   batchModeButton.dispatchEvent('click');
   await flush();
 
+  assert.equal(batchReady.dom.batchToolbar.classList.contains('is-hidden'), false);
   assert.equal(batchReady.dom.batchSelect.classList.contains('is-hidden'), false);
   assert.equal(batchReady.dom.batchToggle.disabled, false);
   assert.equal(batchModeButton.textContent, 'Done');
@@ -950,10 +1034,11 @@ async function runProgressiveScenario() {
   assert.equal(batchReady.fetchCalls.length, 5);
   assert.equal(batchReady.fetchCalls[3].options.method, 'POST');
   assert.equal(batchReady.dom.action.dataset.mode, 'open');
+  assert.equal(batchReady.dom.batchToolbar.classList.contains('is-hidden'), false);
   assert.equal(batchReady.dom.batchToggle.checked, false);
   assert.equal(batchReady.dom.batchToggle.disabled, true);
   assert.equal(batchReady.dom.batchSelect.classList.contains('is-hidden'), true);
-  assert.equal(batchModeButton.textContent, 'Bulk mode');
+  assert.equal(batchModeButton.textContent, 'Done');
   assert.equal(batchCount.textContent, '0 selected');
   assert.equal(batchReadyText.textContent, '0 ready on this page');
   assert.equal(batchRequest.disabled, true);
@@ -1037,6 +1122,7 @@ async function runProgressiveScenario() {
 
   toppedUpSelection.dom.batchModeButton.dispatchEvent('click');
   await flush();
+  assert.equal(toppedUpSelection.dom.batchToolbar.classList.contains('is-hidden'), false);
   assert.equal(toppedUpSelection.dom.batchSelect.classList.contains('is-hidden'), false);
   assert.equal(toppedUpSelection.dom.batchToggle.disabled, false);
 
@@ -1078,6 +1164,7 @@ async function runProgressiveScenario() {
   toppedUpSelection.dom.batchModeButton.dispatchEvent('click');
   await flush();
 
+  assert.equal(toppedUpSelection.dom.batchToolbar.classList.contains('is-hidden'), true);
   assert.equal(toppedUpSelection.dom.batchToggle.checked, false);
   assert.equal(appendedToggle.checked, false);
   assert.equal(toppedUpSelection.dom.batchSelect.classList.contains('is-hidden'), true);
@@ -1156,6 +1243,72 @@ async function runProgressiveScenario() {
     true
   );
 
+  const importedAfterQueue = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?content_type=ebook&sort=relevance&query=Imported+Book',
+    requestPayload: {
+      book_data: { provider: 'hardcover', provider_id: '556', title: 'Imported Book' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    mode: 'request',
+    statusTarget: true,
+    statusProviderId: '556',
+    statusChipText: 'Available to request',
+    statusChipKey: 'available',
+    statusChipClass: 'shelfmark-status-chip--available',
+    libraryStatusPayloads: [
+      { ok: true, matches: {} },
+      {
+        ok: true,
+        matches: {
+          '556': {
+            in_library: true,
+            book_id: 42,
+            book_title: 'Imported Book',
+            book_url: '/book/42'
+          }
+        }
+      }
+    ],
+    responses: [
+      { payload: { authenticated: true, auth_required: true } },
+      { payload: { requests: [] } },
+      { payload: { requests_enabled: true, defaults: { ebook: 'request_book' } } },
+      { payload: { success: true } },
+      {
+        payload: {
+          requests: [
+            {
+              id: 98,
+              status: 'fulfilled',
+              delivery_state: 'queued',
+              delivery_updated_at: '2026-04-10T10:30:00Z',
+              book_data: { provider: 'hardcover', provider_id: '556' }
+            }
+          ]
+        }
+      }
+    ]
+  });
+
+  await importedAfterQueue.clickPrimaryAction();
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+
+  assert.equal(
+    importedAfterQueue.dom.document.querySelector('.js-shelfmark-status-chip').dataset.statusKey,
+    'imported'
+  );
+  assert.equal(
+    importedAfterQueue.dom.action.querySelector('.js-shelfmark-action-label').textContent,
+    'Open existing CWA book'
+  );
+  assert.equal(importedAfterQueue.dom.action.getAttribute('href'), '/book/42');
+  assert.equal(importedAfterQueue.dom.action.getAttribute('target'), null);
+
   const concurrentPostResolvers = [];
   const concurrentBatch = await runScenario({
     currentOrigin: 'https://library.example.com',
@@ -1233,6 +1386,7 @@ async function runProgressiveScenario() {
   concurrentBatch.dom.batchModeButton.dispatchEvent('click');
   await flush();
   await flush();
+  assert.equal(concurrentBatch.dom.batchToolbar.classList.contains('is-hidden'), false);
   assert.equal(concurrentBatch.dom.batchToolbar.querySelector('.js-shelfmark-batch-ready').textContent, '2 ready on this page');
   concurrentBatch.dom.batchToolbar.querySelector('.js-shelfmark-batch-select-visible').dispatchEvent('click');
   await flush();

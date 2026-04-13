@@ -751,6 +751,66 @@ def test_fetch_and_apply_metadata_logs_missing_provenance_before_fuzzy_lookup(mo
     )
 
 
+def test_fetch_and_apply_metadata_does_not_fallback_to_fuzzy_after_exact_resolution(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Lords and Ladies",
+        authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[types.SimpleNamespace(format="EPUB")],
+        identifiers=[
+            types.SimpleNamespace(type="hardcover-id", val="434155"),
+            types.SimpleNamespace(type="hardcover-slug", val="equal-rites"),
+        ],
+    )
+
+    exact_result = _build_hardcover_edition_result(
+        edition_id="17801818",
+        title="Equal Rites",
+        language="eng",
+        publisher="Corgi",
+        published_date="1987-01-15",
+        isbn="9780552131056",
+        matched_cover_url="https://covers.example/17801818.jpg",
+    )
+    hardcover_provider = types.SimpleNamespace(
+        __id__="hardcover",
+        __name__="Hardcover",
+        active=True,
+        search=mock.Mock(return_value=[exact_result]),
+    )
+    google_provider = types.SimpleNamespace(
+        __id__="google",
+        __name__="Google",
+        active=True,
+        search=mock.Mock(return_value=[types.SimpleNamespace(title="Bad Fallback Metadata")]),
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[hardcover_provider, google_provider],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "metadata_provider_hierarchy": '["hardcover","google"]',
+            "metadata_providers_enabled": "{}",
+        },
+    )
+
+    apply_metadata = mock.Mock(return_value=False)
+    monkeypatch.setattr(module, "_apply_metadata_to_book", apply_metadata)
+
+    assert module.fetch_and_apply_metadata(1) is False
+    hardcover_provider.search.assert_called_once_with("hardcover-id:434155", "", "en")
+    google_provider.search.assert_not_called()
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "Metadata fetch: exact Hardcover metadata resolved for book_id=1 but produced no applied changes; not falling back to fuzzy lookup because exact provenance is authoritative"
+        in message
+        for message in info_messages
+    )
+
+
 def test_apply_metadata_persists_resolved_hardcover_edition_identifier(monkeypatch):
     book = types.SimpleNamespace(
         id=1,

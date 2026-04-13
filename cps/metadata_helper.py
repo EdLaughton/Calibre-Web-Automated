@@ -754,10 +754,12 @@ def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
                 metadata_found = True
             else:
                 log.info(
-                    "Metadata fetch: exact Hardcover metadata produced no applied changes for book_id=%s; "
-                    "falling back to fuzzy lookup",
+                    "Metadata fetch: exact Hardcover metadata resolved for book_id=%s but produced no applied changes; "
+                    "not falling back to fuzzy lookup because exact provenance is authoritative",
                     book.id,
                 )
+                calibre_db_instance.session.close()
+                return False
 
         if metadata_found:
             calibre_db_instance.session.close()

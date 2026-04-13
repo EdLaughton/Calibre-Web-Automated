@@ -16,6 +16,8 @@
   var TOP_UP_MAX_PAGES = 3;
   var BATCH_REQUEST_MAX_CONCURRENCY = 4;
   var ACTIVITY_SNAPSHOT_TTL_MS = 30000;
+  var LIBRARY_STATUS_ENDPOINT = '/search/external/shelfmark/library-status';
+  var POST_REQUEST_REFRESH_SCHEDULE_MS = [2000, 5000, 10000, 20000];
   var STATUS_SETTLE_DELAY_MS = typeof window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS === 'number'
     ? window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS
     : 2600;
@@ -43,6 +45,7 @@
   var rowEnrichmentInFlight = 0;
   var topUpInFlight = false;
   var topUpPagesFetched = 0;
+  var scheduledWorkflowRefreshTimers = new Map();
 
   function toArray(value) {
     return Array.prototype.slice.call(value || []);
@@ -50,6 +53,10 @@
 
   function getFlow() {
     return typeof window !== 'undefined' ? (window.CwaShelfmarkRequestFlow || null) : null;
+  }
+
+  function getSearchPageRoot() {
+    return document.querySelector('.shelfmark-search-page');
   }
 
   function parseJson(value) {
@@ -306,8 +313,13 @@
     var labelNode = node.querySelector('.js-shelfmark-action-label');
 
     node.dataset.mode = next.mode;
-    node.setAttribute('target', '_blank');
-    node.setAttribute('rel', 'noopener noreferrer');
+    if (next.mode === 'view_library') {
+      node.removeAttribute('target');
+      node.removeAttribute('rel');
+    } else {
+      node.setAttribute('target', '_blank');
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
     applyButtonClass(node, next.buttonClass);
 
     if (iconNode) {
@@ -322,6 +334,29 @@
       hintNode.textContent = next.hint || '';
       hintNode.classList.toggle('is-hidden', !next.hint);
     }
+  }
+
+  function getActionMatchKey(node) {
+    if (!node || !node.dataset) {
+      return '';
+    }
+    return buildRequestPayloadMatchKey(parseJson(node.dataset.requestPayload));
+  }
+
+  function findMatchingActionNodes(scope, requestPayload) {
+    var matchKey = buildRequestPayloadMatchKey(requestPayload);
+    if (!matchKey) {
+      return [];
+    }
+    return toArray((scope || document).querySelectorAll('.js-shelfmark-action')).filter(function (node) {
+      return getActionMatchKey(node) === matchKey;
+    });
+  }
+
+  function applyPendingState(scope, requestPayload, isPending) {
+    findMatchingActionNodes(scope, requestPayload).forEach(function (node) {
+      setPending(node, isPending);
+    });
   }
 
   function setPending(node, isPending) {
@@ -465,6 +500,66 @@
     });
 
     return promise;
+  }
+
+  function fetchLibraryPresence(scope) {
+    var providerIds = [];
+    var seenProviderIds = new Set();
+    getStatusTargetNodes(scope).forEach(function (target) {
+      var providerId = toOptionalText(target && target.dataset ? target.dataset.statusProviderId : '');
+      if (!providerId || seenProviderIds.has(providerId)) {
+        return;
+      }
+      seenProviderIds.add(providerId);
+      providerIds.push(providerId);
+    });
+
+    if (!providerIds.length) {
+      return Promise.resolve({});
+    }
+
+    var url = buildUrl(LIBRARY_STATUS_ENDPOINT);
+    if (!url) {
+      return Promise.resolve({});
+    }
+    providerIds.forEach(function (providerId) {
+      url.searchParams.append('provider_id', providerId);
+    });
+
+    return fetchJson(url.toString(), {
+      method: 'GET',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    }, DEFAULT_TIMEOUT_MS).then(function (payload) {
+      if (!payload || payload.ok !== true || typeof payload.matches !== 'object') {
+        return {};
+      }
+      return payload.matches;
+    }).catch(function () {
+      return {};
+    });
+  }
+
+  function applyLibraryPresence(scope, matches) {
+    getStatusTargetNodes(scope).forEach(function (target) {
+      var providerId = toOptionalText(target && target.dataset ? target.dataset.statusProviderId : '');
+      if (!providerId || !matches || typeof matches !== 'object' || !Object.prototype.hasOwnProperty.call(matches, providerId)) {
+        return;
+      }
+      var match = matches[providerId];
+      target.dataset.statusInLibrary = match.in_library ? '1' : '0';
+      if (match.book_url) {
+        target.dataset.libraryBookUrl = match.book_url;
+      } else {
+        delete target.dataset.libraryBookUrl;
+      }
+      if (match.book_title) {
+        target.dataset.libraryBookTitle = match.book_title;
+      } else {
+        delete target.dataset.libraryBookTitle;
+      }
+    });
   }
 
   function scopeHasClass(scope, className) {
@@ -730,8 +825,26 @@
 
   function syncActionWithWorkflowState(target, workflowState) {
     var actionNode = target ? target.querySelector('.js-shelfmark-action') : null;
+    if (!actionNode) {
+      return;
+    }
+    if (workflowState && workflowState.key === 'imported') {
+      var libraryBookUrl = toOptionalText(target.dataset ? target.dataset.libraryBookUrl : '');
+      if (!libraryBookUrl) {
+        return;
+      }
+      updateActionNode(actionNode, {
+        mode: 'view_library',
+        label: 'Open existing CWA book',
+        hint: '',
+        buttonClass: 'btn-success',
+        iconClass: 'glyphicon glyphicon-book'
+      });
+      actionNode.setAttribute('href', libraryBookUrl);
+      return;
+    }
     var nextActionState = buildHandledActionState(workflowState);
-    if (!actionNode || !nextActionState) {
+    if (!nextActionState) {
       return;
     }
     updateActionNode(actionNode, nextActionState);
@@ -1016,6 +1129,10 @@
     return count === 1 ? '1 ready on this page' : count + ' ready on this page';
   }
 
+  function getBatchModeButtons(scope) {
+    return getScopedClassNodes(scope, 'js-shelfmark-batch-mode');
+  }
+
   function isBatchModeEnabled(toolbar) {
     return Boolean(toolbar && toolbar.dataset && toolbar.dataset.bulkMode === '1');
   }
@@ -1029,22 +1146,17 @@
     });
   }
 
-  function updateBatchModeButton(toolbar, enabled) {
-    if (!toolbar) {
-      return;
-    }
-    var modeNode = toolbar.querySelector('.js-shelfmark-batch-mode');
-    if (!modeNode) {
-      return;
-    }
-    if (!modeNode.dataset.inactiveLabel) {
-      modeNode.dataset.inactiveLabel = modeNode.textContent || 'Bulk mode';
-    }
-    if (!modeNode.dataset.activeLabel) {
-      modeNode.dataset.activeLabel = 'Done';
-    }
-    modeNode.textContent = enabled ? modeNode.dataset.activeLabel : modeNode.dataset.inactiveLabel;
-    modeNode.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  function updateBatchModeButton(enabled) {
+    getBatchModeButtons(document).forEach(function (modeNode) {
+      if (!modeNode.dataset.inactiveLabel) {
+        modeNode.dataset.inactiveLabel = modeNode.textContent || 'Bulk mode';
+      }
+      if (!modeNode.dataset.activeLabel) {
+        modeNode.dataset.activeLabel = 'Done';
+      }
+      modeNode.textContent = enabled ? modeNode.dataset.activeLabel : modeNode.dataset.inactiveLabel;
+      modeNode.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    });
   }
 
   function setBatchMode(toolbar, enabled) {
@@ -1055,7 +1167,11 @@
     if (!enabled) {
       clearBatchSelections(document);
     }
-    updateBatchModeButton(toolbar, enabled);
+    var pageRoot = getSearchPageRoot();
+    if (pageRoot && pageRoot.classList) {
+      pageRoot.classList.toggle('shelfmark-search-page--bulk-mode', enabled);
+    }
+    updateBatchModeButton(enabled);
   }
 
   function clearBatchMessage(toolbar) {
@@ -1153,16 +1269,10 @@
       }
     });
 
-    if (bulkModeEnabled && !isPending && eligibleCount < 1 && selectedCount < 1) {
-      setBatchMode(toolbar, false);
-      bulkModeEnabled = false;
-    }
-
-    updateBatchModeButton(toolbar, bulkModeEnabled);
+    updateBatchModeButton(bulkModeEnabled);
 
     var countNode = toolbar.querySelector('.js-shelfmark-batch-count');
     var readyNode = toolbar.querySelector('.js-shelfmark-batch-ready');
-    var modeNode = toolbar.querySelector('.js-shelfmark-batch-mode');
     var selectVisibleNode = toolbar.querySelector('.js-shelfmark-batch-select-visible');
     var clearNode = toolbar.querySelector('.js-shelfmark-batch-clear');
     var requestNode = toolbar.querySelector('.js-shelfmark-batch-request');
@@ -1177,9 +1287,9 @@
     if (readyNode) {
       readyNode.textContent = formatBatchReadyCount(eligibleCount);
     }
-    if (modeNode) {
-      modeNode.disabled = (eligibleCount < 1 && selectedCount < 1) || isPending;
-    }
+    getBatchModeButtons(document).forEach(function (modeNode) {
+      modeNode.disabled = (eligibleCount < 1 && selectedCount < 1 && !bulkModeEnabled) || isPending;
+    });
     if (selectVisibleNode) {
       selectVisibleNode.disabled = !bulkModeEnabled || eligibleCount < 1 || isPending;
     }
@@ -1190,7 +1300,7 @@
       requestNode.disabled = !bulkModeEnabled || selectedCount < 1 || isPending;
     }
 
-    var shouldShowToolbar = batchRows.length > 0 && (eligibleCount > 0 || selectedCount > 0 || hasMessage);
+    var shouldShowToolbar = bulkModeEnabled;
     toolbar.classList.toggle('is-hidden', !shouldShowToolbar);
     toolbar.setAttribute('aria-hidden', shouldShowToolbar ? 'false' : 'true');
   }
@@ -1210,14 +1320,44 @@
     requestNode.textContent = isPending ? 'Requesting...' : requestNode.dataset.defaultLabel;
   }
 
+  function clearScheduledWorkflowRefresh(baseUrl) {
+    var normalizedBaseUrl = toOptionalText(baseUrl);
+    var timers = normalizedBaseUrl ? scheduledWorkflowRefreshTimers.get(normalizedBaseUrl) : null;
+    if (!timers) {
+      return;
+    }
+    timers.forEach(function (timerId) {
+      clearTimeout(timerId);
+    });
+    scheduledWorkflowRefreshTimers.delete(normalizedBaseUrl);
+  }
+
+  function scheduleWorkflowRefresh(scope, baseUrl) {
+    var normalizedBaseUrl = toOptionalText(baseUrl);
+    if (!normalizedBaseUrl) {
+      return;
+    }
+    clearScheduledWorkflowRefresh(normalizedBaseUrl);
+    var timers = POST_REQUEST_REFRESH_SCHEDULE_MS.map(function (delayMs) {
+      return setTimeout(function () {
+        refreshWorkflowStatus(scope || document, normalizedBaseUrl);
+      }, delayMs);
+    });
+    scheduledWorkflowRefreshTimers.set(normalizedBaseUrl, timers);
+  }
+
   async function refreshWorkflowStatus(scope, baseUrl) {
     var requestFlow = getFlow();
     if (!baseUrl || !requestFlow || !requestFlow.isDirectRequestViable(baseUrl, window.location.origin)) {
       return;
     }
     try {
-      var snapshot = await fetchActivitySnapshot(baseUrl);
-      updateStatusTargets(scope, buildRequestStatusIndex(snapshot && snapshot.requests));
+      var payloads = await Promise.all([
+        fetchActivitySnapshot(baseUrl),
+        fetchLibraryPresence(scope)
+      ]);
+      applyLibraryPresence(scope, payloads[1]);
+      updateStatusTargets(scope, buildRequestStatusIndex(payloads[0] && payloads[0].requests));
     } catch (error) {
       // Leave the current optimistic state in place when refresh is unavailable.
     }
@@ -1396,6 +1536,8 @@
     var showStatusBanner = !settings.silentStatus;
     var resolvedPayload = payload;
 
+    applyPendingState(document, payload, true);
+
     if (showStatusBanner) {
       var preferredSettings = getPreferredReleaseSettings(node);
       var requestFlow = getFlow();
@@ -1424,7 +1566,6 @@
     var settings = options || {};
     var showStatusBanner = !settings.silentStatus;
 
-    setPending(node, true);
     if (showStatusBanner) {
       setStatusText(statusNodes, 'Creating request in Shelfmark…', 'alert-info', { persist: true });
     }
@@ -1443,6 +1584,8 @@
       }
       invalidateActivitySnapshot(node.dataset.baseUrl);
       applyImmediateSubmissionState(document, payload, responseData);
+      refreshWorkflowStatus(document, node.dataset.baseUrl);
+      scheduleWorkflowRefresh(document, node.dataset.baseUrl);
       return {
         success: true,
         outcome: successOutcome,
@@ -1461,7 +1604,7 @@
         outcome: failureOutcome
       };
     } finally {
-      setPending(node, false);
+      applyPendingState(document, payload, false);
       syncBatchUi(document);
     }
   }
@@ -1660,7 +1803,10 @@
     }
 
     try {
-      var snapshot = await fetchActivitySnapshot(baseUrl);
+      var payloads = await Promise.all([
+        fetchActivitySnapshot(baseUrl),
+        fetchLibraryPresence(scope)
+      ]);
       if (probePromise && typeof probePromise.then === 'function') {
         try {
           await probePromise;
@@ -1668,7 +1814,8 @@
           // Keep the last known/default status if probe fails.
         }
       }
-      updateStatusTargets(scope, buildRequestStatusIndex(snapshot && snapshot.requests));
+      applyLibraryPresence(scope, payloads[1]);
+      updateStatusTargets(scope, buildRequestStatusIndex(payloads[0] && payloads[0].requests));
     } catch (error) {
       // Leave the default server-rendered state in place when status enrichment is unavailable.
     }
@@ -1683,6 +1830,10 @@
     node.addEventListener('click', async function (event) {
       var requestFlow = getFlow();
       if (!requestFlow || requestFlow.normalizeMode(node.dataset.mode) !== 'request') {
+        return;
+      }
+      if (node.classList.contains('disabled') || node.getAttribute('aria-disabled') === 'true') {
+        event.preventDefault();
         return;
       }
 
@@ -1922,6 +2073,10 @@
         row.dataset.statusProviderId = rowPayload.row_status_provider_id || '';
         row.dataset.statusInLibrary = rowPayload.row_status_in_library || '0';
       }
+      if (rowPayload.library_book_url) {
+        row.dataset.libraryBookUrl = rowPayload.library_book_url;
+        row.dataset.libraryBookTitle = rowPayload.library_book_title || '';
+      }
       if (rowPayload.row_enrichment_url) {
         row.dataset.rowEnrichUrl = rowPayload.row_enrichment_url;
       }
@@ -2115,6 +2270,13 @@
       delete row.dataset.statusProvider;
       delete row.dataset.statusProviderId;
       delete row.dataset.statusInLibrary;
+    }
+    if (payload.library_book_url) {
+      row.dataset.libraryBookUrl = payload.library_book_url;
+      row.dataset.libraryBookTitle = payload.library_book_title || '';
+    } else if (row.dataset) {
+      delete row.dataset.libraryBookUrl;
+      delete row.dataset.libraryBookTitle;
     }
   }
 
@@ -2473,14 +2635,18 @@
     }
     boundBatchToolbars.add(toolbar);
 
-    var modeNode = toolbar.querySelector('.js-shelfmark-batch-mode');
+    var modeNodes = getBatchModeButtons(document);
     var selectVisibleNode = toolbar.querySelector('.js-shelfmark-batch-select-visible');
     var clearNode = toolbar.querySelector('.js-shelfmark-batch-clear');
     var requestNode = toolbar.querySelector('.js-shelfmark-batch-request');
 
     setBatchMode(toolbar, false);
 
-    if (modeNode) {
+    modeNodes.forEach(function (modeNode) {
+      if (!modeNode || modeNode.dataset.batchModeBound === '1') {
+        return;
+      }
+      modeNode.dataset.batchModeBound = '1';
       modeNode.addEventListener('click', function () {
         if (modeNode.disabled || toolbar.dataset.pending === '1') {
           return;
@@ -2489,7 +2655,7 @@
         setBatchMode(toolbar, !isBatchModeEnabled(toolbar));
         syncBatchUi(document);
       });
-    }
+    });
 
     if (selectVisibleNode) {
       selectVisibleNode.addEventListener('click', function () {

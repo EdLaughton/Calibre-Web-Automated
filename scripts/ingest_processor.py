@@ -1352,6 +1352,10 @@ def main(filepath=None):
         name, ext = os.path.splitext(filename)
         allowed_len = MAX_LENGTH - len(ext)
 
+        # Ignore AppleDouble metadata artifacts entirely.
+        if filename.startswith("._"):
+            return
+
         # Ignore sidecar manifests entirely (handled when the real file is processed)
         if filename.endswith(".cwa.json") or filename.endswith(".cwa.failed.json"):
             print(f"[ingest-processor] Skipping sidecar manifest file: {filename}", flush=True)

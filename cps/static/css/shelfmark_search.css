@@ -220,9 +220,12 @@
   margin-top: 12px;
 }
 
-.shelfmark-external-toolbar__note {
-  margin: 10px 0 0;
-  color: var(--shelfmark-shell-muted);
+.shelfmark-external-toolbar__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .shelfmark-external-controls {
@@ -277,7 +280,11 @@
   align-items: center;
   gap: 6px;
   min-height: 32px;
+  padding: 6px 10px;
   margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
   color: var(--shelfmark-shell-muted);
   font-size: 12px;
   font-weight: 600;
@@ -295,6 +302,8 @@
 }
 
 .shelfmark-external-controls__apply,
+.shelfmark-external-controls__reset,
+.shelfmark-external-toolbar__bulk-toggle,
 .shelfmark-external-toolbar__open-search,
 .shelfmark-batch-toolbar__request,
 .shelfmark-pagination-footer__page-link {
@@ -313,6 +322,10 @@
 
 .shelfmark-external-controls__apply:hover,
 .shelfmark-external-controls__apply:focus,
+.shelfmark-external-controls__reset:hover,
+.shelfmark-external-controls__reset:focus,
+.shelfmark-external-toolbar__bulk-toggle:hover,
+.shelfmark-external-toolbar__bulk-toggle:focus,
 .shelfmark-external-toolbar__open-search:hover,
 .shelfmark-external-toolbar__open-search:focus,
 .shelfmark-batch-toolbar__request:hover,
@@ -325,21 +338,7 @@
 }
 
 .shelfmark-external-controls__reset {
-  padding: 0;
-  color: rgba(232, 239, 244, 0.82);
-}
-
-.shelfmark-external-controls__toggle-link,
-.shelfmark-batch-toolbar__link {
-  padding: 0;
-  color: rgba(232, 239, 244, 0.82);
-}
-
-.shelfmark-external-controls__reset:hover,
-.shelfmark-external-controls__reset:focus,
-.shelfmark-external-controls__toggle-link:hover,
-.shelfmark-external-controls__toggle-link:focus {
-  color: #fff;
+  min-width: 64px;
 }
 
 .shelfmark-external-toolbar__open-search .glyphicon {
@@ -395,6 +394,11 @@
 .shelfmark-batch-select input {
   margin: 0;
   accent-color: rgba(93, 170, 222, 0.92);
+}
+
+.shelfmark-search-page:not(.shelfmark-search-page--bulk-mode) .shelfmark-result-card__select,
+.shelfmark-search-page:not(.shelfmark-search-page--bulk-mode) .shelfmark-batch-toolbar {
+  display: none !important;
 }
 
 .shelfmark-result-card__cover {
@@ -786,8 +790,6 @@
 .shelfmark-result-card__subtitle,
 .shelfmark-result-card__authors,
 .shelfmark-result-card__facts,
-.shelfmark-result-card__series-context,
-.shelfmark-result-card__triage,
 .shelfmark-result-card__description,
 .shelfmark-result-card__action-hint {
   color: var(--shelfmark-shell-muted);
@@ -829,42 +831,6 @@
   color: rgba(215, 226, 234, 0.46);
 }
 
-.shelfmark-result-card__series-context,
-.shelfmark-detail-hero__series-context,
-.shelfmark-result-card__triage,
-.shelfmark-detail-hero__triage {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0;
-  margin: -2px 0 10px;
-  color: rgba(222, 234, 243, 0.92);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.shelfmark-result-card__series-context-fact,
-.shelfmark-detail-hero__series-context-fact,
-.shelfmark-result-card__triage-fact,
-.shelfmark-detail-hero__triage-fact {
-  display: inline-flex;
-  align-items: center;
-}
-
-.shelfmark-result-card__series-context-fact + .shelfmark-result-card__series-context-fact::before,
-.shelfmark-detail-hero__series-context-fact + .shelfmark-detail-hero__series-context-fact::before,
-.shelfmark-result-card__triage-fact + .shelfmark-result-card__triage-fact::before,
-.shelfmark-detail-hero__triage-fact + .shelfmark-detail-hero__triage-fact::before {
-  content: "\00b7";
-  margin: 0 8px;
-  color: rgba(215, 226, 234, 0.4);
-}
-
-.shelfmark-result-card__triage,
-.shelfmark-detail-hero__triage {
-  color: rgba(198, 223, 205, 0.86);
-}
-
 .shelfmark-result-card__badges .label-default,
 .shelfmark-detail-hero__badges .label-default {
   background: rgba(255, 255, 255, 0.08);
@@ -899,14 +865,13 @@
 }
 
 .shelfmark-result-card__secondary-action {
-  border-color: rgba(154, 178, 204, 0.22);
-  background: rgba(154, 178, 204, 0.1);
-  color: rgba(232, 239, 246, 0.96);
-}
-
-.shelfmark-result-card__secondary-action {
-  padding: 4px 8px;
-  font-size: 10.5px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: rgba(214, 227, 237, 0.86);
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
 }
 
 .shelfmark-result-card__action-hint.is-hidden,
@@ -920,9 +885,13 @@
 .shelfmark-detail-hero__primary-action.btn-default:focus,
 .shelfmark-result-card__secondary-action:hover,
 .shelfmark-result-card__secondary-action:focus {
-  border-color: rgba(184, 204, 224, 0.28);
-  background: rgba(184, 204, 224, 0.14);
+  border-color: transparent;
+  background: transparent;
   color: #fff;
+}
+
+.shelfmark-result-card__workflow-state {
+  display: none !important;
 }
 
 .shelfmark-status-banner {
@@ -1020,6 +989,11 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.shelfmark-batch-toolbar__link {
+  padding: 0;
+  color: rgba(232, 239, 244, 0.82);
 }
 
 .shelfmark-batch-toolbar__link:hover,
