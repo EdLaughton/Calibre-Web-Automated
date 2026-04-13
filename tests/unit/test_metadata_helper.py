@@ -86,11 +86,68 @@ def _flatten_log_messages(log_mock):
     return messages
 
 
+def _build_hardcover_edition_result(
+    *,
+    edition_id: str,
+    title: str,
+    language: str = "",
+    edition_format: str = "E-Book",
+    publisher: str = "",
+    published_date: str = "",
+    isbn: str | None = None,
+    book_title: str = "Equal Rites",
+    default_ebook_title: str = "Equal Rites",
+    default_ebook_language: str = "eng",
+    default_ebook_edition_id: str = "17801818",
+    matched_cover_url: str = "",
+    default_cover_url: str = "",
+    default_ebook_cover_url: str = "",
+):
+    identifiers = {
+        "hardcover-id": "434155",
+        "hardcover-slug": "equal-rites",
+        "hardcover-edition": edition_id,
+    }
+    if isbn is not None:
+        identifiers["isbn"] = isbn
+    return types.SimpleNamespace(
+        identifiers=identifiers,
+        title=title,
+        cover=matched_cover_url,
+        publisher=publisher,
+        publishedDate=published_date,
+        format=edition_format,
+        languages=["English"] if language == "eng" else [],
+        hardcover_book_title=book_title,
+        hardcover_book_subtitle="Discworld: The Witches Collection",
+        hardcover_book_release_date="1987-01-01",
+        hardcover_default_ebook_title=default_ebook_title,
+        hardcover_default_ebook_language=default_ebook_language,
+        hardcover_default_ebook_edition_id=default_ebook_edition_id,
+        hardcover_default_cover_title="Equal Rites",
+        hardcover_default_cover_edition_id="31705896",
+        hardcover_default_cover_url=default_cover_url,
+        hardcover_default_ebook_cover_url=default_ebook_cover_url,
+        hardcover_matched_edition_title=title,
+        hardcover_matched_edition_cover_url=matched_cover_url,
+        hardcover_matched_edition_language=language,
+        hardcover_matched_edition_pages=288,
+        hardcover_matched_edition_release_date=published_date,
+        hardcover_matched_edition_publisher=publisher,
+        hardcover_matched_edition_format=edition_format,
+        description="A witchy Discworld novel",
+        series="Discworld",
+        series_index=3,
+        source=types.SimpleNamespace(id="hardcover"),
+    )
+
+
 def test_fetch_and_apply_metadata_prefers_exact_hardcover_lookup(monkeypatch):
     book = types.SimpleNamespace(
         id=1,
         title="Mort",
         authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[],
         identifiers=[
             types.SimpleNamespace(type="hardcover-id", val="379631"),
             types.SimpleNamespace(type="hardcover-edition", val="91234"),
@@ -144,6 +201,459 @@ def test_fetch_and_apply_metadata_prefers_exact_hardcover_lookup(monkeypatch):
         "Metadata fetch: exact Hardcover result matched via hardcover-edition=91234 for book_id=1" in message
         for message in info_messages
     )
+    assert any(
+        "Resolved preferred exact Hardcover edition 91234 for book_id=1 from explicit hardcover-edition" in message
+        for message in info_messages
+    )
+
+
+def test_fetch_and_apply_metadata_prefers_default_ebook_title_for_book_level_exact_lookup(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Equal Rites",
+        authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[types.SimpleNamespace(format="EPUB")],
+        languages=[types.SimpleNamespace(lang_code="eng")],
+        identifiers=[
+            types.SimpleNamespace(type="hardcover-id", val="434155"),
+            types.SimpleNamespace(type="hardcover-slug", val="equal-rites"),
+        ],
+    )
+
+    foreign_first = _build_hardcover_edition_result(
+        edition_id="30541142",
+        title="Das Erbe des Zauberers",
+        language="ger",
+        publisher="German Publisher",
+        published_date="1987-01-15",
+        isbn="9780000000001",
+        matched_cover_url="https://covers.example/foreign.jpg",
+        default_cover_url="https://covers.example/default-cover.jpg",
+        default_ebook_cover_url="https://covers.example/default-ebook.jpg",
+    )
+    preferred_ebook = _build_hardcover_edition_result(
+        edition_id="17801818",
+        title="Equal Rites",
+        language="eng",
+        publisher="Corgi",
+        published_date="1987-01-15",
+        isbn="9780552131056",
+        matched_cover_url="https://covers.example/17801818.jpg",
+        default_cover_url="https://covers.example/default-cover.jpg",
+        default_ebook_cover_url="https://covers.example/default-ebook.jpg",
+    )
+    hardcover_provider = types.SimpleNamespace(
+        __id__="hardcover",
+        __name__="Hardcover",
+        active=True,
+        search=mock.Mock(return_value=[foreign_first, preferred_ebook]),
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[hardcover_provider],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "metadata_provider_hierarchy": '["hardcover"]',
+            "metadata_providers_enabled": "{}",
+        },
+    )
+
+    apply_metadata = mock.Mock(return_value=True)
+    monkeypatch.setattr(module, "_apply_metadata_to_book", apply_metadata)
+
+    assert module.fetch_and_apply_metadata(1) is True
+    applied_metadata = apply_metadata.call_args[0][1]
+    assert applied_metadata.title == "Equal Rites"
+    assert applied_metadata.publisher == "Corgi"
+    assert applied_metadata.publishedDate == "1987-01-15"
+    assert applied_metadata.identifiers["hardcover-edition"] == "17801818"
+    assert applied_metadata.identifiers["isbn"] == "9780552131056"
+    assert applied_metadata.hardcover_preferred_edition_id == "17801818"
+    assert applied_metadata.hardcover_preferred_edition_reason == "default_ebook_edition"
+    assert applied_metadata.cover == "https://covers.example/17801818.jpg"
+    assert applied_metadata.hardcover_cover_source == "chosen edition cover"
+    assert applied_metadata.description == "A witchy Discworld novel"
+    assert applied_metadata.series == "Discworld"
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "Exact Hardcover metadata titles for book 1:" in message
+        and "matched_edition_title='Equal Rites'" in message
+        and "default_ebook_title='Equal Rites'" in message
+        for message in info_messages
+    )
+    assert any(
+        "Resolved preferred exact Hardcover edition 17801818 for book_id=1 from default_ebook_edition" in message
+        for message in info_messages
+    )
+    assert any(
+        "Using edition-level metadata from Hardcover edition 17801818 for title/isbn/language/publisher/pages/release date" in message
+        for message in info_messages
+    )
+    assert any(
+        "Choosing default ebook edition title for exact Hardcover metadata on book 1" in message
+        for message in info_messages
+    )
+    assert any(
+        "Using chosen edition cover for exact Hardcover provenance on book_id=1" in message
+        for message in info_messages
+    )
+
+
+def test_fetch_and_apply_metadata_prefers_english_ebook_edition_when_default_ebook_missing(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Equal Rites",
+        authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[types.SimpleNamespace(format="EPUB")],
+        identifiers=[
+            types.SimpleNamespace(type="hardcover-id", val="434155"),
+            types.SimpleNamespace(type="hardcover-slug", val="equal-rites"),
+        ],
+    )
+
+    spanish_ebook = _build_hardcover_edition_result(
+        edition_id="30669326",
+        title="Ritos iguales",
+        language="spa",
+        publisher="Spanish Publisher",
+        published_date="1987-01-15",
+        isbn="9780000000002",
+        default_ebook_title="",
+        default_ebook_language="",
+        default_ebook_edition_id="",
+    )
+    english_ebook = _build_hardcover_edition_result(
+        edition_id="17801818",
+        title="Equal Rites",
+        language="eng",
+        publisher="Corgi",
+        published_date="1987-01-15",
+        isbn="9780552131056",
+        default_ebook_title="",
+        default_ebook_language="",
+        default_ebook_edition_id="",
+    )
+    hardcover_provider = types.SimpleNamespace(
+        __id__="hardcover",
+        __name__="Hardcover",
+        active=True,
+        search=mock.Mock(return_value=[spanish_ebook, english_ebook]),
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[hardcover_provider],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "metadata_provider_hierarchy": '["hardcover"]',
+            "metadata_providers_enabled": "{}",
+        },
+    )
+
+    apply_metadata = mock.Mock(return_value=True)
+    monkeypatch.setattr(module, "_apply_metadata_to_book", apply_metadata)
+
+    assert module.fetch_and_apply_metadata(1) is True
+    applied_metadata = apply_metadata.call_args[0][1]
+    assert applied_metadata.title == "Equal Rites"
+    assert applied_metadata.publisher == "Corgi"
+    assert applied_metadata.identifiers["hardcover-edition"] == "17801818"
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "Resolved preferred exact Hardcover edition 17801818 for book_id=1 from english ebook edition search" in message
+        for message in info_messages
+    )
+
+
+def test_fetch_and_apply_metadata_prefers_matching_language_ebook_for_non_english_import(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Ritos iguales",
+        authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[types.SimpleNamespace(format="EPUB")],
+        languages=[types.SimpleNamespace(lang_code="spa")],
+        identifiers=[
+            types.SimpleNamespace(type="hardcover-id", val="434155"),
+            types.SimpleNamespace(type="hardcover-slug", val="equal-rites"),
+        ],
+    )
+
+    english_default = _build_hardcover_edition_result(
+        edition_id="17801818",
+        title="Equal Rites",
+        language="eng",
+        publisher="Corgi",
+        published_date="1987-01-15",
+        isbn="9780552131056",
+        matched_cover_url="https://covers.example/17801818.jpg",
+        default_ebook_cover_url="https://covers.example/default-ebook.jpg",
+    )
+    spanish_ebook = _build_hardcover_edition_result(
+        edition_id="30669326",
+        title="Ritos iguales",
+        language="spa",
+        publisher="Spanish Publisher",
+        published_date="2003-05-01",
+        isbn="9788497932615",
+        matched_cover_url="https://covers.example/30669326.jpg",
+        default_ebook_cover_url="https://covers.example/default-ebook.jpg",
+    )
+    hardcover_provider = types.SimpleNamespace(
+        __id__="hardcover",
+        __name__="Hardcover",
+        active=True,
+        search=mock.Mock(return_value=[english_default, spanish_ebook]),
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[hardcover_provider],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "metadata_provider_hierarchy": '["hardcover"]',
+            "metadata_providers_enabled": "{}",
+        },
+    )
+
+    apply_metadata = mock.Mock(return_value=True)
+    monkeypatch.setattr(module, "_apply_metadata_to_book", apply_metadata)
+
+    assert module.fetch_and_apply_metadata(1) is True
+    applied_metadata = apply_metadata.call_args[0][1]
+    assert applied_metadata.title == "Ritos iguales"
+    assert applied_metadata.publisher == "Spanish Publisher"
+    assert applied_metadata.publishedDate == "2003-05-01"
+    assert applied_metadata.identifiers["hardcover-edition"] == "30669326"
+    assert applied_metadata.identifiers["isbn"] == "9788497932615"
+    assert applied_metadata.hardcover_preferred_edition_id == "30669326"
+    assert applied_metadata.hardcover_preferred_edition_reason == "language-matching ebook edition"
+    assert applied_metadata.cover == "https://covers.example/30669326.jpg"
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "Imported ebook language=spa; rejecting default_ebook_edition 17801818 for book_id=1 because language=eng does not match imported language"
+        in message
+        for message in info_messages
+    )
+    assert any(
+        "Imported ebook language=spa; preferring matching Hardcover ebook edition 30669326 for book_id=1"
+        in message
+        for message in info_messages
+    )
+    assert any(
+        "Resolved preferred exact Hardcover edition 30669326 for book_id=1 from language-matching ebook edition"
+        in message
+        for message in info_messages
+    )
+
+
+def test_fetch_and_apply_metadata_falls_back_to_parent_default_cover_when_chosen_edition_cover_missing(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Equal Rites",
+        authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[types.SimpleNamespace(format="EPUB")],
+        languages=[types.SimpleNamespace(lang_code="eng")],
+        identifiers=[
+            types.SimpleNamespace(type="hardcover-id", val="434155"),
+            types.SimpleNamespace(type="hardcover-slug", val="equal-rites"),
+        ],
+    )
+
+    preferred_ebook = _build_hardcover_edition_result(
+        edition_id="17801818",
+        title="Equal Rites",
+        language="eng",
+        publisher="Corgi",
+        published_date="1987-01-15",
+        isbn="9780552131056",
+        matched_cover_url="",
+        default_cover_url="https://covers.example/default-cover.jpg",
+        default_ebook_cover_url="",
+    )
+    hardcover_provider = types.SimpleNamespace(
+        __id__="hardcover",
+        __name__="Hardcover",
+        active=True,
+        search=mock.Mock(return_value=[preferred_ebook]),
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[hardcover_provider],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "metadata_provider_hierarchy": '["hardcover"]',
+            "metadata_providers_enabled": "{}",
+        },
+    )
+
+    apply_metadata = mock.Mock(return_value=True)
+    monkeypatch.setattr(module, "_apply_metadata_to_book", apply_metadata)
+
+    assert module.fetch_and_apply_metadata(1) is True
+    applied_metadata = apply_metadata.call_args[0][1]
+    assert applied_metadata.identifiers["hardcover-edition"] == "17801818"
+    assert applied_metadata.cover == "https://covers.example/default-cover.jpg"
+    assert applied_metadata.hardcover_cover_source == "parent/default cover fallback"
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "Falling back to parent/default cover because chosen edition cover was unavailable for book_id=1"
+        in message
+        for message in info_messages
+    )
+
+
+def test_fetch_and_apply_metadata_preserves_non_english_import_when_no_matching_language_ebook_exists(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Ritos iguales",
+        authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[types.SimpleNamespace(format="EPUB")],
+        languages=[types.SimpleNamespace(lang_code="spa")],
+        identifiers=[
+            types.SimpleNamespace(type="hardcover-id", val="434155"),
+            types.SimpleNamespace(type="hardcover-slug", val="equal-rites"),
+        ],
+    )
+
+    english_default = _build_hardcover_edition_result(
+        edition_id="17801818",
+        title="Equal Rites",
+        language="eng",
+        publisher="Corgi",
+        published_date="1987-01-15",
+        isbn="9780552131056",
+        default_cover_url="https://covers.example/default-cover.jpg",
+        default_ebook_cover_url="https://covers.example/default-ebook.jpg",
+    )
+    hardcover_provider = types.SimpleNamespace(
+        __id__="hardcover",
+        __name__="Hardcover",
+        active=True,
+        search=mock.Mock(return_value=[english_default]),
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[hardcover_provider],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "metadata_provider_hierarchy": '["hardcover"]',
+            "metadata_providers_enabled": "{}",
+        },
+    )
+
+    apply_metadata = mock.Mock(return_value=True)
+    monkeypatch.setattr(module, "_apply_metadata_to_book", apply_metadata)
+
+    assert module.fetch_and_apply_metadata(1) is True
+    applied_metadata = apply_metadata.call_args[0][1]
+    assert applied_metadata.title == "Ritos iguales"
+    assert applied_metadata.identifiers == {
+        "hardcover-id": "434155",
+        "hardcover-slug": "equal-rites",
+    }
+    assert applied_metadata.publisher == ""
+    assert applied_metadata.publishedDate == "1987-01-01"
+    assert applied_metadata.hardcover_preferred_edition_id is None
+    assert applied_metadata.cover == "https://covers.example/default-cover.jpg"
+    assert applied_metadata.hardcover_cover_source == "parent/default cover fallback"
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "Imported ebook language=spa; rejecting default_ebook_edition 17801818 for book_id=1 because language=eng does not match imported language"
+        in message
+        for message in info_messages
+    )
+    assert any(
+        "Preserving imported title for book 1; exact Hardcover matched edition title appears language-mismatched"
+        in message
+        for message in info_messages
+    )
+    assert any(
+        "Falling back to parent/default cover because chosen edition cover was unavailable for book_id=1"
+        in message
+        for message in info_messages
+    )
+
+
+def test_fetch_and_apply_metadata_preserves_imported_title_when_only_foreign_edition_title_exists(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Equal Rites",
+        authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[types.SimpleNamespace(format="EPUB")],
+        identifiers=[
+            types.SimpleNamespace(type="hardcover-id", val="434155"),
+            types.SimpleNamespace(type="hardcover-slug", val="equal-rites"),
+        ],
+    )
+
+    hardcover_metadata = _build_hardcover_edition_result(
+        edition_id="30669326",
+        title="Ritos iguales",
+        language="spa",
+        publisher="Spanish Publisher",
+        published_date="1987-01-15",
+        isbn="9780000000002",
+        book_title="",
+        default_ebook_title="",
+        default_ebook_language="",
+        default_ebook_edition_id="",
+    )
+    hardcover_provider = types.SimpleNamespace(
+        __id__="hardcover",
+        __name__="Hardcover",
+        active=True,
+        search=mock.Mock(return_value=[hardcover_metadata]),
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[hardcover_provider],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "metadata_provider_hierarchy": '["hardcover"]',
+            "metadata_providers_enabled": "{}",
+        },
+    )
+
+    apply_metadata = mock.Mock(return_value=True)
+    monkeypatch.setattr(module, "_apply_metadata_to_book", apply_metadata)
+
+    assert module.fetch_and_apply_metadata(1) is True
+    applied_metadata = apply_metadata.call_args[0][1]
+    assert applied_metadata.title == "Equal Rites"
+    assert applied_metadata.identifiers == {
+        "hardcover-id": "434155",
+        "hardcover-slug": "equal-rites",
+    }
+    assert applied_metadata.publisher == ""
+    assert applied_metadata.publishedDate == "1987-01-01"
+    assert applied_metadata.hardcover_preferred_edition_id is None
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "Preserving imported title for book 1; exact Hardcover matched edition title appears language-mismatched"
+        in message
+        for message in info_messages
+    )
+    assert any(
+        "No safe preferred exact Hardcover edition was resolved for book_id=1; falling back to book-level title safety"
+        in message
+        for message in info_messages
+    )
 
 
 def test_fetch_and_apply_metadata_logs_fuzzy_fallback_when_exact_lookup_fails(monkeypatch):
@@ -151,6 +661,7 @@ def test_fetch_and_apply_metadata_logs_fuzzy_fallback_when_exact_lookup_fails(mo
         id=1,
         title="Mort",
         authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[],
         identifiers=[types.SimpleNamespace(type="hardcover-id", val="379631")],
     )
 
@@ -205,6 +716,7 @@ def test_fetch_and_apply_metadata_logs_missing_provenance_before_fuzzy_lookup(mo
         id=1,
         title="Mort",
         authors=[types.SimpleNamespace(name="Terry Pratchett")],
+        data=[],
         identifiers=[],
     )
 
@@ -235,5 +747,89 @@ def test_fetch_and_apply_metadata_logs_missing_provenance_before_fuzzy_lookup(mo
     info_messages = _flatten_log_messages(logger_instance.info)
     assert any(
         "Metadata fetch: no exact Hardcover provenance present for book_id=1; falling back to fuzzy lookup" in message
+        for message in info_messages
+    )
+
+
+def test_apply_metadata_persists_resolved_hardcover_edition_identifier(monkeypatch):
+    book = types.SimpleNamespace(
+        id=1,
+        title="Equal Rites",
+        authors=[],
+        comments=[],
+        publishers=[],
+        tags=[],
+        series=[],
+        ratings=[],
+        identifiers=[
+            types.SimpleNamespace(type="hardcover-id", val="434155"),
+            types.SimpleNamespace(type="hardcover-slug", val="equal-rites"),
+        ],
+        languages=[],
+    )
+
+    google_provider = types.SimpleNamespace(
+        __id__="google",
+        __name__="Google",
+        active=True,
+        search=mock.Mock(return_value=[]),
+    )
+
+    module, logger_instance = _load_metadata_helper_module(
+        monkeypatch,
+        book=book,
+        providers=[google_provider],
+        settings={
+            "auto_metadata_fetch_enabled": True,
+            "auto_metadata_update_title": False,
+            "auto_metadata_update_authors": False,
+            "auto_metadata_update_description": False,
+            "auto_metadata_update_publisher": False,
+            "auto_metadata_update_tags": False,
+            "auto_metadata_update_series": False,
+            "auto_metadata_update_published_date": False,
+            "auto_metadata_update_rating": False,
+            "auto_metadata_update_identifiers": True,
+            "auto_metadata_update_cover": False,
+        },
+    )
+
+    monkeypatch.setattr(
+        module.db,
+        "Identifiers",
+        lambda value, identifier_type, book_id: types.SimpleNamespace(
+            val=value,
+            type=identifier_type,
+            book=book_id,
+        ),
+    )
+
+    session = types.SimpleNamespace(
+        add=lambda *args, **kwargs: None,
+        commit=lambda: None,
+        rollback=lambda: None,
+    )
+    calibre_db_instance = types.SimpleNamespace(session=session)
+    metadata = types.SimpleNamespace(
+        identifiers={
+            "hardcover-id": "434155",
+            "hardcover-slug": "equal-rites",
+            "hardcover-edition": "17801818",
+        },
+        source=types.SimpleNamespace(id="hardcover"),
+        hardcover_preferred_edition_id="17801818",
+        hardcover_preferred_edition_reason="default_ebook_edition",
+    )
+
+    assert module._apply_metadata_to_book(book, metadata, calibre_db_instance) is True
+    assert any(
+        identifier.type == "hardcover-edition" and identifier.val == "17801818"
+        for identifier in book.identifiers
+    )
+
+    info_messages = _flatten_log_messages(logger_instance.info)
+    assert any(
+        "Persisted hardcover-edition=17801818 after exact Hardcover provenance resolution for book_id=1"
+        in message
         for message in info_messages
     )

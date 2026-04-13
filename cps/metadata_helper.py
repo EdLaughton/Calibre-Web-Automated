@@ -16,6 +16,8 @@ sys.path.insert(1, '/app/calibre-web-automated/scripts/')
 from cwa_db import CWA_DB
 
 log = logger.create()
+ENGLISH_LANGUAGE_CODES = {"en", "eng"}
+EBOOK_IMPORT_FORMATS = {"EPUB", "EPUB3", "KEPUB", "AZW", "AZW3", "MOBI"}
 
 
 @dataclass
@@ -26,6 +28,15 @@ class ExactHardcoverLookupOutcome:
     match_basis: str | None = None
     reason: str | None = None
     error: str | None = None
+    preferred_edition_id: str | None = None
+    preferred_edition_reason: str | None = None
+
+
+def _normalize_text(value) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _get_book_identifier_map(book) -> dict[str, str]:
@@ -43,6 +54,358 @@ def _find_metadata_provider(provider_id: str):
         if getattr(provider, '__id__', None) == provider_id:
             return provider
     return None
+
+
+def _metadata_source_id(metadata) -> str | None:
+    source = getattr(metadata, 'source', None)
+    return _normalize_text(getattr(source, 'id', None))
+
+
+def _is_english_language(language_code: str | None) -> bool:
+    normalized = _normalize_text(language_code)
+    if normalized is None:
+        return False
+    return normalized.lower() in ENGLISH_LANGUAGE_CODES
+
+
+def _get_book_formats(book) -> set[str]:
+    formats: set[str] = set()
+    for entry in getattr(book, 'data', []) or []:
+        book_format = _normalize_text(getattr(entry, 'format', None))
+        if book_format is not None:
+            formats.add(book_format.upper())
+    return formats
+
+
+def _get_book_language_codes(book) -> set[str]:
+    language_codes: set[str] = set()
+    for language in getattr(book, 'languages', []) or []:
+        code = _normalize_text(getattr(language, 'lang_code', None))
+        if code is not None:
+            language_codes.add(code.lower())
+    return language_codes
+
+
+def _format_language_codes(language_codes: set[str]) -> str:
+    if not language_codes:
+        return ""
+    return ",".join(sorted(language_codes))
+
+
+def _get_metadata_identifier(metadata, identifier_type: str) -> str | None:
+    identifiers = getattr(metadata, 'identifiers', None)
+    if not isinstance(identifiers, dict):
+        return None
+    return _normalize_text(identifiers.get(identifier_type))
+
+
+def _metadata_language_code(metadata) -> str | None:
+    return _normalize_text(getattr(metadata, 'hardcover_matched_edition_language', None))
+
+
+def _metadata_is_ebook(metadata) -> bool:
+    metadata_format = _normalize_text(getattr(metadata, 'format', None))
+    if metadata_format is None:
+        return False
+    return metadata_format.lower() == 'e-book'
+
+
+def _metadata_matches_language(metadata, language_codes: set[str]) -> bool:
+    if not language_codes:
+        return False
+    metadata_language = _metadata_language_code(metadata)
+    if metadata_language is None:
+        return False
+    return metadata_language.lower() in language_codes
+
+
+def _annotate_exact_hardcover_preferred_edition(metadata, selection_reason: str) -> None:
+    metadata.hardcover_preferred_edition_id = _get_metadata_identifier(metadata, 'hardcover-edition')
+    metadata.hardcover_preferred_edition_reason = selection_reason
+    metadata.hardcover_preferred_edition_language_code = _metadata_language_code(metadata)
+
+
+def _apply_exact_hardcover_book_level_fallback(metadata) -> None:
+    identifiers = getattr(metadata, 'identifiers', None)
+    if not isinstance(identifiers, dict):
+        identifiers = {}
+    else:
+        identifiers = dict(identifiers)
+
+    identifiers.pop('hardcover-edition', None)
+    identifiers.pop('isbn', None)
+    metadata.identifiers = identifiers
+    metadata.publisher = ""
+    metadata.publishedDate = _normalize_text(getattr(metadata, 'hardcover_book_release_date', None)) or ""
+    metadata.languages = []
+    metadata.format = None
+    metadata.cover = ""
+
+
+def _resolve_preferred_exact_hardcover_metadata(book, results, existing_identifiers):
+    explicit_result = select_exact_hardcover_result(results, existing_identifiers)
+    if explicit_result is None:
+        return None, None
+
+    explicit_edition = existing_identifiers.get('hardcover-edition')
+    if explicit_edition:
+        _annotate_exact_hardcover_preferred_edition(explicit_result, 'explicit hardcover-edition')
+        return explicit_result, 'explicit hardcover-edition'
+
+    preferred_language_codes = _get_book_language_codes(book)
+    prefers_ebook = bool(_get_book_formats(book) & EBOOK_IMPORT_FORMATS)
+    book_id = getattr(book, 'id', 'unknown')
+    imported_language_label = _format_language_codes(preferred_language_codes)
+
+    if prefers_ebook:
+        default_ebook_edition_id = _normalize_text(
+            getattr(explicit_result, 'hardcover_default_ebook_edition_id', None)
+        )
+        if default_ebook_edition_id:
+            for result in results:
+                if _get_metadata_identifier(result, 'hardcover-edition') == default_ebook_edition_id:
+                    default_ebook_language = _metadata_language_code(result)
+                    if preferred_language_codes:
+                        if _metadata_matches_language(result, preferred_language_codes):
+                            log.info(
+                                "Imported ebook language=%s; accepting default_ebook_edition %s for book_id=%s because it matches imported language",
+                                imported_language_label,
+                                default_ebook_edition_id,
+                                book_id,
+                            )
+                            _annotate_exact_hardcover_preferred_edition(result, 'default_ebook_edition')
+                            return result, 'default_ebook_edition'
+
+                        log.info(
+                            "Imported ebook language=%s; rejecting default_ebook_edition %s for book_id=%s because language=%s does not match imported language",
+                            imported_language_label,
+                            default_ebook_edition_id,
+                            book_id,
+                            default_ebook_language or "",
+                        )
+                    elif (
+                        default_ebook_language is None
+                        or _is_english_language(default_ebook_language)
+                    ):
+                        _annotate_exact_hardcover_preferred_edition(result, 'default_ebook_edition')
+                        return result, 'default_ebook_edition'
+
+        ebook_candidates = [result for result in results if _metadata_is_ebook(result)]
+        for result in ebook_candidates:
+            if _metadata_matches_language(result, preferred_language_codes):
+                if preferred_language_codes:
+                    log.info(
+                        "Imported ebook language=%s; preferring matching Hardcover ebook edition %s for book_id=%s",
+                        imported_language_label,
+                        _get_metadata_identifier(result, 'hardcover-edition') or "",
+                        book_id,
+                    )
+                _annotate_exact_hardcover_preferred_edition(result, 'language-matching ebook edition')
+                return result, 'language-matching ebook edition'
+        if not preferred_language_codes:
+            for result in ebook_candidates:
+                if _is_english_language(_metadata_language_code(result)):
+                    _annotate_exact_hardcover_preferred_edition(result, 'english ebook edition search')
+                    return result, 'english ebook edition search'
+
+    if preferred_language_codes and _metadata_matches_language(explicit_result, preferred_language_codes):
+        _annotate_exact_hardcover_preferred_edition(explicit_result, 'language-matching fallback')
+        return explicit_result, 'language-matching fallback'
+
+    explicit_result.hardcover_preferred_edition_id = None
+    explicit_result.hardcover_preferred_edition_reason = 'book-level fallback'
+    explicit_result.hardcover_preferred_edition_language_code = _metadata_language_code(explicit_result)
+    _apply_exact_hardcover_book_level_fallback(explicit_result)
+    return explicit_result, 'book-level fallback'
+
+
+def _choose_exact_hardcover_title(book, metadata, existing_identifiers: dict[str, str]) -> None:
+    if _metadata_source_id(metadata) != 'hardcover':
+        return
+
+    book_id = getattr(book, 'id', 'unknown')
+    provenance_id = existing_identifiers.get('hardcover-id')
+    provenance_slug = existing_identifiers.get('hardcover-slug')
+    matched_edition_title = (
+        _normalize_text(getattr(metadata, 'hardcover_matched_edition_title', None))
+        or _normalize_text(getattr(metadata, 'title', None))
+    )
+    matched_edition_language = _normalize_text(
+        getattr(metadata, 'hardcover_matched_edition_language', None)
+    )
+    book_title = _normalize_text(getattr(metadata, 'hardcover_book_title', None))
+    default_ebook_title = _normalize_text(
+        getattr(metadata, 'hardcover_default_ebook_title', None)
+    )
+    default_ebook_language = _normalize_text(
+        getattr(metadata, 'hardcover_default_ebook_language', None)
+    )
+    default_cover_title = _normalize_text(
+        getattr(metadata, 'hardcover_default_cover_title', None)
+    )
+    imported_title = _normalize_text(getattr(book, 'title', None))
+    imported_language_codes = _get_book_language_codes(book)
+    preferred_edition_id = _normalize_text(
+        getattr(metadata, 'hardcover_preferred_edition_id', None)
+    )
+    preferred_edition_reason = _normalize_text(
+        getattr(metadata, 'hardcover_preferred_edition_reason', None)
+    )
+
+    log.info(
+        "Exact Hardcover provenance for book %s: id=%s slug=%s",
+        book_id,
+        provenance_id,
+        provenance_slug,
+    )
+    log.info(
+        "Exact Hardcover metadata titles for book %s: book_title=%r default_ebook_title=%r "
+        "default_ebook_language=%s default_cover_title=%r matched_edition_title=%r "
+        "matched_edition_language=%s",
+        book_id,
+        book_title,
+        default_ebook_title,
+        default_ebook_language or "",
+        default_cover_title,
+        matched_edition_title,
+        matched_edition_language or "",
+    )
+
+    chosen_title = matched_edition_title
+    chosen_source = "matched edition title"
+
+    if preferred_edition_id and preferred_edition_reason != 'book-level fallback':
+        chosen_title = (
+            matched_edition_title
+            or default_ebook_title
+            or book_title
+            or imported_title
+        )
+        if chosen_title == default_ebook_title and preferred_edition_reason == 'default_ebook_edition':
+            chosen_source = "default ebook edition title"
+        elif chosen_title == matched_edition_title:
+            chosen_source = "matched edition title"
+        elif chosen_title == book_title:
+            chosen_source = "book title"
+        elif chosen_title == imported_title:
+            chosen_source = "preserved imported title"
+    elif existing_identifiers.get('hardcover-edition'):
+        chosen_title = (
+            matched_edition_title
+            or default_ebook_title
+            or book_title
+            or imported_title
+        )
+        if chosen_title == default_ebook_title:
+            chosen_source = "default ebook edition title"
+        elif chosen_title == book_title:
+            chosen_source = "book title"
+        elif chosen_title == imported_title:
+            chosen_source = "preserved imported title"
+    else:
+        if imported_language_codes:
+            if default_ebook_title and (
+                default_ebook_language is not None
+                and default_ebook_language.lower() in imported_language_codes
+            ):
+                chosen_title = default_ebook_title
+                chosen_source = "default ebook edition title"
+            elif matched_edition_title and (
+                matched_edition_language is not None
+                and matched_edition_language.lower() in imported_language_codes
+            ):
+                chosen_title = matched_edition_title
+                chosen_source = "matched edition title"
+            elif imported_title:
+                chosen_title = imported_title
+                chosen_source = "preserved imported title"
+            elif book_title:
+                chosen_title = book_title
+                chosen_source = "book title"
+        else:
+            if default_ebook_title and _is_english_language(default_ebook_language):
+                chosen_title = default_ebook_title
+                chosen_source = "default ebook edition title"
+            elif book_title:
+                chosen_title = book_title
+                chosen_source = "book title"
+            elif matched_edition_title and (
+                matched_edition_language is None or _is_english_language(matched_edition_language)
+            ):
+                chosen_title = matched_edition_title
+                chosen_source = "matched edition title"
+            elif imported_title:
+                chosen_title = imported_title
+                chosen_source = "preserved imported title"
+
+    if chosen_source == "preserved imported title":
+        log.info(
+            "Preserving imported title for book %s; exact Hardcover matched edition title appears language-mismatched",
+            book_id,
+        )
+    else:
+        log.info(
+            "Choosing %s for exact Hardcover metadata on book %s",
+            chosen_source,
+            book_id,
+        )
+
+    if chosen_title is not None:
+        metadata.title = chosen_title
+        metadata.hardcover_title_source = chosen_source
+
+
+def _choose_exact_hardcover_cover(book, metadata) -> None:
+    if _metadata_source_id(metadata) != 'hardcover':
+        return
+
+    book_id = getattr(book, 'id', 'unknown')
+    preferred_edition_id = _normalize_text(
+        getattr(metadata, 'hardcover_preferred_edition_id', None)
+    )
+    preferred_edition_reason = _normalize_text(
+        getattr(metadata, 'hardcover_preferred_edition_reason', None)
+    )
+    matched_edition_cover = (
+        _normalize_text(getattr(metadata, 'hardcover_matched_edition_cover_url', None))
+        or _normalize_text(getattr(metadata, 'cover', None))
+    )
+    default_ebook_cover = _normalize_text(
+        getattr(metadata, 'hardcover_default_ebook_cover_url', None)
+    )
+    default_cover = _normalize_text(
+        getattr(metadata, 'hardcover_default_cover_url', None)
+    )
+
+    if preferred_edition_id and preferred_edition_reason != 'book-level fallback':
+        if matched_edition_cover:
+            metadata.cover = matched_edition_cover
+            metadata.hardcover_cover_source = 'chosen edition cover'
+            log.info(
+                "Using chosen edition cover for exact Hardcover provenance on book_id=%s",
+                book_id,
+            )
+            return
+        if preferred_edition_reason == 'default_ebook_edition' and default_ebook_cover:
+            metadata.cover = default_ebook_cover
+            metadata.hardcover_cover_source = 'chosen edition cover'
+            log.info(
+                "Using chosen edition cover for exact Hardcover provenance on book_id=%s",
+                book_id,
+            )
+            return
+
+    if default_cover:
+        metadata.cover = default_cover
+        metadata.hardcover_cover_source = 'parent/default cover fallback'
+        log.info(
+            "Falling back to parent/default cover because chosen edition cover was unavailable for book_id=%s",
+            book_id,
+        )
+        return
+
+    metadata.cover = ""
+    metadata.hardcover_cover_source = 'no cover resolved'
 
 
 def _determine_exact_hardcover_match_basis(metadata, existing_identifiers: dict[str, str]) -> str | None:
@@ -138,7 +501,11 @@ def _fetch_exact_hardcover_metadata(book, provider_hierarchy, enabled_map):
             reason='no_results',
         )
 
-    metadata = select_exact_hardcover_result(results, existing_identifiers)
+    metadata, preferred_edition_reason = _resolve_preferred_exact_hardcover_metadata(
+        book,
+        results,
+        existing_identifiers,
+    )
     if metadata is None:
         return ExactHardcoverLookupOutcome(
             attempted=True,
@@ -151,6 +518,8 @@ def _fetch_exact_hardcover_metadata(book, provider_hierarchy, enabled_map):
         metadata=metadata,
         existing_identifiers=existing_identifiers,
         match_basis=_determine_exact_hardcover_match_basis(metadata, existing_identifiers),
+        preferred_edition_id=_normalize_text(getattr(metadata, 'hardcover_preferred_edition_id', None)),
+        preferred_edition_reason=preferred_edition_reason,
     )
 
 def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
@@ -282,6 +651,36 @@ def fetch_and_apply_metadata(book_id: int, user_enabled: bool = False) -> bool:
                     exact_identifiers.get('hardcover-id'),
                     book.id,
                 )
+
+            preferred_edition_reason = exact_hardcover_lookup.preferred_edition_reason
+            preferred_edition_id = exact_hardcover_lookup.preferred_edition_id
+            if preferred_edition_id and preferred_edition_reason:
+                log.info(
+                    "Resolved preferred exact Hardcover edition %s for book_id=%s from %s",
+                    preferred_edition_id,
+                    book.id,
+                    preferred_edition_reason,
+                )
+                log.info(
+                    "Using edition-level metadata from Hardcover edition %s for title/isbn/language/publisher/pages/release date",
+                    preferred_edition_id,
+                )
+            else:
+                log.info(
+                    "No safe preferred exact Hardcover edition was resolved for book_id=%s; falling back to book-level title safety",
+                    book.id,
+                )
+            log.info(
+                "Using parent book metadata for slug/series/description on book_id=%s",
+                book.id,
+            )
+
+            _choose_exact_hardcover_title(
+                book,
+                exact_hardcover_lookup.metadata,
+                exact_identifiers,
+            )
+            _choose_exact_hardcover_cover(book, exact_hardcover_lookup.metadata)
 
             if _apply_metadata_to_book(book, exact_hardcover_lookup.metadata, calibre_db_instance):
                 log.info(f"Successfully applied exact Hardcover metadata for book: {book.title}")
@@ -498,17 +897,31 @@ def _apply_metadata_to_book(book, metadata, calibre_db_instance) -> bool:
             hasattr(metadata, 'identifiers') and metadata.identifiers):
             for identifier_type, identifier_value in metadata.identifiers.items():
                 if identifier_type and identifier_value:
+                    persisted_identifier = False
                     # Check if identifier already exists
                     existing = False
                     for identifier in book.identifiers:
                         if identifier.type == identifier_type:
                             identifier.val = identifier_value
                             existing = True
+                            persisted_identifier = True
                             break
                     if not existing:
                         new_identifier = db.Identifiers(identifier_value, identifier_type, book.id)
                         calibre_db_instance.session.add(new_identifier)
                         book.identifiers.append(new_identifier)
+                        persisted_identifier = True
+                    if (
+                        persisted_identifier
+                        and identifier_type == 'hardcover-edition'
+                        and _metadata_source_id(metadata) == 'hardcover'
+                        and _normalize_text(getattr(metadata, 'hardcover_preferred_edition_id', None))
+                    ):
+                        log.info(
+                            "Persisted hardcover-edition=%s after exact Hardcover provenance resolution for book_id=%s",
+                            identifier_value,
+                            getattr(book, 'id', 'unknown'),
+                        )
                     updated = True
         
         # Handle cover image - only if enabled in settings
