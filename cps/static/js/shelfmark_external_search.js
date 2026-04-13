@@ -14,6 +14,7 @@
   var PREFERRED_RELEASE_TIMEOUT_MS = 20000;
   var TOP_UP_TIMEOUT_MS = 12000;
   var TOP_UP_MAX_PAGES = 3;
+  var BATCH_REQUEST_MAX_CONCURRENCY = 4;
   var ACTIVITY_SNAPSHOT_TTL_MS = 30000;
   var STATUS_SETTLE_DELAY_MS = typeof window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS === 'number'
     ? window.CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS
@@ -974,6 +975,10 @@
     });
   }
 
+  function getBatchToolbar(scope) {
+    return getBatchToolbars(scope)[0] || null;
+  }
+
   function getBatchToggleNode(row) {
     return row ? row.querySelector('.js-shelfmark-batch-toggle') : null;
   }
@@ -987,9 +992,19 @@
   }
 
   function getSelectedBatchRows(scope) {
-    return getBatchRows(scope).filter(function (row) {
+    return getSelectableBatchRows(scope).filter(function (row) {
       var toggle = getBatchToggleNode(row);
       return Boolean(toggle && toggle.checked && !toggle.disabled);
+    });
+  }
+
+  function getSelectableBatchRows(scope) {
+    return getBatchRows(scope).filter(function (row) {
+      return Boolean(
+        getBatchToggleNode(row)
+        && getBatchSelectNode(row)
+        && isBatchEligibleRow(row)
+      );
     });
   }
 
@@ -999,6 +1014,48 @@
 
   function formatBatchReadyCount(count) {
     return count === 1 ? '1 ready on this page' : count + ' ready on this page';
+  }
+
+  function isBatchModeEnabled(toolbar) {
+    return Boolean(toolbar && toolbar.dataset && toolbar.dataset.bulkMode === '1');
+  }
+
+  function clearBatchSelections(scope) {
+    getBatchRows(scope).forEach(function (row) {
+      var toggleNode = getBatchToggleNode(row);
+      if (toggleNode) {
+        toggleNode.checked = false;
+      }
+    });
+  }
+
+  function updateBatchModeButton(toolbar, enabled) {
+    if (!toolbar) {
+      return;
+    }
+    var modeNode = toolbar.querySelector('.js-shelfmark-batch-mode');
+    if (!modeNode) {
+      return;
+    }
+    if (!modeNode.dataset.inactiveLabel) {
+      modeNode.dataset.inactiveLabel = modeNode.textContent || 'Bulk mode';
+    }
+    if (!modeNode.dataset.activeLabel) {
+      modeNode.dataset.activeLabel = 'Done';
+    }
+    modeNode.textContent = enabled ? modeNode.dataset.activeLabel : modeNode.dataset.inactiveLabel;
+    modeNode.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  }
+
+  function setBatchMode(toolbar, enabled) {
+    if (!toolbar || !toolbar.dataset) {
+      return;
+    }
+    toolbar.dataset.bulkMode = enabled ? '1' : '0';
+    if (!enabled) {
+      clearBatchSelections(document);
+    }
+    updateBatchModeButton(toolbar, enabled);
   }
 
   function clearBatchMessage(toolbar) {
@@ -1057,14 +1114,16 @@
   }
 
   function syncBatchUi(scope) {
-    var toolbar = getBatchToolbars(scope)[0];
-    var batchRows = getBatchRows(scope);
+    var toolbar = getBatchToolbar(scope) || getBatchToolbar(document);
+    var batchRows = getBatchRows(document);
     if (!toolbar) {
       return;
     }
 
+    var bulkModeEnabled = isBatchModeEnabled(toolbar);
     var eligibleCount = 0;
     var selectedCount = 0;
+    var isPending = toolbar.dataset.pending === '1';
 
     batchRows.forEach(function (row) {
       var toggleNode = getBatchToggleNode(row);
@@ -1074,25 +1133,36 @@
       }
 
       var isEligible = isBatchEligibleRow(row);
-      if (!isEligible) {
+      if (!isEligible || !bulkModeEnabled) {
         toggleNode.checked = false;
       }
 
-      toggleNode.disabled = !isEligible;
-      selectNode.classList.toggle('is-hidden', !isEligible);
+      toggleNode.disabled = !isEligible || !bulkModeEnabled || isPending;
+      selectNode.classList.toggle('is-hidden', !bulkModeEnabled || !isEligible);
       row.classList.toggle('is-batch-eligible', isEligible);
-      row.classList.toggle('is-batch-selected', isEligible && Boolean(toggleNode.checked));
+      row.classList.toggle(
+        'is-batch-selected',
+        bulkModeEnabled && isEligible && Boolean(toggleNode.checked)
+      );
 
       if (isEligible) {
         eligibleCount += 1;
       }
-      if (isEligible && toggleNode.checked) {
+      if (bulkModeEnabled && isEligible && toggleNode.checked) {
         selectedCount += 1;
       }
     });
 
+    if (bulkModeEnabled && !isPending && eligibleCount < 1 && selectedCount < 1) {
+      setBatchMode(toolbar, false);
+      bulkModeEnabled = false;
+    }
+
+    updateBatchModeButton(toolbar, bulkModeEnabled);
+
     var countNode = toolbar.querySelector('.js-shelfmark-batch-count');
     var readyNode = toolbar.querySelector('.js-shelfmark-batch-ready');
+    var modeNode = toolbar.querySelector('.js-shelfmark-batch-mode');
     var selectVisibleNode = toolbar.querySelector('.js-shelfmark-batch-select-visible');
     var clearNode = toolbar.querySelector('.js-shelfmark-batch-clear');
     var requestNode = toolbar.querySelector('.js-shelfmark-batch-request');
@@ -1100,7 +1170,6 @@
       toolbar.querySelector('.js-shelfmark-batch-message')
       && !toolbar.querySelector('.js-shelfmark-batch-message').classList.contains('is-hidden')
     );
-    var isPending = toolbar.dataset.pending === '1';
 
     if (countNode) {
       countNode.textContent = formatBatchSelectedCount(selectedCount);
@@ -1108,14 +1177,17 @@
     if (readyNode) {
       readyNode.textContent = formatBatchReadyCount(eligibleCount);
     }
+    if (modeNode) {
+      modeNode.disabled = (eligibleCount < 1 && selectedCount < 1) || isPending;
+    }
     if (selectVisibleNode) {
-      selectVisibleNode.disabled = eligibleCount < 1 || isPending;
+      selectVisibleNode.disabled = !bulkModeEnabled || eligibleCount < 1 || isPending;
     }
     if (clearNode) {
-      clearNode.disabled = selectedCount < 1 || isPending;
+      clearNode.disabled = !bulkModeEnabled || selectedCount < 1 || isPending;
     }
     if (requestNode) {
-      requestNode.disabled = selectedCount < 1 || isPending;
+      requestNode.disabled = !bulkModeEnabled || selectedCount < 1 || isPending;
     }
 
     var shouldShowToolbar = batchRows.length > 0 && (eligibleCount > 0 || selectedCount > 0 || hasMessage);
@@ -1135,7 +1207,7 @@
     if (!requestNode.dataset.defaultLabel) {
       requestNode.dataset.defaultLabel = requestNode.textContent;
     }
-    requestNode.textContent = isPending ? 'Requesting…' : requestNode.dataset.defaultLabel;
+    requestNode.textContent = isPending ? 'Requesting...' : requestNode.dataset.defaultLabel;
   }
 
   async function refreshWorkflowStatus(scope, baseUrl) {
@@ -1436,28 +1508,28 @@
     var successCount = 0;
     var queuedCount = 0;
     var failureCount = 0;
+    var responses = await runWithConcurrency(
+      requestItems,
+      BATCH_REQUEST_MAX_CONCURRENCY,
+      function (item) {
+        return submitResolvedRequest(item.actionNode, item.payload, item.openUrl, [], {
+          silentStatus: true
+        });
+      }
+    );
 
-    for (var index = 0; index < requestItems.length; index += 1) {
-      var item = requestItems[index];
-      var response = await submitResolvedRequest(item.actionNode, item.payload, item.openUrl, [], {
-        silentStatus: true
-      });
-      if (response.success) {
+    responses.forEach(function (response) {
+      if (response && response.success) {
         successCount += 1;
         if (response.outcome && response.outcome.kind === 'release_queued') {
           queuedCount += 1;
         }
-      } else {
-        failureCount += 1;
+        return;
       }
-    }
-
-    getBatchRows(document).forEach(function (row) {
-      var toggleNode = getBatchToggleNode(row);
-      if (toggleNode) {
-        toggleNode.checked = false;
-      }
+      failureCount += 1;
     });
+
+    clearBatchSelections(document);
 
     if (successCount > 0 && baseUrl) {
       await refreshWorkflowStatus(document, baseUrl);
@@ -1484,6 +1556,31 @@
     }
 
     syncBatchUi(document);
+  }
+
+  async function runWithConcurrency(items, concurrency, worker) {
+    var limit = Math.max(1, concurrency || 1);
+    var queue = Array.isArray(items) ? items.slice() : [];
+    var results = [];
+
+    async function runNext() {
+      while (queue.length) {
+        var item = queue.shift();
+        try {
+          results.push(await worker(item));
+        } catch (error) {
+          results.push({ success: false, error: error });
+        }
+      }
+    }
+
+    var runners = [];
+    var runnerCount = Math.min(limit, queue.length);
+    for (var index = 0; index < runnerCount; index += 1) {
+      runners.push(runNext());
+    }
+    await Promise.all(runners);
+    return results;
   }
 
   async function attachProbe(actions, baseUrl, statusNodes) {
@@ -2347,21 +2444,8 @@
     }
   }
 
-  function initBatchToolbar(root) {
-    var scope = root || document;
-    var toolbar = getBatchToolbars(scope)[0];
-    if (!toolbar || boundBatchToolbars.has(toolbar)) {
-      syncBatchUi(document);
-      return;
-    }
-    boundBatchToolbars.add(toolbar);
-
-    var selectVisibleNode = toolbar.querySelector('.js-shelfmark-batch-select-visible');
-    var clearNode = toolbar.querySelector('.js-shelfmark-batch-clear');
-    var requestNode = toolbar.querySelector('.js-shelfmark-batch-request');
-
-    getBatchRows(document).forEach(function (row) {
-      var toggleNode = getBatchToggleNode(row);
+  function bindBatchToggleNodes(scope, toolbar) {
+    getScopedClassNodes(scope, 'js-shelfmark-batch-toggle').forEach(function (toggleNode) {
       if (!toggleNode || toggleNode.dataset.batchBound === '1') {
         return;
       }
@@ -2371,11 +2455,46 @@
         syncBatchUi(document);
       });
     });
+  }
+
+  function initBatchToolbar(root) {
+    var scope = root || document;
+    var toolbar = getBatchToolbar(document);
+    if (!toolbar) {
+      syncBatchUi(document);
+      return;
+    }
+
+    bindBatchToggleNodes(scope, toolbar);
+
+    if (boundBatchToolbars.has(toolbar)) {
+      syncBatchUi(document);
+      return;
+    }
+    boundBatchToolbars.add(toolbar);
+
+    var modeNode = toolbar.querySelector('.js-shelfmark-batch-mode');
+    var selectVisibleNode = toolbar.querySelector('.js-shelfmark-batch-select-visible');
+    var clearNode = toolbar.querySelector('.js-shelfmark-batch-clear');
+    var requestNode = toolbar.querySelector('.js-shelfmark-batch-request');
+
+    setBatchMode(toolbar, false);
+
+    if (modeNode) {
+      modeNode.addEventListener('click', function () {
+        if (modeNode.disabled || toolbar.dataset.pending === '1') {
+          return;
+        }
+        clearBatchMessage(toolbar);
+        setBatchMode(toolbar, !isBatchModeEnabled(toolbar));
+        syncBatchUi(document);
+      });
+    }
 
     if (selectVisibleNode) {
       selectVisibleNode.addEventListener('click', function () {
         clearBatchMessage(toolbar);
-        getBatchRows(document).forEach(function (row) {
+        getSelectableBatchRows(document).forEach(function (row) {
           var toggleNode = getBatchToggleNode(row);
           if (toggleNode && !toggleNode.disabled) {
             toggleNode.checked = true;
@@ -2388,12 +2507,7 @@
     if (clearNode) {
       clearNode.addEventListener('click', function () {
         clearBatchMessage(toolbar);
-        getBatchRows(document).forEach(function (row) {
-          var toggleNode = getBatchToggleNode(row);
-          if (toggleNode) {
-            toggleNode.checked = false;
-          }
-        });
+        clearBatchSelections(document);
         syncBatchUi(document);
       });
     }
