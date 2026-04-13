@@ -595,7 +595,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'id="shelfmark_series_filter_owned"' in html
     assert 'id="shelfmark_series_filter"' not in html
     assert "Owned series" in html
-    assert "Next missing" in html
+    assert "Next missing" not in html
     assert "Strong candidates" not in html
     assert "Candidates" not in html
     assert "High confidence" not in html
@@ -604,10 +604,12 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "Request selected" in html
     assert "Select visible" in html
     assert "js-shelfmark-batch-toolbar" in html
+    assert "Bulk mode" in html
     assert "Request-capable" not in html
     assert "Has cover" in html
     assert 'name="shelfmark_filter_has_cover" value="1" checked' in html
-    assert "Focus on requestable" in html
+    assert "Reset" in html
+    assert "Focus on requestable" not in html
     assert 'href="/search/stored/?query=Dune&amp;shelfmark_page=2"' in html
     assert "CWA is previewing the first Shelfmark page here." not in html
     assert "Checking your browser for direct Shelfmark request availability." not in html
@@ -626,7 +628,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "duplicate awareness stays exact" not in html
     assert "shelfmark-group-panel" not in html
     assert 'class="shelfmark-results-list js-shelfmark-results-list"' in html
-    assert "Shelfmark totals are shown as-is. Visible rows refine as details load." in html
+    assert "Shelfmark totals are shown as-is. Visible rows refine as details load." not in html
     assert "Open existing CWA book" in html
     assert 'href="/book/7"' in html
     assert "Existing CWA book" not in html
@@ -650,7 +652,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'data-detail-provider-id="222"' in html
     assert 'data-row-enrich-url="/search/external/shelfmark/hardcover/222/row?query=Dune' in html
     assert 'return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune%26shelfmark_page%3D2' in html
-    assert "No visible results remain on this page" in html
+    assert "No matching Shelfmark results surfaced" in html
     assert ">Go<" not in html
     assert "shelfmark-pagination-footer__jump" not in html
     assert 'id="shelfmarkDetailModal"' in html
@@ -660,12 +662,12 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "4.3 ★" in html
     assert "The Lord of the Rings (2)" in html
     assert "304 pages" in html
-    assert "1 book owned in this series" in html
-    assert "Owned through 1" in html
-    assert "Strong candidate" in html
-    assert "Well rated" in html
-    assert "Popular" in html
-    assert "Complete metadata" in html
+    assert "1 book owned in this series" not in html
+    assert "Owned through 1" not in html
+    assert "Strong candidate" not in html
+    assert "Well rated" not in html
+    assert "Popular" not in html
+    assert "Complete metadata" not in html
     assert "Next likely book in your library run" not in html
     assert "Can be requested" not in html
     assert "Library duplicate" not in html
@@ -687,6 +689,39 @@ def test_search_template_renders_external_cover_image_when_available():
     assert 'src="https://covers.example.com/999.jpg"' in html
     assert 'loading="lazy"' in html
     assert 'class="shelfmark-result-card__cover-image"' in html
+
+
+def test_search_template_keeps_shelfmark_shell_when_current_page_is_empty_but_later_pages_exist():
+    app = _create_app()
+    context = _base_context()
+    context["entries"] = []
+    context["result_count"] = 0
+    context["shelfmark_section"] = {
+        **context["shelfmark_section"],
+        "results": [],
+        "page_result_count": 0,
+        "total_available": 895,
+        "raw_total_available": 895,
+        "has_more": True,
+        "next_page": 2,
+        "summary": {
+            **context["shelfmark_section"]["summary"],
+            "total_results": 0,
+            "external_candidates": 0,
+        },
+    }
+
+    with app.test_request_context("/search?query=Dune"):
+        g.shelves_access = []
+        g.config_authors_max = 0
+        html = render_template("search.html", **context)
+
+    assert "No Results Found" not in html
+    assert "No Shelfmark external results found" not in html
+    assert 'class="shelfmark-results-list js-shelfmark-results-list"' in html
+    assert 'data-next-page="2"' in html
+    assert "895 total on Shelfmark" in html
+    assert "No matching Shelfmark results surfaced" in html
 
 
 def test_search_template_omits_group_wrapper_chrome_for_external_results():
@@ -924,6 +959,9 @@ def test_search_template_renders_intentional_zero_results_state():
     context = _base_context()
     context["shelfmark_section"] = {
         **context["shelfmark_section"],
+        "next_page": None,
+        "total_pages": 0,
+        "top_up_url": None,
         "has_more": False,
         "total_available": 0,
         "raw_total_available": 0,
@@ -985,7 +1023,8 @@ def test_search_template_renders_filter_toolbar_and_footer_state():
     assert 'name="shelfmark_filter_high_confidence"' not in html
     assert 'name="shelfmark_triage_filter"' not in html
     assert 'name="shelfmark_filter_has_cover" value="1" checked' in html
-    assert "Show all matches" in html
+    assert "Show all matches" not in html
+    assert "Reset" in html
     assert "Clear filters" not in html
     assert "Page 2 of 75" in html
     assert ">Go<" not in html

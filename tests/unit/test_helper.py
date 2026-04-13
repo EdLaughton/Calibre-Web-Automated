@@ -589,7 +589,7 @@ class TestBookCoverServing:
         cache.get_cache_file_dir.return_value = "/tmp/thumbs"
         mock_get_thumbnail.side_effect = [stale_thumbnail, None]
 
-        with patch.object(helper_module.config, "config_use_google_drive", False), \
+        with patch.object(helper_module.config, "config_use_google_drive", False, create=True), \
              patch.object(helper_module.config, "get_book_path", return_value="/library"), \
              patch.object(helper_module, "use_IM", False):
             helper_module.get_book_cover_internal(book, resolution="sm")

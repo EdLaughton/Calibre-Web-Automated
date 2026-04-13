@@ -28,6 +28,7 @@ from .services.shelfmark_search import (
     build_shelfmark_advanced_query,
     fetch_shelfmark_detail,
     get_shelfmark_preferred_release_settings,
+    lookup_visible_library_matches,
     result_matches_shelfmark_filters,
     search_shelfmark_results,
 )
@@ -618,6 +619,8 @@ def shelfmark_external_row(provider, provider_id):
                 "row_status_provider": result["row_status_provider"],
                 "row_status_provider_id": result["row_status_provider_id"],
                 "row_status_in_library": result["row_status_in_library"],
+                "library_book_url": result.get("library_book_url"),
+                "library_book_title": result.get("library_book_title"),
                 "html": render_template(
                     "shelfmark_external_result_card_inner.html",
                     result=result,
@@ -675,6 +678,8 @@ def shelfmark_external_topup():
                     "row_status_provider": result.get("row_status_provider") or "",
                     "row_status_provider_id": result.get("row_status_provider_id") or "",
                     "row_status_in_library": result.get("row_status_in_library") or "0",
+                    "library_book_url": result.get("library_book_url"),
+                    "library_book_title": result.get("library_book_title"),
                     "row_enrichment_url": result.get("row_enrichment_url") or "",
                     "html": render_template(
                         "shelfmark_external_result_card_inner.html",
@@ -694,6 +699,36 @@ def shelfmark_external_topup():
         )
     except ShelfmarkIntegrationError as exc:
         return jsonify({"ok": False, "message": str(exc)}), 503
+
+
+@search.route("/search/external/shelfmark/library-status", methods=["GET"])
+@login_required_if_no_ano
+def shelfmark_external_library_status():
+    provider_ids = []
+    seen_provider_ids = set()
+    for raw_value in request.args.getlist("provider_id"):
+        normalized = (raw_value or "").strip()
+        if not normalized or normalized in seen_provider_ids:
+            continue
+        seen_provider_ids.add(normalized)
+        provider_ids.append(normalized)
+
+    matches = lookup_visible_library_matches(provider_ids)
+    payload = {}
+    for provider_id in provider_ids:
+        library_match = matches.get(provider_id)
+        payload[provider_id] = {
+            "in_library": bool(library_match),
+            "book_id": library_match.book_id if library_match is not None else None,
+            "book_title": library_match.title if library_match is not None else None,
+            "book_url": (
+                url_for("web.show_book", book_id=library_match.book_id)
+                if library_match is not None
+                else None
+            ),
+        }
+
+    return jsonify({"ok": True, "matches": payload})
 
 
 def _build_shelfmark_detail_url(book, *, query, return_to=None):

@@ -447,7 +447,10 @@ class ConfigSQL(object):
         self.save()
 
     def get_book_path(self):
-        return self.config_calibre_split_dir if self.config_calibre_split else self.config_calibre_dir
+        split_library = bool(getattr(self, "config_calibre_split", False))
+        if split_library:
+            return getattr(self, "config_calibre_split_dir", None) or getattr(self, "config_calibre_dir", None)
+        return getattr(self, "config_calibre_dir", None)
 
     def store_calibre_uuid(self, calibre_db, Library_table):
         from . import app
