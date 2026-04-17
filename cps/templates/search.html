@@ -7,17 +7,20 @@
 {% set shelfmark_has_page_shell = shelfmark and shelfmark.enabled and (external_count > 0 or shelfmark.raw_total_available or shelfmark.total_available or shelfmark.has_more or shelfmark.next_page or shelfmark.page_result_count > 0) %}
 {% set shelfmark_has_external_results = shelfmark and shelfmark.enabled and external_count > 0 %}
 {% macro render_shelfmark_pagination(shelfmark, summary_text) -%}
-  <div class="shelfmark-pagination-footer">
+  <div
+    class="shelfmark-pagination-footer js-shelfmark-pagination-footer"
+    data-display-page="{{ shelfmark.page }}"
+    data-page-size="{{ shelfmark.page_size }}"
+    data-total-available="{{ shelfmark.raw_total_available or shelfmark.total_available or 0 }}"
+  >
     <div class="shelfmark-pagination-footer__summary">
       {% if summary_text %}
         <span class="js-shelfmark-page-summary">{{ summary_text }}</span>
       {% endif %}
       {% if shelfmark.raw_total_available or shelfmark.total_available %}
-        <span>{{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available or shelfmark.total_available) }}</span>
+        <span class="js-shelfmark-total-available">{{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available or shelfmark.total_available) }}</span>
       {% endif %}
-      {% if shelfmark.total_pages > 0 %}
-        <span>{{ _('Page %(page)s of %(pages)s', page=shelfmark.page, pages=shelfmark.total_pages) }}</span>
-      {% endif %}
+      <span class="js-shelfmark-page-indicator">{{ _('Page %(page)s', page=shelfmark.page) }}</span>
     </div>
     <div class="shelfmark-pagination-footer__controls">
       <form class="shelfmark-pagination-footer__page-size-form" method="get" action="{{ request.path }}">
@@ -247,16 +250,16 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="form-group shelfmark-external-controls__group">
+            <div class="form-group shelfmark-external-controls__group shelfmark-external-controls__checkbox-group">
               <input type="hidden" name="shelfmark_series_filter" value="all">
-              <label class="shelfmark-external-controls__checkbox-label shelfmark-external-controls__checkbox-label--series" for="shelfmark_series_filter_owned">
+              <label class="shelfmark-external-controls__checkbox-label" for="shelfmark_series_filter_owned">
                 <input class="shelfmark-external-controls__checkbox" id="shelfmark_series_filter_owned" type="checkbox" name="shelfmark_series_filter" value="owned"{% if shelfmark.selected_series_filter != 'all' %} checked{% endif %}>
                 <span>{{ _('Owned series') }}</span>
               </label>
             </div>
             <input type="hidden" name="shelfmark_page_size" value="{{ shelfmark.page_size }}">
             <input type="hidden" name="shelfmark_filter_has_cover" value="0">
-            <label class="shelfmark-external-controls__checkbox-label" for="shelfmark_filter_has_cover">
+            <label class="shelfmark-external-controls__checkbox-label shelfmark-external-controls__checkbox-group" for="shelfmark_filter_has_cover">
               <input class="shelfmark-external-controls__checkbox" id="shelfmark_filter_has_cover" type="checkbox" name="shelfmark_filter_has_cover" value="1"{% if shelfmark.filter_has_cover %} checked{% endif %}>
               <span>{{ _('Has cover') }}</span>
             </label>
@@ -323,9 +326,10 @@
         <div
           class="shelfmark-results-list js-shelfmark-results-list"
           role="list"
+          data-display-page="{{ shelfmark.page }}"
           data-page-size="{{ shelfmark.page_size }}"
-          data-next-page="{{ shelfmark.next_page or '' }}"
-          data-total-pages="{{ shelfmark.total_pages or 0 }}"
+          data-next-page="{{ shelfmark.source_next_page or shelfmark.next_page or '' }}"
+          data-total-pages="{{ shelfmark.source_total_pages or shelfmark.total_pages or 0 }}"
           data-top-up-url="{{ shelfmark.top_up_url or '' }}"
           data-total-available="{{ shelfmark.raw_total_available or shelfmark.total_available or 0 }}"
           data-series-filter="{{ shelfmark.selected_series_filter }}"
@@ -371,7 +375,7 @@
             </p>
           </div>
         </div>
-        {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.page_result_count > 0 %}
+        {% if shelfmark_has_page_shell %}
           {{ render_shelfmark_pagination(
             shelfmark,
             _('%(count)s shown on this page', count=external_count) if external_count > 0 else _('No matching results')
