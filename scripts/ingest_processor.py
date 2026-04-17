@@ -34,6 +34,13 @@ _ub = None
 extract_import_manifest_identifiers = None
 summarize_import_manifest_identifiers = None
 
+EXIT_OK = 0
+EXIT_USAGE_ERROR = 1
+EXIT_BUSY = 2
+EXIT_IGNORED = 3
+EXIT_NOT_READY = 4
+EXIT_SKIPPED = 5
+
 # Debounced duplicate scan timer
 _duplicate_scan_timer = None
 _duplicate_scan_lock = threading.Lock()
@@ -1339,7 +1346,7 @@ def main(filepath=None):
         if len(sys.argv) < 2:
             print("[ingest-processor] ERROR: No file path provided", flush=True)
             print("[ingest-processor] Usage: python ingest_processor.py <filepath>", flush=True)
-            sys.exit(1)
+            return EXIT_USAGE_ERROR
         filepath = sys.argv[1]
 
     nbp = None
@@ -1354,12 +1361,11 @@ def main(filepath=None):
 
         # Ignore AppleDouble metadata artifacts entirely.
         if filename.startswith("._"):
-            return
+            return EXIT_IGNORED
 
         # Ignore sidecar manifests entirely (handled when the real file is processed)
         if filename.endswith(".cwa.json") or filename.endswith(".cwa.failed.json"):
-            print(f"[ingest-processor] Skipping sidecar manifest file: {filename}", flush=True)
-            return
+            return EXIT_IGNORED
 
         if len(name) > allowed_len:
             new_name = name[:allowed_len] + ext
@@ -1373,7 +1379,7 @@ def main(filepath=None):
                 f = os.path.join(filepath, filename)
                 if Path(f).exists():
                     main(f)
-            return
+            return EXIT_OK
 
         nbp = NewBookProcessor(filepath)
 
@@ -1386,7 +1392,7 @@ def main(filepath=None):
             if not ready:
                 print(f"[ingest-processor] WARN: File did not become ready in time or vanished (after {timeout_minutes} minutes): {nbp.filename}", flush=True)
                 skip_delete = True
-                return
+                return EXIT_NOT_READY
 
         manifest = None
 
@@ -1429,7 +1435,7 @@ def main(filepath=None):
                     
                     nbp.set_library_permissions()
                     nbp.delete_current_file()
-                    return
+                    return EXIT_OK
         except Exception as e:
             print(f"[ingest-processor] Error processing manifest file: {e}", flush=True)
             # Continue with normal processing if manifest handling fails
@@ -1441,7 +1447,7 @@ def main(filepath=None):
             # Do NOT delete ignored temporary files; they may be renamed shortly (e.g. .uploading -> .epub)
             print(f"[ingest-processor] Skipping ignored/temporary file (no action taken): {nbp.filename}", flush=True)
             skip_delete = True
-            return
+            return EXIT_SKIPPED
 
         if nbp.is_target_format: # File can just be imported
             print(f"\n[ingest-processor]: No conversion needed for {nbp.filename}, importing now...", flush=True)
@@ -1505,6 +1511,8 @@ def main(filepath=None):
             else:
                 print(f"[ingest-processor]: Cannot convert {nbp.filepath}. {nbp.input_format} is currently unsupported / is not a known ebook format.", flush=True)
 
+        return EXIT_OK
+
     except Exception as e:
         print(f"[ingest-processor] Unexpected error during processing: {e}", flush=True)
         raise
@@ -1536,4 +1544,4 @@ def main(filepath=None):
                 pass  # Ignore errors in cleanup
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -14,6 +14,7 @@
   var PREFERRED_RELEASE_TIMEOUT_MS = 20000;
   var TOP_UP_TIMEOUT_MS = 12000;
   var TOP_UP_MAX_PAGES = 3;
+  var TOP_UP_MAX_EMPTY_PAGES = 8;
   var BATCH_REQUEST_MAX_CONCURRENCY = 4;
   var ACTIVITY_SNAPSHOT_TTL_MS = 30000;
   var LIBRARY_STATUS_ENDPOINT = '/search/external/shelfmark/library-status';
@@ -353,31 +354,50 @@
     });
   }
 
-  function applyPendingState(scope, requestPayload, isPending) {
+  function applyPendingState(scope, requestPayload, isPending, options) {
     findMatchingActionNodes(scope, requestPayload).forEach(function (node) {
-      setPending(node, isPending);
+      setPending(node, isPending, options);
     });
   }
 
-  function setPending(node, isPending) {
+  function setPending(node, isPending, options) {
+    var settings = options || {};
     var iconNode = node.querySelector('.js-shelfmark-action-icon');
     var labelNode = node.querySelector('.js-shelfmark-action-label');
+    var hintNode = findHintNode(node);
+    var wasWaiting = node.classList.contains('is-shelfmark-action--waiting');
 
     if (isPending) {
       node.classList.add('disabled');
       node.setAttribute('aria-disabled', 'true');
+      node.setAttribute('aria-busy', 'true');
+      node.classList.remove('is-shelfmark-action--waiting');
+      if (settings.pendingClass) {
+        node.classList.add(settings.pendingClass);
+      }
       if (iconNode) {
-        iconNode.className = 'glyphicon glyphicon-refresh js-shelfmark-action-icon';
+        iconNode.className = (settings.iconClass || 'glyphicon glyphicon-refresh') + ' js-shelfmark-action-icon';
       }
       if (labelNode) {
-        labelNode.textContent = 'Requesting...';
+        labelNode.textContent = settings.label || 'Requesting...';
       } else {
-        node.textContent = 'Requesting...';
+        node.textContent = settings.label || 'Requesting...';
+      }
+      if (hintNode) {
+        if (Object.prototype.hasOwnProperty.call(settings, 'hint')) {
+          hintNode.textContent = settings.hint || '';
+          hintNode.classList.toggle('is-hidden', !settings.hint);
+        } else if (wasWaiting) {
+          hintNode.textContent = '';
+          hintNode.classList.add('is-hidden');
+        }
       }
       return;
     }
     node.classList.remove('disabled');
+    node.classList.remove('is-shelfmark-action--waiting');
     node.removeAttribute('aria-disabled');
+    node.removeAttribute('aria-busy');
   }
 
   function createRequestError(message, options) {
@@ -1598,6 +1618,11 @@
       if (showStatusBanner) {
         setStatusText(statusNodes, failureOutcome.bannerText, failureOutcome.bannerLevel);
       }
+      if (error && error.kind === 'timeout' && node.dataset && node.dataset.baseUrl) {
+        invalidateActivitySnapshot(node.dataset.baseUrl);
+        refreshWorkflowStatus(document, node.dataset.baseUrl);
+        scheduleWorkflowRefresh(document, node.dataset.baseUrl);
+      }
       return {
         success: false,
         error: error,
@@ -1650,11 +1675,25 @@
 
     var successCount = 0;
     var queuedCount = 0;
+    var pendingConfirmationCount = 0;
     var failureCount = 0;
+
+    requestItems.forEach(function (item, index) {
+      if (index >= BATCH_REQUEST_MAX_CONCURRENCY) {
+        applyPendingState(document, item.payload, true, {
+          label: 'Waiting',
+          iconClass: 'glyphicon glyphicon-time',
+          hint: 'Waiting for an earlier Shelfmark request slot to free up.',
+          pendingClass: 'is-shelfmark-action--waiting'
+        });
+      }
+    });
+
     var responses = await runWithConcurrency(
       requestItems,
       BATCH_REQUEST_MAX_CONCURRENCY,
       function (item) {
+        applyPendingState(document, item.payload, false);
         return submitResolvedRequest(item.actionNode, item.payload, item.openUrl, [], {
           silentStatus: true
         });
@@ -1669,6 +1708,10 @@
         }
         return;
       }
+      if (response && response.outcome && response.outcome.kind === 'request_confirmation_pending') {
+        pendingConfirmationCount += 1;
+        return;
+      }
       failureCount += 1;
     });
 
@@ -1680,13 +1723,27 @@
 
     setBatchPending(toolbar, false);
 
-    if (successCount > 0 && failureCount === 0) {
+    if (successCount > 0 && pendingConfirmationCount > 0 && failureCount === 0) {
+      setBatchMessage(
+        toolbar,
+        'Requested ' + successCount + '. Still checking ' + pendingConfirmationCount + ' more.',
+        'warning'
+      );
+    } else if (successCount > 0 && failureCount === 0) {
       setBatchMessage(
         toolbar,
         queuedCount === successCount
           ? (successCount === 1 ? 'Queued 1 book.' : 'Queued ' + successCount + ' books.')
           : (successCount === 1 ? 'Requested 1 book.' : 'Requested ' + successCount + ' books.'),
         'success'
+      );
+    } else if (pendingConfirmationCount > 0 && successCount === 0 && failureCount === 0) {
+      setBatchMessage(
+        toolbar,
+        pendingConfirmationCount === 1
+          ? 'Still checking 1 Shelfmark request.'
+          : 'Still checking ' + pendingConfirmationCount + ' Shelfmark requests.',
+        'warning'
       );
     } else if (successCount > 0 && failureCount > 0) {
       setBatchMessage(
@@ -2030,10 +2087,24 @@
     if (!resultsList || !targetCount || visibleCount >= targetCount) {
       return false;
     }
-    if (topUpInFlight || topUpPagesFetched >= TOP_UP_MAX_PAGES) {
+    var pageBudget = visibleCount < 1 ? TOP_UP_MAX_EMPTY_PAGES : TOP_UP_MAX_PAGES;
+    if (topUpInFlight || topUpPagesFetched >= pageBudget) {
       return false;
     }
     return Boolean(getTopUpUrl(resultsList) && getNextTopUpPage(resultsList));
+  }
+
+  function hasPendingProgressiveRows(resultsList) {
+    if (!resultsList) {
+      return false;
+    }
+    if (rowEnrichmentInFlight > 0 || rowEnrichmentQueue.length > 0) {
+      return true;
+    }
+    return getScopedClassNodes(resultsList, 'js-shelfmark-result-row').some(function (row) {
+      var state = getProgressiveRowState(row);
+      return state === 'queued' || state === 'loading';
+    });
   }
 
   function appendTopUpRows(resultsList, rows) {
@@ -2157,7 +2228,9 @@
   function updateProgressiveCounts() {
     var resultsList = getResultsList();
     var visibleCount = resultsList ? getVisibleResultRows(resultsList).length : getVisibleResultRows(document).length;
-    var canStillTopUp = canTopUpResults(resultsList, visibleCount) || isTopUpPending(resultsList);
+    var canStillTopUp = canTopUpResults(resultsList, visibleCount)
+      || isTopUpPending(resultsList)
+      || hasPendingProgressiveRows(resultsList);
     var visibleCountNodes = toArray(document.querySelectorAll('.js-shelfmark-visible-count'));
     var summaryNodes = toArray(document.querySelectorAll('.js-shelfmark-page-summary'));
     var emptyState = document.querySelector('.js-shelfmark-progressive-empty-state');

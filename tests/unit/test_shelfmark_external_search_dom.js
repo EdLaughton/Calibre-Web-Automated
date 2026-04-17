@@ -1417,6 +1417,115 @@ async function runProgressiveScenario() {
   assert.equal(concurrentBatch.dom.batchToolbar.querySelector('.js-shelfmark-batch-ready').textContent, '0 ready on this page');
   assert.equal(concurrentBatch.dom.batchToolbar.querySelector('.js-shelfmark-batch-message').textContent, 'Requested 2 books.');
 
+  const queuedPostResolvers = [];
+  const queuedBatch = await runScenario({
+    currentOrigin: 'https://library.example.com',
+    baseUrl: 'https://library.example.com/shelfmark',
+    openUrl: 'https://library.example.com/shelfmark/?query=Queued+Batch+One',
+    requestPayload: {
+      book_data: { provider: 'hardcover', provider_id: '600', title: 'Queued Batch One' },
+      context: { source: '*', content_type: 'ebook', request_level: 'book' }
+    },
+    mode: 'request',
+    statusTarget: true,
+    statusProviderId: '600',
+    statusChipText: 'Available to request',
+    statusChipKey: 'available',
+    statusChipClass: 'shelfmark-status-chip--available',
+    includeBatchToolbar: true,
+    batchToggle: true,
+    fetchImpl: (url, fetchOptions, fetchCalls) => {
+      fetchCalls.push({ url, options: fetchOptions || {} });
+      if (url.endsWith('/api/auth/check')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ authenticated: true, auth_required: true })
+        });
+      }
+      if (url.endsWith('/api/request-policy')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ requests_enabled: true, defaults: { ebook: 'request_book' } })
+        });
+      }
+      if (url.endsWith('/api/activity/snapshot')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ requests: [] })
+        });
+      }
+      if (url.endsWith('/api/requests') && fetchOptions && fetchOptions.method === 'POST') {
+        return new Promise((resolve) => {
+          queuedPostResolvers.push(resolve);
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch call for ${url}`));
+    }
+  });
+
+  const queuedRows = [];
+  for (let index = 1; index <= 4; index += 1) {
+    // Total requestable rows becomes 5, which exceeds the fixed concurrency budget of 4.
+    // The last row should stay visibly in a waiting state until one active request settles.
+    queuedRows.push(await queuedBatch.appendResult({
+      openUrl: `https://library.example.com/shelfmark/?query=Queued+Batch+${index + 1}`,
+      requestPayload: {
+        book_data: { provider: 'hardcover', provider_id: String(600 + index), title: `Queued Batch ${index + 1}` },
+        context: { source: '*', content_type: 'ebook', request_level: 'book' }
+      },
+      mode: 'request',
+      label: 'Request in Shelfmark',
+      hint: '',
+      buttonClass: 'btn-primary',
+      iconClass: 'glyphicon glyphicon-send',
+      statusTarget: true,
+      statusProviderId: String(600 + index),
+      statusChipText: 'Available to request',
+      statusChipKey: 'available',
+      statusChipClass: 'shelfmark-status-chip--available',
+      batchToggle: true
+    }));
+  }
+
+  queuedBatch.dom.batchModeButton.dispatchEvent('click');
+  await flush();
+  queuedBatch.dom.batchToolbar.querySelector('.js-shelfmark-batch-select-visible').dispatchEvent('click');
+  await flush();
+  queuedBatch.dom.batchToolbar.querySelector('.js-shelfmark-batch-request').dispatchEvent('click');
+  await flush();
+  await flush();
+
+  const queuedPostsInFlight = queuedBatch.fetchCalls.filter((call) => call.url.endsWith('/api/requests'));
+  assert.equal(queuedPostsInFlight.length, 4);
+  assert.equal(
+    queuedRows[3].action.querySelector('.js-shelfmark-action-label').textContent,
+    'Waiting'
+  );
+  assert.equal(
+    queuedRows[3].wrapper.querySelector('.js-shelfmark-action-hint').textContent,
+    'Waiting for an earlier Shelfmark request slot to free up.'
+  );
+
+  queuedPostResolvers.shift()({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => ({ success: true })
+  });
+  await flush();
+  await flush();
+
+  assert.equal(
+    queuedBatch.fetchCalls.filter((call) => call.url.endsWith('/api/requests')).length,
+    5
+  );
+
   const progressive = await runProgressiveScenario();
 
   assert.deepEqual(

@@ -143,6 +143,15 @@ assert.equal(requestRequiresRelease.kind, 'request_requires_release');
 assert.equal(requestRequiresRelease.actionState.mode, 'open');
 assert.match(requestRequiresRelease.bannerText, /concrete release|download path/i);
 
+const requestTimeoutPending = flow.resolveRequestOutcome({
+  success: false,
+  error: flow.createBrowserError('Timed out', { kind: 'timeout' }),
+});
+assert.equal(requestTimeoutPending.kind, 'request_confirmation_pending');
+assert.equal(requestTimeoutPending.actionState.mode, 'open');
+assert.equal(requestTimeoutPending.actionState.label, 'Checking...');
+assert.match(requestTimeoutPending.bannerText, /keep checking/i);
+
 const preferredSettings = flow.normalizePreferredReleaseSettings({
   enabled: true,
   provider: 'MyAnonamouse',

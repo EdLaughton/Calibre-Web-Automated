@@ -326,6 +326,16 @@
     };
   }
 
+  function buildCheckingState(hint) {
+    return {
+      mode: 'open',
+      label: 'Checking...',
+      hint: hint || '',
+      buttonClass: 'btn-default',
+      iconClass: 'glyphicon glyphicon-time'
+    };
+  }
+
   function createBrowserError(message, options) {
     var error = new Error(message || 'Shelfmark request flow failed.');
     var data = options || {};
@@ -690,10 +700,10 @@
     if (error) {
       if (error.kind === 'timeout') {
         return {
-          kind: 'request_timeout',
-          bannerLevel: 'alert-danger',
-          bannerText: 'Shelfmark did not confirm the request before the browser timed out.',
-          actionState: buildOpenState('Shelfmark did not confirm the request before the browser timed out. Open Shelfmark to retry or verify whether the request was created.')
+          kind: 'request_confirmation_pending',
+          bannerLevel: 'alert-warning',
+          bannerText: 'Shelfmark has not confirmed this request yet. CWA will keep checking for queue or library updates.',
+          actionState: buildCheckingState('Shelfmark has not confirmed this request yet. CWA will keep checking for queue or library updates before you need to retry.')
         };
       }
 
@@ -775,6 +785,7 @@
     buildOpenState: buildOpenState,
     buildRequestState: buildRequestState,
     buildQueuedState: buildQueuedState,
+    buildCheckingState: buildCheckingState,
     createBrowserError: createBrowserError,
     resolveDefaultModeFromPolicy: resolveDefaultModeFromPolicy,
     resolveSourceModeFromPolicy: resolveSourceModeFromPolicy,

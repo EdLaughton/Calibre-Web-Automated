@@ -52,6 +52,8 @@ session: Session | None = None
 app_DB_path = None
 Base = declarative_base()
 searched_ids = {}
+_thumbnail_table_available = None
+_thumbnail_table_warning_emitted = False
 
 logged_in = dict()
 
@@ -782,12 +784,47 @@ class Thumbnail(Base):
     expiration = Column(DateTime, nullable=True)
 
 
+def ensure_thumbnail_table(_session=None, force_refresh=False):
+    global _thumbnail_table_available, _thumbnail_table_warning_emitted
+
+    if _thumbnail_table_available is True and not force_refresh:
+        return True
+
+    active_session = _session or session
+    if active_session is None:
+        return False
+
+    try:
+        bind = active_session.get_bind() if hasattr(active_session, "get_bind") else getattr(active_session, "bind", None)
+        if bind is None:
+            return False
+
+        with bind.connect() as connection:
+            has_table = bind.dialect.has_table(connection, "thumbnail")
+        if not has_table:
+            Thumbnail.__table__.create(bind=bind, checkfirst=True)
+        _thumbnail_table_available = True
+        _thumbnail_table_warning_emitted = False
+        return True
+    except Exception as ex:
+        _thumbnail_table_available = False
+        if not _thumbnail_table_warning_emitted:
+            log.warning(
+                "Thumbnail table unavailable; thumbnail cache operations will be skipped until the app database is repaired: %s",
+                ex,
+            )
+            _thumbnail_table_warning_emitted = True
+        return False
+
+
 # Add missing tables during migration of database
 def add_missing_tables(engine, _session):
     if not engine.dialect.has_table(engine.connect(), "archived_book"):
         ArchivedBook.__table__.create(bind=engine, checkfirst=True)
     if not engine.dialect.has_table(engine.connect(), "thumbnail"):
         Thumbnail.__table__.create(bind=engine, checkfirst=True)
+    global _thumbnail_table_available
+    _thumbnail_table_available = True
     if not engine.dialect.has_table(engine.connect(), "kosync_progress"):
         KOSyncProgress.__table__.create(bind=engine, checkfirst=True)
     if not engine.dialect.has_table(engine.connect(), "magic_shelf"):
