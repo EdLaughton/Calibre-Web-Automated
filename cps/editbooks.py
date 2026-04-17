@@ -37,7 +37,12 @@ from .cwa_functions import get_ingest_dir
 from .usermanagement import user_login_required, login_required_if_no_ano
 from .string_helper import strip_whitespaces
 from .cover_utils import apply_selected_cover_url
-from .editbook_save_utils import build_post_save_location, recover_calibre_session
+from .editbook_save_utils import (
+    build_post_save_location,
+    ensure_calibre_session_ready,
+    load_custom_columns_without_autoflush,
+    recover_calibre_session,
+)
 from werkzeug.utils import secure_filename
 import uuid
 
@@ -846,6 +851,12 @@ def do_edit_book(book_id, upload_formats=None):
 
     # create the function for sorting...
     calibre_db.create_functions(config)
+    ensure_calibre_session_ready(
+        calibre_db_instance=calibre_db,
+        logger=log,
+        book_id=book_id,
+        phase="request start",
+    )
 
     book = calibre_db.get_filtered_book(book_id, allow_show_archived=True)
     # Book not found
@@ -942,6 +953,7 @@ def do_edit_book(book_id, upload_formats=None):
             flash(str(e), category="error")
             edit_error = True
 
+        save_phase = "custom column update"
         modify_date |= edit_all_cc_data(book_id, book, to_save)
 
         # Handle hardcover sync blacklist settings
@@ -1697,15 +1709,21 @@ def edit_cc_data_string(book, c, to_save, cc_db_value, cc_string):
 
 
 def edit_single_cc_data(book_id, book, column_id, to_save):
-    cc = (calibre_db.session.query(db.CustomColumns)
-          .filter(db.CustomColumns.datatype.notin_(db.cc_exceptions))
-          .filter(db.CustomColumns.id == column_id)
-          .all())
+    cc = load_custom_columns_without_autoflush(
+        session=calibre_db.session,
+        custom_columns_model=db.CustomColumns,
+        cc_exceptions=db.cc_exceptions,
+        column_id=column_id,
+    )
     return edit_cc_data(book_id, book, to_save, cc)
 
 
 def edit_all_cc_data(book_id, book, to_save):
-    cc = calibre_db.session.query(db.CustomColumns).filter(db.CustomColumns.datatype.notin_(db.cc_exceptions)).all()
+    cc = load_custom_columns_without_autoflush(
+        session=calibre_db.session,
+        custom_columns_model=db.CustomColumns,
+        cc_exceptions=db.cc_exceptions,
+    )
     return edit_cc_data(book_id, book, to_save, cc)
 
 

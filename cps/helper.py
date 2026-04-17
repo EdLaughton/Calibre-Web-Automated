@@ -54,6 +54,14 @@ from .cover_utils import is_cached_thumbnail_stale
 # Track books with pending thumbnail generation to prevent duplicate tasks
 _pending_thumbnail_books = set()
 
+
+def thumbnail_cache_available(force_refresh=False):
+    try:
+        return bool(ub.ensure_thumbnail_table(force_refresh=force_refresh))
+    except Exception as ex:
+        log.debug("Thumbnail table availability check failed: %s", ex)
+        return False
+
 import sys
 sys.path.insert(1, '/app/calibre-web-automated/scripts/')
 from cwa_db import CWA_DB
@@ -870,7 +878,7 @@ def get_book_cover_internal(book, resolution=None):
     if book and book.has_cover:
 
         # Send the book cover thumbnail if it exists in cache
-        if resolution:
+        if resolution and thumbnail_cache_available():
             cache = fs.FileSystem()
             # Check for both webp and jpg thumbnails, generate missing ones
             webp_thumb = get_book_cover_thumbnail_by_format(book, resolution, 'webp')
@@ -983,7 +991,7 @@ def get_book_cover_internal(book, resolution=None):
 
 
 def get_book_cover_thumbnail(book, resolution):
-    if book and book.has_cover:
+    if book and book.has_cover and thumbnail_cache_available():
         return (ub.session
                 .query(ub.Thumbnail)
                 .filter(ub.Thumbnail.type == THUMBNAIL_TYPE_COVER)
@@ -995,7 +1003,7 @@ def get_book_cover_thumbnail(book, resolution):
 
 def get_book_cover_thumbnail_by_format(book, resolution, format):
     """Get thumbnail for specific book, resolution, and format (webp/jpg)"""
-    if book and book.has_cover:
+    if book and book.has_cover and thumbnail_cache_available():
         return (ub.session
                 .query(ub.Thumbnail)
                 .filter(ub.Thumbnail.type == THUMBNAIL_TYPE_COVER)
@@ -1023,7 +1031,7 @@ def get_series_cover_thumbnail(series_id, resolution=None):
 
 def get_series_cover_internal(series_id, resolution=None):
     # Send the series thumbnail if it exists in cache
-    if resolution:
+    if resolution and thumbnail_cache_available():
         thumbnail = get_series_thumbnail(series_id, resolution)
         if thumbnail:
             cache = fs.FileSystem()
@@ -1035,6 +1043,8 @@ def get_series_cover_internal(series_id, resolution=None):
 
 
 def get_series_thumbnail(series_id, resolution):
+    if not thumbnail_cache_available():
+        return None
     return (ub.session
         .query(ub.Thumbnail)
         .filter(ub.Thumbnail.type == THUMBNAIL_TYPE_SERIES)
@@ -1190,6 +1200,9 @@ def save_cover(img, book_path):
 def trigger_thumbnail_generation_for_book(book_id):
     """Trigger thumbnail generation for a book after cover changes."""
     try:
+        if not thumbnail_cache_available():
+            log.debug("Thumbnail generation skipped for book %s because the thumbnail table is unavailable", book_id)
+            return
         from .tasks.thumbnail import TaskGenerateCoverThumbnails
 
         if use_IM:
@@ -1513,6 +1526,9 @@ def get_download_link(book_id, book_format, client):
 
 def clear_cover_thumbnail_cache(book_id):
     # Always allow clearing thumbnail cache
+    if not thumbnail_cache_available():
+        log.debug("Thumbnail cache clear skipped for book %s because the thumbnail table is unavailable", book_id)
+        return
     # Remove from pending set when clearing cache (e.g., during book deletion)
     _pending_thumbnail_books.discard(book_id)
     WorkerThread.add(None, TaskClearCoverThumbnailCache(book_id), hidden=True)
@@ -1520,6 +1536,9 @@ def clear_cover_thumbnail_cache(book_id):
 
 def replace_cover_thumbnail_cache(book_id):
     # Always allow replacing thumbnail cache
+    if not thumbnail_cache_available():
+        log.debug("Thumbnail cache refresh skipped for book %s because the thumbnail table is unavailable", book_id)
+        return
     # Remove from pending set to allow regeneration
     _pending_thumbnail_books.discard(book_id)
     # Try to queue clear task (not critical if it fails)
@@ -1536,11 +1555,17 @@ def replace_cover_thumbnail_cache(book_id):
 
 
 def delete_thumbnail_cache():
+    if not thumbnail_cache_available():
+        log.debug("Thumbnail cache delete skipped because the thumbnail table is unavailable")
+        return
     WorkerThread.add(None, TaskClearCoverThumbnailCache(-1))
 
 
 def add_book_to_thumbnail_cache(book_id):
     # Always generate thumbnails for new books
+    if not thumbnail_cache_available():
+        log.debug("Thumbnail generation skipped for book %s because the thumbnail table is unavailable", book_id)
+        return
     # Ensure not in pending set (shouldn't be for new books, but defensive)
     _pending_thumbnail_books.discard(book_id)
     # Queue generation task and add to pending set only if successful
@@ -1553,6 +1578,9 @@ def add_book_to_thumbnail_cache(book_id):
 
 def update_thumbnail_cache():
     # Always allow manual thumbnail cache updates
+    if not thumbnail_cache_available():
+        log.debug("Thumbnail cache rebuild skipped because the thumbnail table is unavailable")
+        return None
     task = TaskGenerateCoverThumbnails()
     WorkerThread.add(None, task)
     # Return task ID for tracking

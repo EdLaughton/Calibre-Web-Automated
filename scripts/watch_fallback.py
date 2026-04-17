@@ -47,12 +47,22 @@ class FileStat:
     stable_count: int = 0  # how many consecutive scans with identical stat
 
 
-def iter_files(root: str, recursive: bool = True, extensions: Optional[Set[str]] = None) -> Iterable[str]:
+def iter_files(
+    root: str,
+    recursive: bool = True,
+    extensions: Optional[Set[str]] = None,
+    ignore_prefixes: Optional[Tuple[str, ...]] = None,
+    ignore_suffixes: Optional[Tuple[str, ...]] = None,
+) -> Iterable[str]:
     if not recursive:
         try:
             for name in os.listdir(root):
                 fp = os.path.join(root, name)
-                if os.path.isfile(fp) and _match_ext(fp, extensions):
+                if (
+                    os.path.isfile(fp)
+                    and _match_ext(fp, extensions)
+                    and not _should_ignore_path(fp, ignore_prefixes, ignore_suffixes)
+                ):
                     yield fp
         except FileNotFoundError:
             return
@@ -61,7 +71,7 @@ def iter_files(root: str, recursive: bool = True, extensions: Optional[Set[str]]
     for dirpath, dirnames, filenames in os.walk(root):
         for fn in filenames:
             fp = os.path.join(dirpath, fn)
-            if _match_ext(fp, extensions):
+            if _match_ext(fp, extensions) and not _should_ignore_path(fp, ignore_prefixes, ignore_suffixes):
                 yield fp
 
 
@@ -70,6 +80,19 @@ def _match_ext(path: str, extensions: Optional[Set[str]]) -> bool:
         return True
     _, ext = os.path.splitext(path)
     return ext.lower().lstrip('.') in extensions
+
+
+def _should_ignore_path(
+    path: str,
+    ignore_prefixes: Optional[Tuple[str, ...]],
+    ignore_suffixes: Optional[Tuple[str, ...]],
+) -> bool:
+    basename = os.path.basename(path)
+    if ignore_prefixes and any(basename.startswith(prefix) for prefix in ignore_prefixes):
+        return True
+    if ignore_suffixes and any(basename.endswith(suffix) for suffix in ignore_suffixes):
+        return True
+    return False
 
 
 def get_stat(path: str) -> Optional[Tuple[int, int]]:
@@ -96,6 +119,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     p.add_argument("--no-recursive", dest="recursive", action="store_false", help="Disable recursion")
     p.set_defaults(recursive=True)
     p.add_argument("--exts", default="", help="Comma-separated list of file extensions to include (no dots)")
+    p.add_argument("--ignore-prefixes", default="", help="Comma-separated basename prefixes to ignore")
+    p.add_argument("--ignore-suffixes", default="", help="Comma-separated basename suffixes to ignore")
     p.add_argument("--stabilize", type=float, default=1.5, help="Seconds a file must remain unchanged to fire (default: 1.5)")
 
     args = p.parse_args(list(argv) if argv is not None else None)
@@ -106,12 +131,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         return 2
 
     exts = {e.strip().lower() for e in args.exts.split(',') if e.strip()} if args.exts else None
+    ignore_prefixes = tuple(prefix.strip() for prefix in args.ignore_prefixes.split(',') if prefix.strip())
+    ignore_suffixes = tuple(suffix.strip() for suffix in args.ignore_suffixes.split(',') if suffix.strip())
 
     index: Dict[FileKey, FileStat] = {}
     last_scan_at = 0.0
 
     # Prime the index once so we don't fire for everything immediately
-    for fp in iter_files(root, args.recursive, exts):
+    for fp in iter_files(root, args.recursive, exts, ignore_prefixes, ignore_suffixes):
         st = get_stat(fp)
         if st:
             size, mtime_ns = st
@@ -126,7 +153,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             last_scan_at = time.time()
 
             seen: Set[FileKey] = set()
-            for fp in iter_files(root, args.recursive, exts):
+            for fp in iter_files(root, args.recursive, exts, ignore_prefixes, ignore_suffixes):
                 fk = FileKey(fp)
                 seen.add(fk)
                 st = get_stat(fp)

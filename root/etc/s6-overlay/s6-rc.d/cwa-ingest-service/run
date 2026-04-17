@@ -47,6 +47,7 @@ STABLE_INTERVAL=${CWA_INGEST_STABLE_INTERVAL:-0.5}
 MAX_QUEUE_SIZE=${CWA_INGEST_MAX_QUEUE_SIZE:-50}
 SUPPORTED_EXT_REGEX='(epub|mobi|azw3|azw|pdf|txt|rtf|cbz|cbr|cb7|cbc|fb2|fbz|docx|html|htmlz|lit|lrf|odt|prc|pdb|pml|rb|snb|tcr|txtz|kepub|m4b|m4a|mp4|acsm|kfx|kfx-zip)$'
 TEMP_SUFFIXES='crdownload download part uploading'
+declare -A RECENT_EVENT_SIGNATURES
 get_stale_temp_minutes_from_db() {
         local minutes
         if command -v sqlite3 >/dev/null 2>&1; then
@@ -111,10 +112,38 @@ wait_for_stable_file() {
 
 run_fallback() {
         echo "[cwa-ingest-service] Falling back to polling watcher" >&2
-        python3 /app/calibre-web-automated/scripts/watch_fallback.py --path "$WATCH_FOLDER" --interval 5 |
+        python3 /app/calibre-web-automated/scripts/watch_fallback.py \
+                --path "$WATCH_FOLDER" \
+                --interval 5 \
+                --ignore-prefixes "._" \
+                --ignore-suffixes ".cwa.json,.cwa.failed.json" |
         while read -r events filepath; do
                 handle_event "$filepath"
         done
+}
+
+get_file_signature() {
+        local filepath="$1"
+        if [ ! -e "$filepath" ]; then
+                echo ""
+                return 0
+        fi
+        stat -c '%Y:%s:%i' "$filepath" 2>/dev/null || echo ""
+}
+
+remember_event_signature() {
+        local filepath="$1"
+        local signature="$2"
+        if [ -n "$filepath" ] && [ -n "$signature" ]; then
+                RECENT_EVENT_SIGNATURES["$filepath"]="$signature"
+        fi
+}
+
+is_duplicate_unchanged_event() {
+        local filepath="$1"
+        local signature="$2"
+        local previous="${RECENT_EVENT_SIGNATURES["$filepath"]:-}"
+        [ -n "$signature" ] && [ "$previous" = "$signature" ]
 }
 
 cleanup_stale_temps() {
@@ -191,20 +220,27 @@ handle_event() {
         local configured_timeout=$(get_timeout_from_db)  # Get configured timeout from database
         local safety_timeout=$((configured_timeout * 3))  # Safety timeout is 3x the configured timeout
         local filename=$(basename "$filepath")
+        local signature=""
 
         # temp suffixes
         for suf in $TEMP_SUFFIXES; do
                 [[ "$filepath" == *.$suf ]] && return 0
         done
-        # ignore sidecar manifests
+        # ignore AppleDouble and sidecar manifests silently
+        [[ "$filename" == ._* ]] && return 0
         if [[ "$filepath" == *.cwa.json ]] || [[ "$filepath" == *.cwa.failed.json ]]; then
-                echo "[cwa-ingest-service] Skipping sidecar manifest: $filepath (handled with data file)"
                 return 0
         fi
         # extension filter
         if ! [[ "$filepath" =~ $SUPPORTED_EXT_REGEX ]]; then
                 return 0
         fi
+
+        signature=$(get_file_signature "$filepath")
+        if is_duplicate_unchanged_event "$filepath" "$signature"; then
+                return 0
+        fi
+        remember_event_signature "$filepath" "$signature"
 
         cleanup_stale_temps
 
@@ -243,6 +279,11 @@ handle_event() {
                         tail -n "$MAX_QUEUE_SIZE" "$QUEUE_FILE" > "$temp_queue"
                         mv "$temp_queue" "$QUEUE_FILE"
                 fi
+        elif [ $exit_code -eq 4 ]; then
+                echo "[cwa-ingest-service] Deferred processing until file becomes ready or changes again: $filepath"
+                echo "waiting:$filename:$(date '+%Y-%m-%d %H:%M:%S')" > "$STATUS_FILE"
+        elif [ $exit_code -eq 3 ] || [ $exit_code -eq 5 ]; then
+                :
         elif [ $exit_code -ne 0 ]; then
                 echo "[cwa-ingest-service] Error processing $filepath (exit code: $exit_code)"
                 echo "error:$filename:$exit_code:$(date '+%Y-%m-%d %H:%M:%S')" > "$STATUS_FILE"
@@ -291,4 +332,3 @@ fi
                 handle_event "$filepath"
         done
 ) || run_fallback
-

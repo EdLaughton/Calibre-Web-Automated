@@ -94,3 +94,92 @@ def test_recover_calibre_session_tolerates_rollback_failure_and_still_recovers()
         "response redirect",
         session.rollback.side_effect,
     )
+
+
+def test_load_custom_columns_without_autoflush_uses_no_autoflush_context():
+    datatype_field = mock.Mock()
+    datatype_field.notin_.return_value = "datatype-filter"
+    id_field = mock.Mock()
+
+    custom_columns_model = mock.Mock()
+    custom_columns_model.datatype = datatype_field
+    custom_columns_model.id = id_field
+
+    query = mock.Mock()
+    query.filter.return_value = query
+    query.all.return_value = ["custom-column"]
+
+    session = mock.Mock()
+    session.query.return_value = query
+    session.no_autoflush = mock.MagicMock()
+
+    result = editbook_save_utils.load_custom_columns_without_autoflush(
+        session=session,
+        custom_columns_model=custom_columns_model,
+        cc_exceptions=("comments",),
+        column_id=7,
+    )
+
+    assert result == ["custom-column"]
+    session.no_autoflush.__enter__.assert_called_once_with()
+    session.no_autoflush.__exit__.assert_called_once()
+    session.query.assert_called_once_with(custom_columns_model)
+    assert query.filter.call_count == 2
+
+
+def test_ensure_calibre_session_ready_keeps_active_transaction():
+    logger = mock.Mock()
+    transaction = mock.Mock(is_active=True)
+    session = mock.Mock()
+    session.get_transaction.return_value = transaction
+
+    calibre_db_instance = mock.Mock()
+    calibre_db_instance.session = session
+
+    result = editbook_save_utils.ensure_calibre_session_ready(
+        calibre_db_instance=calibre_db_instance,
+        logger=logger,
+        book_id=1121,
+        phase="request start",
+    )
+
+    assert result is session
+    calibre_db_instance.ensure_session.assert_called_once_with()
+    logger.warning.assert_not_called()
+
+
+def test_ensure_calibre_session_ready_recovers_closed_transaction():
+    logger = mock.Mock()
+    transaction = mock.Mock(is_active=False)
+    session = mock.Mock()
+    session.get_transaction.return_value = transaction
+
+    recovered_session = mock.Mock()
+    calibre_db_instance = mock.Mock()
+    calibre_db_instance.session = session
+
+    call_count = {"value": 0}
+
+    def _ensure_session():
+        call_count["value"] += 1
+        if call_count["value"] == 2:
+            calibre_db_instance.session = recovered_session
+
+    calibre_db_instance.ensure_session.side_effect = _ensure_session
+
+    result = editbook_save_utils.ensure_calibre_session_ready(
+        calibre_db_instance=calibre_db_instance,
+        logger=logger,
+        book_id=1121,
+        phase="request start",
+    )
+
+    assert result is recovered_session
+    assert calibre_db_instance.ensure_session.call_count == 2
+    session.rollback.assert_called_once_with()
+    session.close.assert_called_once_with()
+    logger.warning.assert_any_call(
+        "Manual metadata apply found closed transaction for book %s during %s; recreating session",
+        1121,
+        "request start",
+    )

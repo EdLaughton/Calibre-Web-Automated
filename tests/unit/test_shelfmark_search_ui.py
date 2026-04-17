@@ -616,7 +616,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
     assert 'data-top-up-url="/search/external/shelfmark/topup?query=Dune&amp;shelfmark_page=1&amp;shelfmark_page_size=12&amp;shelfmark_sort=popularity&amp;return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"' in html
     assert 'data-page-size="12"' in html
-    assert html.index("Open search in Shelfmark") < html.index("External Candidate")
+    assert html.index("Open in Shelfmark") < html.index("External Candidate")
     assert 'href="https://library.example.com/shelfmark/?content_type=ebook&amp;sort=popularity&amp;limit=12&amp;page=1&amp;query=Dune"' in html
     assert "shelfmark_request_flow.js" in html
     assert "shelfmark_external_search.js" in html
@@ -652,7 +652,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'data-detail-provider-id="222"' in html
     assert 'data-row-enrich-url="/search/external/shelfmark/hardcover/222/row?query=Dune' in html
     assert 'return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune%26shelfmark_page%3D2' in html
-    assert "No matching Shelfmark results surfaced" in html
+    assert "No usable Shelfmark results remained" in html
     assert ">Go<" not in html
     assert "shelfmark-pagination-footer__jump" not in html
     assert 'id="shelfmarkDetailModal"' in html
@@ -721,7 +721,7 @@ def test_search_template_keeps_shelfmark_shell_when_current_page_is_empty_but_la
     assert 'class="shelfmark-results-list js-shelfmark-results-list"' in html
     assert 'data-next-page="2"' in html
     assert "895 total on Shelfmark" in html
-    assert "No matching Shelfmark results surfaced" in html
+    assert "No usable Shelfmark results remained" in html
 
 
 def test_search_template_omits_group_wrapper_chrome_for_external_results():
@@ -990,7 +990,7 @@ def test_search_template_renders_intentional_zero_results_state():
     assert "No matches" in html
     assert "External lookup query" not in html
     assert "<code>Dune</code>" not in html
-    assert "Open search in Shelfmark" in html
+    assert "Open in Shelfmark" in html
 
 
 def test_search_template_renders_filter_toolbar_and_footer_state():

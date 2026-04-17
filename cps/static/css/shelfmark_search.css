@@ -151,10 +151,10 @@
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 12px;
-  padding: 14px 16px;
-  border: 1px solid rgba(226, 236, 242, 0.14);
+  padding: 13px 15px;
+  border: 1px solid rgba(226, 236, 242, 0.11);
   border-radius: 12px;
-  background: rgba(13, 21, 29, 0.34);
+  background: rgba(10, 16, 23, 0.28);
   box-shadow: none;
 }
 
@@ -207,17 +207,21 @@
 
 .shelfmark-empty-state--progressive {
   margin-top: 14px;
-  border-color: rgba(236, 244, 248, 0.12);
-  background: rgba(11, 18, 25, 0.22);
+  border-color: rgba(236, 244, 248, 0.1);
+  background: rgba(11, 18, 25, 0.18);
 }
 
 .shelfmark-external-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px 16px;
-  margin-top: 12px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--shelfmark-shell-soft-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .shelfmark-external-toolbar__actions {
@@ -226,14 +230,15 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  margin-left: auto;
 }
 
 .shelfmark-external-controls {
   display: flex;
-  flex: 1 1 620px;
+  flex: 1 1 640px;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: 8px 10px;
   min-width: 0;
 }
 
@@ -241,9 +246,16 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: 7px;
   margin-right: 0;
   min-width: 0;
+}
+
+.shelfmark-external-controls__submit-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 4px;
 }
 
 .shelfmark-external-controls__label {
@@ -280,7 +292,7 @@
   align-items: center;
   gap: 6px;
   min-height: 32px;
-  padding: 6px 10px;
+  padding: 6px 11px;
   margin: 0;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
@@ -318,6 +330,8 @@
 
 .shelfmark-external-controls__apply {
   min-width: 64px;
+  background: rgba(84, 153, 204, 0.22);
+  border-color: rgba(105, 176, 229, 0.34);
 }
 
 .shelfmark-external-controls__apply:hover,
@@ -339,6 +353,14 @@
 
 .shelfmark-external-controls__reset {
   min-width: 64px;
+}
+
+.shelfmark-external-toolbar__bulk-toggle {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.shelfmark-external-toolbar__open-search {
+  background: transparent;
 }
 
 .shelfmark-external-toolbar__open-search .glyphicon {
@@ -865,7 +887,7 @@
 }
 
 .shelfmark-result-card__secondary-action {
-  padding: 4px 0;
+  padding: 4px 2px;
   border: 0;
   background: transparent;
   color: rgba(214, 227, 237, 0.86);
@@ -888,6 +910,13 @@
   border-color: transparent;
   background: transparent;
   color: #fff;
+}
+
+.shelfmark-result-card__primary-action.is-shelfmark-action--waiting,
+.shelfmark-detail-hero__primary-action.is-shelfmark-action--waiting {
+  border-color: rgba(227, 179, 90, 0.28);
+  background: rgba(227, 179, 90, 0.12);
+  color: rgba(252, 234, 197, 0.98);
 }
 
 .shelfmark-result-card__workflow-state {
@@ -934,11 +963,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px 14px;
-  margin: 0 0 14px;
+  margin: 8px 0 14px;
   padding: 10px 12px;
   border: 1px solid var(--shelfmark-shell-soft-border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .shelfmark-batch-toolbar.is-hidden,

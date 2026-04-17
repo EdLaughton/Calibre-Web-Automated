@@ -631,3 +631,45 @@ class TestBookCoverServing:
             "/tmp/thumbs",
             "book_1117_sm.webp",
         )
+
+    @patch('cps.helper.send_from_directory')
+    @patch('cps.helper.os.path.isfile', return_value=True)
+    @patch('cps.helper.get_book_cover_thumbnail_by_format')
+    @patch('cps.helper.thumbnail_cache_available', return_value=False)
+    def test_missing_thumbnail_table_falls_back_to_cover_file(
+        self,
+        mock_thumbnail_available,
+        mock_get_thumbnail,
+        mock_isfile,
+        mock_send_from_directory,
+    ):
+        book = Mock(
+            id=1118,
+            has_cover=True,
+            path="Pratchett/The Shepherd's Crown (1118)",
+            last_modified=datetime(2026, 4, 13, 15, 30, tzinfo=timezone.utc),
+        )
+
+        with patch.object(helper_module.config, "config_use_google_drive", False, create=True), \
+             patch.object(helper_module.config, "get_book_path", return_value="/library"), \
+             patch.object(helper_module, "use_IM", False):
+            helper_module.get_book_cover_internal(book, resolution="sm")
+
+        mock_thumbnail_available.assert_called()
+        mock_get_thumbnail.assert_not_called()
+        mock_send_from_directory.assert_called_once_with(
+            "/library/Pratchett/The Shepherd's Crown (1118)",
+            "cover.jpg",
+        )
+
+    @patch('cps.helper.thumbnail_cache_available', return_value=False)
+    @patch('cps.helper.WorkerThread.add')
+    def test_replace_cover_thumbnail_cache_noops_when_thumbnail_table_is_unavailable(
+        self,
+        mock_worker_add,
+        mock_thumbnail_available,
+    ):
+        helper_module.replace_cover_thumbnail_cache(1116)
+
+        mock_thumbnail_available.assert_called_once_with()
+        mock_worker_add.assert_not_called()
