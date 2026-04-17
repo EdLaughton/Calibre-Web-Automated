@@ -13,8 +13,6 @@
   var ROW_ENRICH_ROOT_MARGIN = '180px 0px';
   var PREFERRED_RELEASE_TIMEOUT_MS = 20000;
   var TOP_UP_TIMEOUT_MS = 12000;
-  var TOP_UP_MAX_PAGES = 3;
-  var TOP_UP_MAX_EMPTY_PAGES = 8;
   var BATCH_REQUEST_MAX_CONCURRENCY = 4;
   var ACTIVITY_SNAPSHOT_TTL_MS = 30000;
   var LIBRARY_STATUS_ENDPOINT = '/search/external/shelfmark/library-status';
@@ -45,7 +43,7 @@
   var rowEnrichmentQueue = [];
   var rowEnrichmentInFlight = 0;
   var topUpInFlight = false;
-  var topUpPagesFetched = 0;
+  var fetchedTopUpPages = new Set();
   var scheduledWorkflowRefreshTimers = new Map();
 
   function toArray(value) {
@@ -1998,6 +1996,17 @@
     });
   }
 
+  function isUnsettledProgressiveRow(row) {
+    var state = getProgressiveRowState(row);
+    return state === 'pending' || state === 'queued' || state === 'loading';
+  }
+
+  function getFilledResultRows(scope) {
+    return getVisibleResultRows(scope).filter(function (row) {
+      return !isUnsettledProgressiveRow(row);
+    });
+  }
+
   function getResultsList() {
     return document.querySelector('.js-shelfmark-results-list');
   }
@@ -2010,6 +2019,10 @@
   function getNextTopUpPage(resultsList) {
     var parsed = toOptionalNumber(resultsList && resultsList.dataset ? resultsList.dataset.nextPage : null);
     return parsed && parsed > 0 ? parsed : null;
+  }
+
+  function hasFetchedTopUpPage(pageNumber) {
+    return pageNumber !== null && fetchedTopUpPages.has(pageNumber);
   }
 
   function setNextTopUpPage(resultsList, nextPage) {
@@ -2082,16 +2095,16 @@
     return url.toString();
   }
 
-  function canTopUpResults(resultsList, visibleCount) {
+  function canTopUpResults(resultsList, filledCount) {
     var targetCount = getConfiguredPageSize(resultsList);
-    if (!resultsList || !targetCount || visibleCount >= targetCount) {
+    if (!resultsList || !targetCount || filledCount >= targetCount) {
       return false;
     }
-    var pageBudget = visibleCount < 1 ? TOP_UP_MAX_EMPTY_PAGES : TOP_UP_MAX_PAGES;
-    if (topUpInFlight || topUpPagesFetched >= pageBudget) {
+    var nextPage = getNextTopUpPage(resultsList);
+    if (topUpInFlight || !nextPage || hasFetchedTopUpPage(nextPage)) {
       return false;
     }
-    return Boolean(getTopUpUrl(resultsList) && getNextTopUpPage(resultsList));
+    return Boolean(getTopUpUrl(resultsList));
   }
 
   function hasPendingProgressiveRows(resultsList) {
@@ -2118,7 +2131,7 @@
     var nextRowIndex = getNextRowIndex(resultsList);
 
     rows.forEach(function (rowPayload) {
-      if (targetCount && getVisibleResultRows(resultsList).length >= targetCount) {
+      if (targetCount && getFilledResultRows(resultsList).length >= targetCount) {
         return;
       }
 
@@ -2172,9 +2185,9 @@
 
   function ensurePageFilled() {
     var resultsList = getResultsList();
-    var visibleCount = getVisibleResultRows(document).length;
+    var filledCount = getFilledResultRows(document).length;
 
-    if (!canTopUpResults(resultsList, visibleCount)) {
+    if (!canTopUpResults(resultsList, filledCount)) {
       updateProgressiveCounts();
       return Promise.resolve();
     }
@@ -2187,7 +2200,7 @@
     }
 
     topUpInFlight = true;
-    topUpPagesFetched += 1;
+    fetchedTopUpPages.add(nextPage);
     setTopUpPending(resultsList, true);
     updateProgressiveCounts();
 
@@ -2208,7 +2221,7 @@
       topUpInFlight = false;
       setTopUpPending(resultsList, false);
       updateProgressiveCounts();
-      if (canTopUpResults(resultsList, getVisibleResultRows(document).length)) {
+      if (canTopUpResults(resultsList, getFilledResultRows(document).length)) {
         ensurePageFilled();
       }
     });
@@ -2228,7 +2241,7 @@
   function updateProgressiveCounts() {
     var resultsList = getResultsList();
     var visibleCount = resultsList ? getVisibleResultRows(resultsList).length : getVisibleResultRows(document).length;
-    var canStillTopUp = canTopUpResults(resultsList, visibleCount)
+    var canStillTopUp = canTopUpResults(resultsList, resultsList ? getFilledResultRows(resultsList).length : getFilledResultRows(document).length)
       || isTopUpPending(resultsList)
       || hasPendingProgressiveRows(resultsList);
     var visibleCountNodes = toArray(document.querySelectorAll('.js-shelfmark-visible-count'));
@@ -2448,7 +2461,9 @@
 
     drainProgressiveRowQueue();
     updateProgressiveCounts();
-    ensurePageFilled();
+    if (!hasPendingProgressiveRows(getResultsList())) {
+      ensurePageFilled();
+    }
   }
 
   function initActions(root) {

@@ -18,9 +18,34 @@
       {% if shelfmark.total_pages > 0 %}
         <span>{{ _('Page %(page)s of %(pages)s', page=shelfmark.page, pages=shelfmark.total_pages) }}</span>
       {% endif %}
-      <span>{{ _('%(count)s per page', count=shelfmark.page_size) }}</span>
     </div>
     <div class="shelfmark-pagination-footer__controls">
+      <form class="shelfmark-pagination-footer__page-size-form" method="get" action="{{ request.path }}">
+        {% for key, value in request.args.items() %}
+          {% if key not in ['shelfmark_page', 'shelfmark_page_size', 'shelfmark_sort', 'shelfmark_series_filter', 'shelfmark_triage_filter', 'shelfmark_filter_requestable', 'shelfmark_filter_high_confidence', 'shelfmark_filter_has_cover', 'shelfmark_detail_provider', 'shelfmark_detail_id'] %}
+            <input type="hidden" name="{{ key }}" value="{{ value }}">
+          {% endif %}
+        {% endfor %}
+        <input type="hidden" name="shelfmark_page" value="1">
+        <input type="hidden" name="shelfmark_sort" value="{{ shelfmark.selected_sort }}">
+        <input type="hidden" name="shelfmark_series_filter" value="{{ shelfmark.selected_series_filter }}">
+        <input type="hidden" name="shelfmark_filter_requestable" value="{{ 1 if shelfmark.filter_requestable else 0 }}">
+        <input type="hidden" name="shelfmark_filter_has_cover" value="{{ 1 if shelfmark.filter_has_cover else 0 }}">
+        <label class="shelfmark-pagination-footer__page-size-label" for="shelfmark_page_size_footer">{{ _('Per page') }}</label>
+        <select
+          class="form-control input-sm shelfmark-pagination-footer__page-size-select"
+          id="shelfmark_page_size_footer"
+          name="shelfmark_page_size"
+          onchange="this.form.submit()"
+        >
+          {% for option in shelfmark.page_size_options %}
+            <option value="{{ option }}"{% if option == shelfmark.page_size %} selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+        <noscript>
+          <button type="submit" class="btn btn-default btn-sm shelfmark-pagination-footer__page-size-submit">{{ _('Apply') }}</button>
+        </noscript>
+      </form>
       {% if shelfmark.previous_page_url %}
         <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.previous_page_url }}">
           <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
@@ -241,17 +266,10 @@
                 <span>{{ _('Owned series') }}</span>
               </label>
             </div>
-            <div class="form-group shelfmark-external-controls__group">
-              <label class="shelfmark-external-controls__label" for="shelfmark_page_size">{{ _('Per page') }}</label>
-              <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_page_size" name="shelfmark_page_size">
-                {% for option in shelfmark.page_size_options %}
-                  <option value="{{ option }}"{% if option == shelfmark.page_size %} selected{% endif %}>{{ option }}</option>
-                {% endfor %}
-              </select>
-            </div>
+            <input type="hidden" name="shelfmark_page_size" value="{{ shelfmark.page_size }}">
             <input type="hidden" name="shelfmark_filter_has_cover" value="0">
-            <label class="shelfmark-external-controls__checkbox-label">
-              <input class="shelfmark-external-controls__checkbox" type="checkbox" name="shelfmark_filter_has_cover" value="1"{% if shelfmark.filter_has_cover %} checked{% endif %}>
+            <label class="shelfmark-external-controls__checkbox-label" for="shelfmark_filter_has_cover">
+              <input class="shelfmark-external-controls__checkbox" id="shelfmark_filter_has_cover" type="checkbox" name="shelfmark_filter_has_cover" value="1"{% if shelfmark.filter_has_cover %} checked{% endif %}>
               <span>{{ _('Has cover') }}</span>
             </label>
             <div class="shelfmark-external-controls__submit-group">
@@ -334,11 +352,6 @@
             <p class="shelfmark-empty-state__message">
               {{ _('CWA checked later Shelfmark pages for this view, but nothing usable remained after the current filters and library checks.') }}
             </p>
-            {% if shelfmark.clear_filters_url %}
-              <p class="shelfmark-empty-state__actions">
-                <a class="btn btn-default btn-sm" href="{{ shelfmark.clear_filters_url }}">{{ _('Reset filters') }}</a>
-              </p>
-            {% endif %}
           </div>
         </div>
         {% if shelfmark.total_pages > 1 or shelfmark.page > 1 or shelfmark.has_more or shelfmark.page_result_count > 0 %}

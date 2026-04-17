@@ -589,7 +589,9 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "895 total on Shelfmark" in html
     assert "Page 1 of 75" in html
     assert "11 visible here" not in html
-    assert 'name="shelfmark_page_size"' in html
+    assert 'id="shelfmark_page_size"' not in html
+    assert 'id="shelfmark_page_size_footer"' in html
+    assert html.index('id="shelfmark_page_size_footer"') > html.index('class="shelfmark-pagination-footer"')
     assert 'name="shelfmark_sort"' in html
     assert 'name="shelfmark_series_filter"' in html
     assert 'id="shelfmark_series_filter_owned"' in html
@@ -653,6 +655,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'data-row-enrich-url="/search/external/shelfmark/hardcover/222/row?query=Dune' in html
     assert 'return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune%26shelfmark_page%3D2' in html
     assert "No usable Shelfmark results remained" in html
+    assert "Reset filters" not in html
     assert ">Go<" not in html
     assert "shelfmark-pagination-footer__jump" not in html
     assert 'id="shelfmarkDetailModal"' in html
@@ -722,6 +725,7 @@ def test_search_template_keeps_shelfmark_shell_when_current_page_is_empty_but_la
     assert 'data-next-page="2"' in html
     assert "895 total on Shelfmark" in html
     assert "No usable Shelfmark results remained" in html
+    assert "Reset filters" not in html
 
 
 def test_search_template_omits_group_wrapper_chrome_for_external_results():

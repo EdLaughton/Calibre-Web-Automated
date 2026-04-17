@@ -932,6 +932,7 @@ def _build_shelfmark_section(query, **kwargs):
     )
     section["clear_filters_url"] = _current_request_url_with(
         shelfmark_page=1,
+        shelfmark_sort=None,
         shelfmark_series_filter=None,
         shelfmark_filter_requestable=None,
         shelfmark_filter_has_cover=None,

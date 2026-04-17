@@ -501,6 +501,32 @@ async function runProgressiveScenario() {
     {
       payload: {
         ok: true,
+        next_page: 3,
+        rows: [
+          {
+            provider: 'hardcover',
+            provider_id: '99',
+            row_class_name: 'shelfmark-result-card js-shelfmark-result-row js-shelfmark-progressive-row shelfmark-result-card--refining',
+            row_status_provider: '',
+            row_status_provider_id: '',
+            row_status_in_library: '0',
+            row_enrichment_url: '/row/99',
+            html: ''
+          }
+        ]
+      }
+    },
+    {
+      payload: {
+        ok: true,
+        matches_filters: false,
+        row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        html: ''
+      }
+    },
+    {
+      payload: {
+        ok: true,
         matches_filters: false,
         row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
         html: ''
@@ -513,7 +539,7 @@ async function runProgressiveScenario() {
         rows: [
           {
             provider: 'hardcover',
-            provider_id: '99',
+            provider_id: '100',
             row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
             row_status_provider: '',
             row_status_provider_id: '',
@@ -523,7 +549,7 @@ async function runProgressiveScenario() {
           },
           {
             provider: 'hardcover',
-            provider_id: '100',
+            provider_id: '101',
             row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
             row_status_provider: '',
             row_status_provider_id: '',
@@ -563,11 +589,9 @@ async function runProgressiveScenario() {
   };
 
   require(searchModulePath);
-  await flush();
-  await flush();
-  await flush();
-  await flush();
-  await flush();
+  for (let index = 0; index < 8; index += 1) {
+    await flush();
+  }
 
   return { dom, fetchCalls };
 }
@@ -1533,8 +1557,10 @@ async function runProgressiveScenario() {
     [
       '/row/0',
       '/row/1',
+      'https://library.example.com/search/external/shelfmark/topup?query=terry+pratchett&shelfmark_source_page=2',
       '/row/2',
-      'https://library.example.com/search/external/shelfmark/topup?query=terry+pratchett&shelfmark_source_page=2'
+      '/row/99',
+      'https://library.example.com/search/external/shelfmark/topup?query=terry+pratchett&shelfmark_source_page=3'
     ]
   );
   assert.equal(progressive.dom.rows[0].classList.contains('is-shelfmark-filter-hidden'), false);
@@ -1543,10 +1569,10 @@ async function runProgressiveScenario() {
   assert.equal(progressive.dom.visibleCount.textContent, '3 shown');
   assert.equal(progressive.dom.pageSummary.textContent, '3 shown on this page');
   assert.equal(progressive.dom.emptyState.classList.contains('is-hidden'), true);
-  assert.equal(progressive.dom.resultsList.children.length, 4);
+  assert.equal(progressive.dom.resultsList.children.length, 5);
   assert.equal(
     progressive.dom.resultsList.querySelectorAll('.js-shelfmark-result-row').length,
-    4
+    5
   );
 
   console.log('test_shelfmark_external_search_dom.js: ok');
