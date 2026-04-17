@@ -737,6 +737,9 @@ def test_search_template_keeps_shelfmark_shell_when_current_page_is_empty_but_la
     assert "895 total on Shelfmark" in html
     assert "No usable Shelfmark results remained" in html
     assert "Reset filters" not in html
+    assert 'id="shelfmarkDetailModal"' in html
+    assert "shelfmark_request_flow.js" in html
+    assert "shelfmark_external_search.js" in html
 
 
 def test_search_template_omits_group_wrapper_chrome_for_external_results():
