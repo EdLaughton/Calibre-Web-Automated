@@ -416,7 +416,7 @@
 {% endblock %}
 
 {% block modal %}
-{% if shelfmark_has_external_results %}
+{% if shelfmark_has_page_shell %}
 <div class="modal fade shelfmark-detail-modal" id="shelfmarkDetailModal" tabindex="-1" role="dialog" aria-labelledby="shelfmarkDetailModalLabel" data-search-state-url="{{ shelfmark.state_url or request.path }}">
   <div class="modal-dialog modal-lg shelfmark-detail-modal__dialog" role="document">
     <div class="modal-content shelfmark-detail-modal__content">
@@ -434,7 +434,7 @@
 {% endblock %}
 
 {% block js %}
-{% if shelfmark_has_external_results %}
+{% if shelfmark_has_page_shell %}
 <script src="{{ url_for('static', filename='js/shelfmark_request_flow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/shelfmark_external_search.js') }}"></script>
 {% endif %}

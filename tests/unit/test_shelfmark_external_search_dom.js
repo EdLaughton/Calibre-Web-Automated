@@ -490,6 +490,63 @@ function createDisplayPaginationDom(options) {
   };
 }
 
+function createEmptyShellDom() {
+  const root = new FakeElement('div', { className: 'page-root shelfmark-search-page' });
+  const stateBlock = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-results-state',
+    dataset: {
+      totalAvailable: '267',
+      seriesFilter: 'all',
+      filterHasCover: '1',
+      filterRequestable: '1'
+    }
+  }));
+  const statePrimary = stateBlock.appendChild(new FakeElement('p', {
+    className: 'js-shelfmark-results-state-primary',
+    textContent: '0 shown · 267 total on Shelfmark'
+  }));
+  stateBlock.appendChild(new FakeElement('p', {
+    className: 'js-shelfmark-results-state-secondary is-hidden'
+  }));
+  const pageSummary = root.appendChild(new FakeElement('span', {
+    className: 'js-shelfmark-page-summary',
+    textContent: 'No matching results'
+  }));
+  const emptyState = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-progressive-empty-state is-hidden'
+  }));
+  const resultsList = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-results-list',
+    dataset: {
+      displayPage: '1',
+      pageSize: '100',
+      nextPage: '2',
+      topUpUrl: '/search/external/shelfmark/topup?query=terry+pratchett',
+      totalAvailable: '267',
+      seriesFilter: 'all',
+      filterHasCover: '1',
+      filterRequestable: '1'
+    }
+  }));
+  const footer = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-pagination-footer'
+  }));
+  footer.appendChild(new FakeElement('span', {
+    className: 'js-shelfmark-page-indicator',
+    textContent: 'Page 1'
+  }));
+
+  return {
+    document: new FakeDocument(root, 'complete'),
+    root,
+    resultsList,
+    statePrimary,
+    pageSummary,
+    emptyState,
+    footer
+  };
+}
+
 function flush() {
   return new Promise((resolve) => setImmediate(resolve));
 }
@@ -743,6 +800,67 @@ async function runDisplayPaginationScenario(options) {
   await flush();
 
   return dom;
+}
+
+async function runEmptyShellTopUpScenario() {
+  const dom = createEmptyShellDom();
+  const fetchCalls = [];
+  const responses = [
+    {
+      payload: {
+        ok: true,
+        next_page: null,
+        rows: [
+          {
+            provider: 'hardcover',
+            provider_id: '901',
+            row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+            row_status_provider: '',
+            row_status_provider_id: '',
+            row_status_in_library: '0',
+            row_has_cover: '1',
+            row_series_matched: '0',
+            row_series_next_missing: '0',
+            row_enrichment_url: '',
+            html: ''
+          }
+        ]
+      }
+    }
+  ];
+
+  delete require.cache[flowModulePath];
+  delete require.cache[searchModulePath];
+
+  global.window = {
+    location: {
+      origin: 'https://library.example.com',
+      href: 'https://library.example.com/search/stored/?query=terry+pratchett&shelfmark_page=1&shelfmark_page_size=100'
+    },
+    CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS: 0,
+    CwaShelfmarkRequestFlow: require(flowModulePath)
+  };
+  global.document = dom.document;
+  global.fetch = (url, fetchOptions) => {
+    fetchCalls.push({ url, options: fetchOptions || {} });
+    const next = responses.shift();
+    if (!next) {
+      return Promise.reject(new Error(`Unexpected fetch call for ${url}`));
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => next.payload
+    });
+  };
+
+  require(searchModulePath);
+  await flush();
+  await flush();
+  await flush();
+
+  return { dom, fetchCalls };
 }
 
 (async function main() {
@@ -1746,6 +1864,25 @@ async function runDisplayPaginationScenario(options) {
     paged.footer.querySelector('.js-shelfmark-page-indicator').textContent,
     'Page 2 of 2'
   );
+
+  const emptyShell = await runEmptyShellTopUpScenario();
+  assert.deepEqual(
+    emptyShell.fetchCalls.map((call) => call.url),
+    [
+      'https://library.example.com/search/external/shelfmark/topup?query=terry+pratchett&shelfmark_source_page=2'
+    ]
+  );
+  assert.equal(
+    emptyShell.dom.resultsList.querySelectorAll('.js-shelfmark-result-row').length,
+    1
+  );
+  assert.equal(
+    emptyShell.dom.resultsList.children[0].classList.contains('is-shelfmark-filter-hidden'),
+    false
+  );
+  assert.equal(emptyShell.dom.statePrimary.textContent, '1 shown · 267 total on Shelfmark');
+  assert.equal(emptyShell.dom.pageSummary.textContent, '1 shown on this page');
+  assert.equal(emptyShell.dom.emptyState.classList.contains('is-hidden'), true);
 
   console.log('test_shelfmark_external_search_dom.js: ok');
 })().catch((error) => {
