@@ -361,6 +361,35 @@
   margin-right: 6px;
 }
 
+.shelfmark-results-state {
+  margin: 12px 0 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--shelfmark-shell-soft-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.shelfmark-results-state__primary,
+.shelfmark-results-state__secondary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.shelfmark-results-state__primary {
+  color: var(--shelfmark-shell-text);
+  font-weight: 600;
+}
+
+.shelfmark-results-state__secondary {
+  margin-top: 3px;
+  color: var(--shelfmark-shell-muted);
+}
+
+.shelfmark-results-state__secondary.is-hidden {
+  display: none;
+}
+
 .shelfmark-empty-state__actions {
   margin: 10px 0 0;
 }
@@ -724,6 +753,11 @@
   margin: 0;
 }
 
+.shelfmark-results-list--compact > .shelfmark-result-card {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
 .shelfmark-results-list > .shelfmark-result-card {
   margin: 0;
   padding: 15px 0 15px 12px;
@@ -915,6 +949,60 @@
 
 .shelfmark-result-card__workflow-state {
   display: none !important;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__media {
+  gap: 12px;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__cover {
+  flex: 0 0 72px;
+  width: 72px;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__cover-fallback {
+  height: 108px;
+  padding: 10px 8px;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__title {
+  font-size: 15px;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__subtitle,
+.shelfmark-results-list--compact .shelfmark-result-card__authors,
+.shelfmark-results-list--compact .shelfmark-result-card__facts,
+.shelfmark-results-list--compact .shelfmark-result-card__action-hint {
+  font-size: 11px;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__authors {
+  margin-bottom: 6px;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__facts {
+  margin-bottom: 8px;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__description {
+  display: none;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__actions {
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__primary-action,
+.shelfmark-results-list--compact .shelfmark-result-card__secondary-action {
+  min-height: 28px;
+  font-size: 10px;
+}
+
+.shelfmark-results-list--compact .shelfmark-result-card__secondary-action {
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 
 .shelfmark-status-banner {
