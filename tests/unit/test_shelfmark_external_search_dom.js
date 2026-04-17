@@ -157,11 +157,18 @@ class FakeDocument {
   }
 
   querySelector(selector) {
+    if (selector.startsWith('.') && this.root.classList.contains(selector.slice(1))) {
+      return this.root;
+    }
     return this.root.querySelector(selector);
   }
 
   querySelectorAll(selector) {
-    return this.root.querySelectorAll(selector);
+    const matches = this.root.querySelectorAll(selector);
+    if (selector.startsWith('.') && this.root.classList.contains(selector.slice(1))) {
+      return [this.root].concat(matches);
+    }
+    return matches;
   }
 
   addEventListener(name, handler) {
@@ -234,7 +241,7 @@ function createResultNode(options) {
 }
 
 function createDom(options) {
-  const root = new FakeElement('div', { className: 'page-root' });
+  const root = new FakeElement('div', { className: 'page-root shelfmark-search-page' });
   let batchToolbar = null;
   let batchModeButton = null;
   if (options.includeBatchToolbar) {
@@ -284,6 +291,16 @@ function createDom(options) {
     textContent: options.statusText || 'Request actions are verified in your browser against Shelfmark.',
     dataset: { baseUrl: options.baseUrl }
   }));
+  const resultsList = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-results-list',
+    dataset: {
+      pageSize: '12',
+      totalAvailable: '12',
+      seriesFilter: 'all',
+      filterHasCover: '1',
+      filterRequestable: '0'
+    }
+  }));
 
   const first = createResultNode({
     baseUrl: options.baseUrl,
@@ -306,12 +323,13 @@ function createDom(options) {
     preferredReleaseContentType: options.preferredReleaseContentType,
     preferredReleaseRanking: options.preferredReleaseRanking
   });
-  root.appendChild(first.wrapper);
+  resultsList.appendChild(first.wrapper);
 
   return {
     root,
     document: new FakeDocument(root, 'complete'),
     status,
+    resultsList,
     action: first.action,
     batchToolbar,
     batchModeButton,
@@ -321,10 +339,22 @@ function createDom(options) {
 }
 
 function createProgressiveDom() {
-  const root = new FakeElement('div', { className: 'page-root' });
-  const visibleCount = root.appendChild(new FakeElement('span', {
-    className: 'js-shelfmark-visible-count',
-    textContent: '3 shown'
+  const root = new FakeElement('div', { className: 'page-root shelfmark-search-page' });
+  const stateBlock = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-results-state',
+    dataset: {
+      totalAvailable: '9',
+      seriesFilter: 'owned',
+      filterHasCover: '1',
+      filterRequestable: '0'
+    }
+  }));
+  const statePrimary = stateBlock.appendChild(new FakeElement('p', {
+    className: 'js-shelfmark-results-state-primary',
+    textContent: '3 shown · 9 total on Shelfmark'
+  }));
+  const stateSecondary = stateBlock.appendChild(new FakeElement('p', {
+    className: 'js-shelfmark-results-state-secondary is-hidden'
   }));
   const pageSummary = root.appendChild(new FakeElement('span', {
     className: 'js-shelfmark-page-summary',
@@ -338,7 +368,11 @@ function createProgressiveDom() {
     dataset: {
       pageSize: '3',
       nextPage: '2',
-      topUpUrl: '/search/external/shelfmark/topup?query=terry+pratchett'
+      topUpUrl: '/search/external/shelfmark/topup?query=terry+pratchett',
+      totalAvailable: '9',
+      seriesFilter: 'owned',
+      filterHasCover: '1',
+      filterRequestable: '0'
     }
   }));
 
@@ -371,7 +405,8 @@ function createProgressiveDom() {
   return {
     document: new FakeDocument(root, 'complete'),
     rows,
-    visibleCount,
+    statePrimary,
+    stateSecondary,
     pageSummary,
     emptyState,
     resultsList
@@ -469,7 +504,7 @@ async function runScenario(options) {
         preferredReleaseContentType: options.preferredReleaseContentType,
         preferredReleaseRanking: options.preferredReleaseRanking
       }, rowOptions || {}));
-      dom.root.appendChild(appended.wrapper);
+      dom.resultsList.appendChild(appended.wrapper);
       global.window.CwaShelfmarkExternalSearch.init(appended.wrapper);
       await flush();
       await flush();
@@ -521,6 +556,11 @@ async function runProgressiveScenario() {
         ok: true,
         matches_filters: false,
         row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        row_status_in_library: '1',
+        row_has_cover: '1',
+        row_series_matched: '1',
+        row_series_next_missing: '0',
+        hidden_reasons: ['already_in_library'],
         html: ''
       }
     },
@@ -529,6 +569,11 @@ async function runProgressiveScenario() {
         ok: true,
         matches_filters: false,
         row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        row_status_in_library: '0',
+        row_has_cover: '0',
+        row_series_matched: '0',
+        row_series_next_missing: '0',
+        hidden_reasons: ['no_cover'],
         html: ''
       }
     },
@@ -1519,6 +1564,8 @@ async function runProgressiveScenario() {
 
   queuedBatch.dom.batchModeButton.dispatchEvent('click');
   await flush();
+  assert.equal(queuedBatch.dom.root.classList.contains('shelfmark-search-page--bulk-mode'), true);
+  assert.equal(queuedBatch.dom.resultsList.classList.contains('shelfmark-results-list--compact'), true);
   queuedBatch.dom.batchToolbar.querySelector('.js-shelfmark-batch-select-visible').dispatchEvent('click');
   await flush();
   queuedBatch.dom.batchToolbar.querySelector('.js-shelfmark-batch-request').dispatchEvent('click');
@@ -1566,7 +1613,12 @@ async function runProgressiveScenario() {
   assert.equal(progressive.dom.rows[0].classList.contains('is-shelfmark-filter-hidden'), false);
   assert.equal(progressive.dom.rows[1].classList.contains('is-shelfmark-filter-hidden'), false);
   assert.equal(progressive.dom.rows[2].classList.contains('is-shelfmark-filter-hidden'), true);
-  assert.equal(progressive.dom.visibleCount.textContent, '3 shown');
+  assert.equal(progressive.dom.statePrimary.textContent, '3 shown · 9 total on Shelfmark · 2 hidden');
+  assert.equal(
+    progressive.dom.stateSecondary.textContent,
+    'Hidden: 1 already in library, 1 without a cover'
+  );
+  assert.equal(progressive.dom.stateSecondary.classList.contains('is-hidden'), false);
   assert.equal(progressive.dom.pageSummary.textContent, '3 shown on this page');
   assert.equal(progressive.dom.emptyState.classList.contains('is-hidden'), true);
   assert.equal(progressive.dom.resultsList.children.length, 5);

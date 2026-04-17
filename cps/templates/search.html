@@ -229,18 +229,6 @@
               {% endif %}
             </p>
           </div>
-          <div class="shelfmark-section-line__meta">
-            {% if external_count > 0 %}
-              <span class="js-shelfmark-visible-count">{{ _('%(count)s shown', count=external_count) }}</span>
-              {% if shelfmark.raw_total_available or shelfmark.total_available %}
-                · {{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available or shelfmark.total_available) }}
-              {% endif %}
-            {% elif shelfmark.raw_total_available or shelfmark.total_available %}
-              {{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available or shelfmark.total_available) }}
-            {% else %}
-              {{ _('No matches') }}
-            {% endif %}
-          </div>
         </div>
         <div class="shelfmark-external-toolbar">
           <form class="shelfmark-external-controls form-inline" method="get" action="{{ request.path }}">
@@ -312,12 +300,37 @@
           <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ shelfmark.results[0].shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
         {% endif %}
         <div
+          class="shelfmark-results-state js-shelfmark-results-state"
+          data-total-available="{{ shelfmark.raw_total_available or shelfmark.total_available or 0 }}"
+          data-series-filter="{{ shelfmark.selected_series_filter }}"
+          data-filter-has-cover="{{ 1 if shelfmark.filter_has_cover else 0 }}"
+          data-filter-requestable="{{ 1 if shelfmark.filter_requestable else 0 }}"
+        >
+          <p class="shelfmark-results-state__primary js-shelfmark-results-state-primary">
+            {% if external_count > 0 %}
+              {{ _('%(count)s shown', count=external_count) }}
+              {% if shelfmark.raw_total_available or shelfmark.total_available %}
+                · {{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available or shelfmark.total_available) }}
+              {% endif %}
+            {% elif shelfmark.raw_total_available or shelfmark.total_available %}
+              {{ _('0 shown') }} · {{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available or shelfmark.total_available) }}
+            {% else %}
+              {{ _('No matches') }}
+            {% endif %}
+          </p>
+          <p class="shelfmark-results-state__secondary js-shelfmark-results-state-secondary is-hidden" aria-hidden="true"></p>
+        </div>
+        <div
           class="shelfmark-results-list js-shelfmark-results-list"
           role="list"
           data-page-size="{{ shelfmark.page_size }}"
           data-next-page="{{ shelfmark.next_page or '' }}"
           data-total-pages="{{ shelfmark.total_pages or 0 }}"
           data-top-up-url="{{ shelfmark.top_up_url or '' }}"
+          data-total-available="{{ shelfmark.raw_total_available or shelfmark.total_available or 0 }}"
+          data-series-filter="{{ shelfmark.selected_series_filter }}"
+          data-filter-has-cover="{{ 1 if shelfmark.filter_has_cover else 0 }}"
+          data-filter-requestable="{{ 1 if shelfmark.filter_requestable else 0 }}"
         >
           {% for result in shelfmark.results %}
             <article
@@ -335,6 +348,10 @@
                 data-library-book-url="{{ result.library_book_url }}"
                 data-library-book-title="{{ result.library_book_title or '' }}"
               {% endif %}
+              data-already-in-library="{{ 1 if result.already_in_library else 0 }}"
+              data-has-cover="{{ 1 if result.cover_url else 0 }}"
+              data-series-matched="{{ 1 if result.series_context and result.series_context.matched else 0 }}"
+              data-series-next-missing="{{ 1 if result.series_context and result.series_context.is_next_missing else 0 }}"
               {% if result.row_enrichment_url %}
                 data-row-enrich-url="{{ result.row_enrichment_url }}"
               {% endif %}

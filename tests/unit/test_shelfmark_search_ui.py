@@ -587,6 +587,12 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "895 total" in html
     assert "3 shown on this page" in html
     assert "895 total on Shelfmark" in html
+    assert 'class="shelfmark-results-state js-shelfmark-results-state"' in html
+    assert 'class="shelfmark-results-state__primary js-shelfmark-results-state-primary"' in html
+    assert 'class="shelfmark-results-state__secondary js-shelfmark-results-state-secondary is-hidden"' in html
+    assert 'data-total-available="895"' in html
+    assert 'data-series-filter="all"' in html
+    assert 'data-filter-has-cover="1"' in html
     assert "Page 1 of 75" in html
     assert "11 visible here" not in html
     assert 'id="shelfmark_page_size"' not in html
@@ -722,6 +728,7 @@ def test_search_template_keeps_shelfmark_shell_when_current_page_is_empty_but_la
     assert "No Results Found" not in html
     assert "No Shelfmark external results found" not in html
     assert 'class="shelfmark-results-list js-shelfmark-results-list"' in html
+    assert 'class="shelfmark-results-state js-shelfmark-results-state"' in html
     assert 'data-next-page="2"' in html
     assert "895 total on Shelfmark" in html
     assert "No usable Shelfmark results remained" in html
@@ -991,7 +998,8 @@ def test_search_template_renders_intentional_zero_results_state():
     assert "Shelfmark Results" in html
     assert "No Shelfmark external results found" in html
     assert "Shelfmark search completed for this query but did not return any external matches." in html
-    assert "No matches" in html
+    assert "No matches" not in html
+    assert "js-shelfmark-results-state" not in html
     assert "External lookup query" not in html
     assert "<code>Dune</code>" not in html
     assert "Open in Shelfmark" in html

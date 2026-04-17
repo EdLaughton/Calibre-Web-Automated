@@ -590,14 +590,7 @@ def shelfmark_external_row(provider, provider_id):
             detail_url=detail_url,
         )
         result = result_view.to_template_dict()
-        result["row_class_name"] = _build_shelfmark_result_row_class_name(result)
-        result["row_status_provider"] = (
-            "hardcover"
-            if result.get("workflow_state") and not result.get("already_in_library")
-            else ""
-        )
-        result["row_status_provider_id"] = result.get("hardcover_id") or ""
-        result["row_status_in_library"] = "1" if result.get("already_in_library") else "0"
+        _populate_shelfmark_row_state(result)
         result["needs_progressive_enrichment"] = False
         result["progressive_filter_pending"] = False
         return jsonify(
@@ -619,6 +612,10 @@ def shelfmark_external_row(provider, provider_id):
                 "row_status_provider": result["row_status_provider"],
                 "row_status_provider_id": result["row_status_provider_id"],
                 "row_status_in_library": result["row_status_in_library"],
+                "row_has_cover": result["row_has_cover"],
+                "row_series_matched": result["row_series_matched"],
+                "row_series_next_missing": result["row_series_next_missing"],
+                "hidden_reasons": _build_shelfmark_hidden_reason_keys(result_view),
                 "library_book_url": result.get("library_book_url"),
                 "library_book_title": result.get("library_book_title"),
                 "html": render_template(
@@ -678,6 +675,9 @@ def shelfmark_external_topup():
                     "row_status_provider": result.get("row_status_provider") or "",
                     "row_status_provider_id": result.get("row_status_provider_id") or "",
                     "row_status_in_library": result.get("row_status_in_library") or "0",
+                    "row_has_cover": result.get("row_has_cover") or "0",
+                    "row_series_matched": result.get("row_series_matched") or "0",
+                    "row_series_next_missing": result.get("row_series_next_missing") or "0",
                     "library_book_url": result.get("library_book_url"),
                     "library_book_title": result.get("library_book_title"),
                     "row_enrichment_url": result.get("row_enrichment_url") or "",
@@ -778,6 +778,49 @@ def _build_shelfmark_top_up_url(*, query, return_to=None):
     return url_for("search.shelfmark_external_topup", **params)
 
 
+def _build_shelfmark_hidden_reason_keys(result_view):
+    requestable_only = _requested_shelfmark_flag(
+        "shelfmark_filter_requestable",
+        default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+    )
+    has_cover_only = _requested_shelfmark_flag(
+        "shelfmark_filter_has_cover",
+        default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+    )
+    series_filter = _requested_shelfmark_series_filter()
+    reasons = []
+
+    if requestable_only and (
+        result_view.already_in_library
+        or not result_view.hardcover_id
+        or not result_view.request_payload
+    ):
+        if result_view.already_in_library:
+            reasons.append("already_in_library")
+        else:
+            reasons.append("filtered")
+    if has_cover_only and not result_view.cover_url:
+        reasons.append("no_cover")
+    if series_filter == "owned" and not (
+        result_view.series_context and result_view.series_context.matched
+    ):
+        reasons.append("owned_series")
+    if series_filter == "next_missing" and not (
+        result_view.series_context and result_view.series_context.is_next_missing
+    ):
+        reasons.append("next_missing")
+
+    if not reasons and not result_matches_shelfmark_filters(
+        result_view,
+        requestable_only=requestable_only,
+        has_cover_only=has_cover_only,
+        series_filter=series_filter,
+    ):
+        reasons.append("filtered")
+
+    return reasons
+
+
 def _build_shelfmark_result_row_class_name(result):
     library_state = result.get("library_state") or {}
     classes = [
@@ -796,19 +839,29 @@ def _build_shelfmark_result_row_class_name(result):
     return " ".join(classes)
 
 
+def _populate_shelfmark_row_state(result):
+    result["row_class_name"] = _build_shelfmark_result_row_class_name(result)
+    result["row_status_provider"] = (
+        "hardcover"
+        if result.get("workflow_state") and not result.get("already_in_library")
+        else ""
+    )
+    result["row_status_provider_id"] = result.get("hardcover_id") or ""
+    result["row_status_in_library"] = "1" if result.get("already_in_library") else "0"
+    result["row_has_cover"] = "1" if result.get("cover_url") else "0"
+    series_context = result.get("series_context") or {}
+    result["row_series_matched"] = "1" if series_context.get("matched") else "0"
+    result["row_series_next_missing"] = (
+        "1" if series_context.get("is_next_missing") else "0"
+    )
+
+
 def _decorate_shelfmark_result_rows(section, *, query):
     results = section.get("results") or []
     state_url = section.get("state_url")
     for index, result in enumerate(results):
         result["row_index"] = index
-        result["row_class_name"] = _build_shelfmark_result_row_class_name(result)
-        result["row_status_provider"] = (
-            "hardcover"
-            if result.get("workflow_state") and not result.get("already_in_library")
-            else ""
-        )
-        result["row_status_provider_id"] = result.get("hardcover_id") or ""
-        result["row_status_in_library"] = "1" if result.get("already_in_library") else "0"
+        _populate_shelfmark_row_state(result)
         result["row_enrichment_url"] = (
             _build_shelfmark_row_enrichment_url(
                 result,
