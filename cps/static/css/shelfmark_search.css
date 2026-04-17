@@ -251,6 +251,12 @@
   min-width: 0;
 }
 
+.shelfmark-external-controls__checkbox-group {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+
 .shelfmark-external-controls__submit-group {
   display: inline-flex;
   align-items: center;
@@ -296,10 +302,6 @@
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
-}
-
-.shelfmark-external-controls__checkbox-label--series {
-  padding-right: 0;
 }
 
 .shelfmark-external-controls__checkbox {
@@ -790,6 +792,10 @@
 }
 
 .shelfmark-results-list > .shelfmark-result-card.is-shelfmark-filter-hidden {
+  display: none;
+}
+
+.shelfmark-results-list > .shelfmark-result-card.is-shelfmark-page-hidden {
   display: none;
 }
 

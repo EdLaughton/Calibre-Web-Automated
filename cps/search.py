@@ -906,6 +906,13 @@ def _requested_shelfmark_page():
     return page if page > 0 else 1
 
 
+def _display_page_has_possible_next(section, display_page, page_size):
+    raw_total = section.get("raw_total_available") or section.get("total_available") or 0
+    if raw_total and raw_total > (display_page * page_size):
+        return True
+    return bool(section.get("has_more"))
+
+
 def _requested_shelfmark_page_size():
     try:
         page_size = int(request.args.get("shelfmark_page_size", "12"))
@@ -943,10 +950,12 @@ def _current_request_url_with(**updates):
 
 def _build_shelfmark_section(query, **kwargs):
     preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
+    display_page = _requested_shelfmark_page()
+    requested_page_size = _requested_shelfmark_page_size()
     section = search_shelfmark_results(
         query,
-        page=_requested_shelfmark_page(),
-        page_size=_requested_shelfmark_page_size(),
+        page=1,
+        page_size=requested_page_size,
         sort=_requested_shelfmark_sort(),
         series_filter=_requested_shelfmark_series_filter(),
         filter_requestable=_requested_shelfmark_flag(
@@ -961,6 +970,20 @@ def _build_shelfmark_section(query, **kwargs):
     ).to_template_dict()
     if not section.get("enabled"):
         return section
+
+    section["source_page"] = 1
+    section["source_next_page"] = section.get("next_page")
+    section["source_total_pages"] = section.get("total_pages")
+    section["page"] = display_page
+    section["page_size"] = requested_page_size
+    section["previous_page"] = display_page - 1 if display_page > 1 else None
+    section["has_previous"] = bool(section["previous_page"])
+    section["next_page"] = (
+        display_page + 1
+        if _display_page_has_possible_next(section, display_page, requested_page_size)
+        else None
+    )
+    section["total_pages"] = 0
 
     section["state_url"] = _current_request_url_with(
         shelfmark_page=section.get("page") or 1,

@@ -1102,7 +1102,7 @@
 
   function getBatchRows(scope) {
     return getScopedClassNodes(scope, 'js-shelfmark-batch-row').filter(function (row) {
-      return !isFilterHiddenRow(row);
+      return !isFilterHiddenRow(row) && !isDisplayHiddenRow(row);
     });
   }
 
@@ -1996,7 +1996,7 @@
 
   function getVisibleResultRows(scope) {
     return getScopedClassNodes(scope, 'js-shelfmark-result-row').filter(function (row) {
-      return !isFilterHiddenRow(row);
+      return !isFilterHiddenRow(row) && !isDisplayHiddenRow(row);
     });
   }
 
@@ -2025,6 +2025,11 @@
     return document.querySelector('.js-shelfmark-results-state');
   }
 
+  function getConfiguredDisplayPage(resultsList) {
+    var parsed = toOptionalNumber(resultsList && resultsList.dataset ? resultsList.dataset.displayPage : null);
+    return parsed && parsed > 0 ? parsed : 1;
+  }
+
   function getConfiguredPageSize(resultsList) {
     var parsed = toOptionalNumber(resultsList && resultsList.dataset ? resultsList.dataset.pageSize : null);
     return parsed && parsed > 0 ? parsed : 0;
@@ -2045,6 +2050,10 @@
 
   function isRequestableFilterEnabled(resultsList) {
     return Boolean(resultsList && resultsList.dataset && resultsList.dataset.filterRequestable === '1');
+  }
+
+  function getRequiredDisplayRowCount(resultsList) {
+    return getConfiguredDisplayPage(resultsList) * getConfiguredPageSize(resultsList);
   }
 
   function getNextTopUpPage(resultsList) {
@@ -2116,6 +2125,10 @@
     delete row.dataset.hiddenReasons;
   }
 
+  function isDisplayHiddenRow(row) {
+    return Boolean(row && row.classList && row.classList.contains('is-shelfmark-page-hidden'));
+  }
+
   function getHiddenReasonKeys(row) {
     if (!row || !row.dataset) {
       return [];
@@ -2161,6 +2174,14 @@
       return 'not_requestable';
     }
     return 'filtered';
+  }
+
+  function getDisplayEligibleRows(resultsList) {
+    return getScopedClassNodes(resultsList || document, 'js-shelfmark-result-row').filter(function (row) {
+      return !isFilterHiddenRow(row);
+    }).sort(function (left, right) {
+      return getRowOrder(left) - getRowOrder(right);
+    });
   }
 
   function formatStatePrimaryLine(visibleCount, totalCount, hiddenCount) {
@@ -2245,6 +2266,61 @@
     secondaryNode.setAttribute('aria-hidden', 'false');
   }
 
+  function buildPaginationUrl(pageNumber) {
+    var url = buildUrl(window.location.href);
+    if (!url) {
+      return '';
+    }
+    url.searchParams.set('shelfmark_page', String(pageNumber));
+    return url.toString();
+  }
+
+  function updatePaginationFooter(resultsList, visibleCount) {
+    var footer = document.querySelector('.js-shelfmark-pagination-footer');
+    if (!footer) {
+      return;
+    }
+    var currentPage = getConfiguredDisplayPage(resultsList);
+    var pageSize = getConfiguredPageSize(resultsList);
+    var eligibleRows = getDisplayEligibleRows(resultsList);
+    var isExhausted = !getNextTopUpPage(resultsList) && !isTopUpPending(resultsList) && !hasPendingProgressiveRows(resultsList);
+    var knownTotalPages = (isExhausted && pageSize > 0)
+      ? Math.max(1, Math.ceil(eligibleRows.length / pageSize))
+      : null;
+    var pageIndicator = footer.querySelector('.js-shelfmark-page-indicator');
+    var prevNodes = toArray(footer.querySelectorAll('.shelfmark-pagination-footer__page-link')).filter(function (node) {
+      return node.textContent.indexOf('Previous page') !== -1;
+    });
+    var nextNodes = toArray(footer.querySelectorAll('.shelfmark-pagination-footer__page-link')).filter(function (node) {
+      return node.textContent.indexOf('Next page') !== -1;
+    });
+    var hasPrevious = currentPage > 1;
+    var requiredCount = getRequiredDisplayRowCount(resultsList);
+    var hasNext = eligibleRows.length > requiredCount || !isExhausted;
+
+    if (pageIndicator) {
+      pageIndicator.textContent = knownTotalPages
+        ? ('Page ' + currentPage + ' of ' + knownTotalPages)
+        : ('Page ' + currentPage);
+    }
+
+    prevNodes.forEach(function (node) {
+      if (node.tagName === 'A') {
+        node.setAttribute('href', buildPaginationUrl(Math.max(1, currentPage - 1)));
+      }
+      node.classList.toggle('disabled', !hasPrevious);
+      node.setAttribute('aria-disabled', hasPrevious ? 'false' : 'true');
+    });
+
+    nextNodes.forEach(function (node) {
+      if (node.tagName === 'A') {
+        node.setAttribute('href', buildPaginationUrl(currentPage + 1));
+      }
+      node.classList.toggle('disabled', !hasNext);
+      node.setAttribute('aria-disabled', hasNext ? 'false' : 'true');
+    });
+  }
+
   function buildRowIdentityKey(provider, providerId) {
     var normalizedProvider = toOptionalText(provider).toLowerCase();
     var normalizedProviderId = toOptionalText(providerId);
@@ -2286,8 +2362,8 @@
   }
 
   function canTopUpResults(resultsList, filledCount) {
-    var targetCount = getConfiguredPageSize(resultsList);
-    if (!resultsList || !targetCount || filledCount >= targetCount) {
+    var requiredCount = getRequiredDisplayRowCount(resultsList);
+    if (!resultsList || !requiredCount || filledCount >= requiredCount) {
       return false;
     }
     var nextPage = getNextTopUpPage(resultsList);
@@ -2316,15 +2392,10 @@
     }
 
     var appended = 0;
-    var targetCount = getConfiguredPageSize(resultsList);
     var renderedKeys = getRenderedRowIdentityKeys(resultsList);
     var nextRowIndex = getNextRowIndex(resultsList);
 
     rows.forEach(function (rowPayload) {
-      if (targetCount && getFilledResultRows(resultsList).length >= targetCount) {
-        return;
-      }
-
       var identityKey = buildRowIdentityKey(rowPayload.provider, rowPayload.provider_id);
       if (identityKey && renderedKeys.has(identityKey)) {
         return;
@@ -2376,7 +2447,7 @@
 
   function ensurePageFilled() {
     var resultsList = getResultsList();
-    var filledCount = getFilledResultRows(document).length;
+    var filledCount = getDisplayEligibleRows(resultsList).length;
 
     if (!canTopUpResults(resultsList, filledCount)) {
       updateProgressiveCounts();
@@ -2412,10 +2483,43 @@
       topUpInFlight = false;
       setTopUpPending(resultsList, false);
       updateProgressiveCounts();
-      if (canTopUpResults(resultsList, getFilledResultRows(document).length)) {
+      if (canTopUpResults(resultsList, getDisplayEligibleRows(resultsList).length)) {
         ensurePageFilled();
       }
     });
+  }
+
+  function applyDisplayPagination(resultsList) {
+    if (!resultsList) {
+      return {
+        visibleCount: 0,
+        eligibleCount: 0,
+        startIndex: 0,
+        endIndex: 0
+      };
+    }
+    var eligibleRows = getDisplayEligibleRows(resultsList);
+    var pageSize = getConfiguredPageSize(resultsList);
+    var currentPage = getConfiguredDisplayPage(resultsList);
+    var startIndex = Math.max(0, (currentPage - 1) * pageSize);
+    var endIndex = pageSize > 0 ? startIndex + pageSize : eligibleRows.length;
+
+    eligibleRows.forEach(function (row, index) {
+      var isVisibleOnPage = index >= startIndex && index < endIndex;
+      row.classList.toggle('is-shelfmark-page-hidden', !isVisibleOnPage);
+      row.setAttribute('aria-hidden', isVisibleOnPage ? 'false' : 'true');
+    });
+
+    getHiddenResultRows(resultsList).forEach(function (row) {
+      row.classList.remove('is-shelfmark-page-hidden');
+    });
+
+    return {
+      visibleCount: Math.max(0, Math.min(pageSize || eligibleRows.length, Math.max(0, eligibleRows.length - startIndex))),
+      eligibleCount: eligibleRows.length,
+      startIndex: startIndex,
+      endIndex: endIndex
+    };
   }
 
   function getRowOrder(row) {
@@ -2431,14 +2535,16 @@
 
   function updateProgressiveCounts() {
     var resultsList = getResultsList();
+    var pageState = applyDisplayPagination(resultsList);
     var visibleCount = resultsList ? getVisibleResultRows(resultsList).length : getVisibleResultRows(document).length;
-    var canStillTopUp = canTopUpResults(resultsList, resultsList ? getFilledResultRows(resultsList).length : getFilledResultRows(document).length)
+    var canStillTopUp = canTopUpResults(resultsList, resultsList ? pageState.eligibleCount : getDisplayEligibleRows(document).length)
       || isTopUpPending(resultsList)
       || hasPendingProgressiveRows(resultsList);
     var summaryNodes = toArray(document.querySelectorAll('.js-shelfmark-page-summary'));
     var emptyState = document.querySelector('.js-shelfmark-progressive-empty-state');
 
     updateResultsStateBlock(resultsList, visibleCount);
+    updatePaginationFooter(resultsList, visibleCount);
     summaryNodes.forEach(function (node) {
       node.textContent = visibleCount > 0
         ? (visibleCount === 1 ? '1 shown on this page' : visibleCount + ' shown on this page')

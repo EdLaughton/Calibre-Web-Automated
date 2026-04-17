@@ -413,6 +413,83 @@ function createProgressiveDom() {
   };
 }
 
+function createDisplayPaginationDom(options) {
+  const config = options || {};
+  const pageSize = String(config.pageSize || 100);
+  const displayPage = String(config.displayPage || 1);
+  const rowCount = config.rowCount || 166;
+  const root = new FakeElement('div', { className: 'page-root shelfmark-search-page' });
+  const stateBlock = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-results-state',
+    dataset: {
+      totalAvailable: String(rowCount),
+      seriesFilter: 'all',
+      filterHasCover: '1',
+      filterRequestable: '0'
+    }
+  }));
+  const statePrimary = stateBlock.appendChild(new FakeElement('p', {
+    className: 'js-shelfmark-results-state-primary',
+    textContent: ''
+  }));
+  stateBlock.appendChild(new FakeElement('p', {
+    className: 'js-shelfmark-results-state-secondary is-hidden'
+  }));
+  const pageSummary = root.appendChild(new FakeElement('span', {
+    className: 'js-shelfmark-page-summary',
+    textContent: ''
+  }));
+  const footer = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-pagination-footer'
+  }));
+  footer.appendChild(new FakeElement('span', {
+    className: 'js-shelfmark-page-indicator',
+    textContent: ''
+  }));
+  const resultsList = root.appendChild(new FakeElement('div', {
+    className: 'js-shelfmark-results-list',
+    dataset: {
+      displayPage,
+      pageSize,
+      nextPage: '',
+      topUpUrl: '',
+      totalAvailable: String(rowCount),
+      seriesFilter: 'all',
+      filterHasCover: '1',
+      filterRequestable: '0'
+    }
+  }));
+
+  for (let index = 0; index < rowCount; index += 1) {
+    const row = createResultNode({
+      baseUrl: 'https://library.example.com/shelfmark',
+      openUrl: `https://library.example.com/shelfmark/?query=Paged+${index}`,
+      mode: 'open',
+      label: 'Open in Shelfmark',
+      hint: '',
+      buttonClass: 'btn-default',
+      iconClass: 'glyphicon glyphicon-new-window',
+      statusTarget: false,
+      batchToggle: false
+    }).wrapper;
+    row.className += ' js-shelfmark-result-row';
+    row.dataset.rowIndex = String(index);
+    row.dataset.provider = 'hardcover';
+    row.dataset.providerId = String(8000 + index);
+    row.dataset.hasCover = '1';
+    resultsList.appendChild(row);
+  }
+
+  return {
+    document: new FakeDocument(root, 'complete'),
+    root,
+    resultsList,
+    statePrimary,
+    pageSummary,
+    footer
+  };
+}
+
 function flush() {
   return new Promise((resolve) => setImmediate(resolve));
 }
@@ -536,6 +613,19 @@ async function runProgressiveScenario() {
     {
       payload: {
         ok: true,
+        matches_filters: false,
+        row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
+        row_status_in_library: '1',
+        row_has_cover: '1',
+        row_series_matched: '1',
+        row_series_next_missing: '0',
+        hidden_reasons: ['already_in_library'],
+        html: ''
+      }
+    },
+    {
+      payload: {
+        ok: true,
         next_page: 3,
         rows: [
           {
@@ -545,23 +635,13 @@ async function runProgressiveScenario() {
             row_status_provider: '',
             row_status_provider_id: '',
             row_status_in_library: '0',
+            row_has_cover: '0',
+            row_series_matched: '0',
+            row_series_next_missing: '0',
             row_enrichment_url: '/row/99',
             html: ''
           }
         ]
-      }
-    },
-    {
-      payload: {
-        ok: true,
-        matches_filters: false,
-        row_class_name: 'shelfmark-result-card js-shelfmark-result-row',
-        row_status_in_library: '1',
-        row_has_cover: '1',
-        row_series_matched: '1',
-        row_series_next_missing: '0',
-        hidden_reasons: ['already_in_library'],
-        html: ''
       }
     },
     {
@@ -639,6 +719,30 @@ async function runProgressiveScenario() {
   }
 
   return { dom, fetchCalls };
+}
+
+async function runDisplayPaginationScenario(options) {
+  const dom = createDisplayPaginationDom(options);
+
+  delete require.cache[flowModulePath];
+  delete require.cache[searchModulePath];
+
+  global.window = {
+    location: {
+      origin: 'https://library.example.com',
+      href: `https://library.example.com/search/stored/?query=terry+pratchett&shelfmark_page=${options && options.displayPage ? options.displayPage : 1}`
+    },
+    CWA_SHELFMARK_STATUS_SETTLE_DELAY_MS: 0,
+    CwaShelfmarkRequestFlow: require(flowModulePath)
+  };
+  global.document = dom.document;
+  global.fetch = () => Promise.reject(new Error('Unexpected fetch in display pagination scenario'));
+
+  require(searchModulePath);
+  await flush();
+  await flush();
+
+  return dom;
 }
 
 (async function main() {
@@ -1604,8 +1708,8 @@ async function runProgressiveScenario() {
     [
       '/row/0',
       '/row/1',
-      'https://library.example.com/search/external/shelfmark/topup?query=terry+pratchett&shelfmark_source_page=2',
       '/row/2',
+      'https://library.example.com/search/external/shelfmark/topup?query=terry+pratchett&shelfmark_source_page=2',
       '/row/99',
       'https://library.example.com/search/external/shelfmark/topup?query=terry+pratchett&shelfmark_source_page=3'
     ]
@@ -1621,10 +1725,26 @@ async function runProgressiveScenario() {
   assert.equal(progressive.dom.stateSecondary.classList.contains('is-hidden'), false);
   assert.equal(progressive.dom.pageSummary.textContent, '3 shown on this page');
   assert.equal(progressive.dom.emptyState.classList.contains('is-hidden'), true);
-  assert.equal(progressive.dom.resultsList.children.length, 5);
+  assert.equal(progressive.dom.resultsList.children.length, 6);
   assert.equal(
     progressive.dom.resultsList.querySelectorAll('.js-shelfmark-result-row').length,
-    5
+    6
+  );
+
+  const paged = await runDisplayPaginationScenario({
+    rowCount: 166,
+    pageSize: 100,
+    displayPage: 2
+  });
+  assert.equal(paged.statePrimary.textContent, '66 shown · 166 total on Shelfmark');
+  assert.equal(paged.pageSummary.textContent, '66 shown on this page');
+  assert.equal(
+    paged.resultsList.querySelectorAll('.js-shelfmark-result-row').filter((row) => !row.classList.contains('is-shelfmark-page-hidden')).length,
+    66
+  );
+  assert.equal(
+    paged.footer.querySelector('.js-shelfmark-page-indicator').textContent,
+    'Page 2 of 2'
   );
 
   console.log('test_shelfmark_external_search_dom.js: ok');

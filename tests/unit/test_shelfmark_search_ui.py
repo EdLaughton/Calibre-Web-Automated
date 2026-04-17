@@ -593,16 +593,18 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'data-total-available="895"' in html
     assert 'data-series-filter="all"' in html
     assert 'data-filter-has-cover="1"' in html
-    assert "Page 1 of 75" in html
+    assert "Page 1" in html
+    assert "Page 1 of 75" not in html
     assert "11 visible here" not in html
     assert 'id="shelfmark_page_size"' not in html
     assert 'id="shelfmark_page_size_footer"' in html
-    assert html.index('id="shelfmark_page_size_footer"') > html.index('class="shelfmark-pagination-footer"')
+    assert html.index('id="shelfmark_page_size_footer"') > html.index('class="shelfmark-pagination-footer js-shelfmark-pagination-footer"')
     assert 'name="shelfmark_sort"' in html
     assert 'name="shelfmark_series_filter"' in html
     assert 'id="shelfmark_series_filter_owned"' in html
     assert 'id="shelfmark_series_filter"' not in html
     assert "Owned series" in html
+    assert html.count('shelfmark-external-controls__checkbox-group') == 2
     assert "Next missing" not in html
     assert "Strong candidates" not in html
     assert "Candidates" not in html
@@ -624,6 +626,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'class="shelfmark-status-banner js-shelfmark-request-status is-hidden"' in html
     assert 'data-top-up-url="/search/external/shelfmark/topup?query=Dune&amp;shelfmark_page=1&amp;shelfmark_page_size=12&amp;shelfmark_sort=popularity&amp;return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"' in html
     assert 'data-page-size="12"' in html
+    assert 'data-display-page="1"' in html
     assert html.index("Open in Shelfmark") < html.index("External Candidate")
     assert 'href="https://library.example.com/shelfmark/?content_type=ebook&amp;sort=popularity&amp;limit=12&amp;page=1&amp;query=Dune"' in html
     assert "shelfmark_request_flow.js" in html
@@ -729,6 +732,7 @@ def test_search_template_keeps_shelfmark_shell_when_current_page_is_empty_but_la
     assert "No Shelfmark external results found" not in html
     assert 'class="shelfmark-results-list js-shelfmark-results-list"' in html
     assert 'class="shelfmark-results-state js-shelfmark-results-state"' in html
+    assert 'class="shelfmark-pagination-footer js-shelfmark-pagination-footer"' in html
     assert 'data-next-page="2"' in html
     assert "895 total on Shelfmark" in html
     assert "No usable Shelfmark results remained" in html
@@ -1038,7 +1042,8 @@ def test_search_template_renders_filter_toolbar_and_footer_state():
     assert "Show all matches" not in html
     assert "Reset" in html
     assert "Clear filters" not in html
-    assert "Page 2 of 75" in html
+    assert "Page 2" in html
+    assert "Page 2 of 75" not in html
     assert ">Go<" not in html
     assert "shelfmark-pagination-footer__jump" not in html
 
