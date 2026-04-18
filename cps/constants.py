@@ -89,6 +89,7 @@ SIDEBAR_ARCHIVED        = 1 << 15
 SIDEBAR_DOWNLOAD        = 1 << 16
 SIDEBAR_LIST            = 1 << 17
 SIDEBAR_DUPLICATES      = 1 << 18
+SIDEBAR_REQUESTS        = 1 << 19
 
 sidebar_settings = {
                 "detail_random": DETAIL_RANDOM,
@@ -112,7 +113,7 @@ sidebar_settings = {
 
 
 ADMIN_USER_ROLES        = sum(r for r in ALL_ROLES.values()) & ~ROLE_ANONYMOUS
-ADMIN_USER_SIDEBAR      = (SIDEBAR_DUPLICATES << 1) - 1
+ADMIN_USER_SIDEBAR      = (SIDEBAR_REQUESTS << 1) - 1
 
 UPDATE_STABLE       = 0 << 0
 AUTO_UPDATE_STABLE  = 1 << 0

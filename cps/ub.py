@@ -210,7 +210,7 @@ class UserBase:
         return self.default_language
 
     def check_visibility(self, value):
-        if value == constants.SIDEBAR_RECENT:
+        if value in (constants.SIDEBAR_RECENT, constants.SIDEBAR_REQUESTS):
             return True
         return constants.has_flag(self.sidebar_view, value)
 

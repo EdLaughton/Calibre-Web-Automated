@@ -109,6 +109,11 @@ def shelfmark_ui_module(monkeypatch):
         path="/author/stored/1",
     )
     flask_module.url_for = _fake_url_for
+    flask_module.render_template = lambda template_name, **kwargs: (
+        f"template:{template_name}:"
+        f"{kwargs.get('shelfmark_section', {}).get('section_title', '')}:"
+        f"{kwargs.get('shelfmark_section', {}).get('section_subtitle', '')}"
+    )
 
     flask_babel_module = types.ModuleType("flask_babel")
     flask_babel_module.gettext = lambda value, **kwargs: value % kwargs if kwargs else value
@@ -158,3 +163,25 @@ def test_build_series_contextual_section_page_slices_follow_on_batch_without_dup
     assert [result["title"] for result in section["results"]] == [f"Book {index}" for index in range(9, 13)]
     assert [result["row_index"] for result in section["results"]] == [8, 9, 10, 11]
     assert section["load_more_url"] is None
+
+
+def test_render_contextual_partial_uses_template_renderer(shelfmark_ui_module):
+    section = {
+        "section_title": "Shelfmark",
+        "section_subtitle": "Missing most popular requestable books by this author from Shelfmark",
+        "results": [{"title": "Book 1"}],
+    }
+
+    rendered = shelfmark_ui_module.render_contextual_shelfmark_partial(section)
+
+    assert rendered == (
+        "template:shelfmark_contextual_async_section.html:"
+        "Shelfmark:Missing most popular requestable books by this author from Shelfmark"
+    )
+
+
+def test_render_contextual_append_handles_empty_and_unavailable_states(shelfmark_ui_module):
+    assert shelfmark_ui_module.render_contextual_shelfmark_append({"available": False}) == ("", 503)
+    assert shelfmark_ui_module.render_contextual_shelfmark_append(
+        {"available": True, "results": [], "load_more_url": None}
+    ) == ("", 200)

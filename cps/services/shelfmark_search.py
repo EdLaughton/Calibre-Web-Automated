@@ -3897,6 +3897,38 @@ def _resolve_shelfmark_authors(book: Mapping[str, Any]) -> list[str]:
     if authors:
         return authors
 
+    contribution_authors: list[str] = []
+    seen_contributors: set[str] = set()
+    for contribution in _iter_mapping_items(book.get("contributions")):
+        author = contribution.get("author")
+        author_name = _normalize_text(author.get("name")) if isinstance(author, Mapping) else None
+        if not author_name:
+            continue
+        contributor_key = author_name.casefold()
+        if contributor_key in seen_contributors:
+            continue
+        seen_contributors.add(contributor_key)
+        contribution_authors.append(author_name)
+    if contribution_authors:
+        return contribution_authors
+
+    cached_contributors = book.get("cached_contributors")
+    if isinstance(cached_contributors, Sequence) and not isinstance(cached_contributors, (str, bytes)):
+        normalized_cached: list[str] = []
+        for contributor in cached_contributors:
+            if isinstance(contributor, Mapping):
+                contributor_name = _normalize_text(
+                    contributor.get("name")
+                    or contributor.get("author")
+                    or contributor.get("display_name")
+                )
+            else:
+                contributor_name = _normalize_text(contributor)
+            if contributor_name:
+                normalized_cached.append(contributor_name)
+        if normalized_cached:
+            return normalized_cached
+
     for key in ("author", "search_author"):
         authors = _normalize_authors(book.get(key))
         if authors:

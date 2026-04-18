@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from flask import request, url_for
+from flask import render_template, request, url_for
 from flask_babel import gettext as _
 
 from .services.shelfmark_search import (
@@ -335,6 +335,20 @@ def build_contextual_shelfmark_loader(initial_url, *, context_type):
         "failure_message": _("Shelfmark is unavailable right now."),
         "load_more_failure_message": _("Could not load more Shelfmark results right now."),
     }
+
+
+def render_contextual_shelfmark_partial(section):
+    if not section:
+        return ("", 200)
+    return render_template("shelfmark_contextual_async_section.html", shelfmark_section=section)
+
+
+def render_contextual_shelfmark_append(section):
+    if section and not section.get("available"):
+        return ("", 503)
+    if not section or not (section.get("results") or section.get("load_more_url")):
+        return ("", 200)
+    return render_template("shelfmark_contextual_async_append.html", shelfmark_section=section)
 
 
 def _slice_contextual_section_results(section, *, query, offset, limit):
