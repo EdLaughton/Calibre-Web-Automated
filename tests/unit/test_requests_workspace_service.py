@@ -9,6 +9,7 @@ import importlib.util
 import sys
 import types
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,7 @@ class _FakeResultView:
     authors: tuple[str, ...] = ("Author",)
     cover_url: str | None = "https://covers.example.com/1.jpg"
     description: str | None = "Description"
+    release_date: str | None = None
     publish_year: int | None = 2000
     source_url: str | None = None
     display_fields: tuple[dict, ...] = ()
@@ -112,6 +114,7 @@ class _FakeResultView:
             "authors": list(self.authors),
             "cover_url": self.cover_url,
             "description": self.description,
+            "release_date": self.release_date,
             "publish_year": self.publish_year,
             "source_url": self.source_url,
             "display_fields": list(self.display_fields),
@@ -224,7 +227,20 @@ def requests_module(monkeypatch):
     return module
 
 
-def _make_result(module, *, hardcover_id="1", title="Book", series_position=3, next_missing=False, continuation=False, readers=1000, in_library=False, cover_url="https://covers.example.com/1.jpg"):
+def _make_result(
+    module,
+    *,
+    hardcover_id="1",
+    title="Book",
+    series_position=3,
+    next_missing=False,
+    continuation=False,
+    readers=1000,
+    in_library=False,
+    cover_url="https://covers.example.com/1.jpg",
+    release_date=None,
+    publish_year=2000,
+):
     context = _FakeSeriesContext(
         matched=True,
         is_next_missing=next_missing,
@@ -238,6 +254,8 @@ def _make_result(module, *, hardcover_id="1", title="Book", series_position=3, n
         readers_count=readers,
         already_in_library=in_library,
         cover_url=cover_url,
+        release_date=release_date,
+        publish_year=publish_year,
         series_position=series_position,
         best_series_context=context,
         series_context=context,
@@ -303,6 +321,33 @@ def test_build_author_candidate_explains_existing_author_ownership(requests_modu
     assert candidate.group_title == "Terry Pratchett"
 
 
+def test_release_bucket_distinguishes_upcoming_recent_and_stale(requests_module):
+    today = date.today()
+
+    upcoming = _make_result(
+        requests_module,
+        hardcover_id="14",
+        release_date=(today + timedelta(days=14)).isoformat(),
+        publish_year=today.year,
+    )
+    recent = _make_result(
+        requests_module,
+        hardcover_id="15",
+        release_date=(today - timedelta(days=21)).isoformat(),
+        publish_year=today.year,
+    )
+    stale = _make_result(
+        requests_module,
+        hardcover_id="16",
+        release_date=(today - timedelta(days=365)).isoformat(),
+        publish_year=today.year - 1,
+    )
+
+    assert requests_module._release_bucket_for_result(upcoming) == "upcoming"
+    assert requests_module._release_bucket_for_result(recent) == "recent"
+    assert requests_module._release_bucket_for_result(stale) is None
+
+
 def test_build_discover_candidate_skips_owned_and_coverless_results(requests_module):
     assert requests_module._build_discover_candidate(
         _make_result(requests_module, hardcover_id="10", in_library=True),
@@ -312,6 +357,46 @@ def test_build_discover_candidate_skips_owned_and_coverless_results(requests_mod
         _make_result(requests_module, hardcover_id="11", cover_url=None),
         trending=True,
     ) is None
+
+
+def test_build_new_candidate_uses_release_bucket_and_filters_stale_results(requests_module):
+    today = date.today()
+    upcoming = requests_module._build_new_candidate(
+        _make_result(
+            requests_module,
+            hardcover_id="17",
+            title="Coming Soon",
+            release_date=(today + timedelta(days=30)).isoformat(),
+            publish_year=today.year,
+        ),
+        raw_release_date=(today + timedelta(days=30)).isoformat(),
+    )
+    recent = requests_module._build_new_candidate(
+        _make_result(
+            requests_module,
+            hardcover_id="18",
+            title="Just Landed",
+            release_date=(today - timedelta(days=7)).isoformat(),
+            publish_year=today.year,
+        ),
+        raw_release_date=(today - timedelta(days=7)).isoformat(),
+    )
+    stale = requests_module._build_new_candidate(
+        _make_result(
+            requests_module,
+            hardcover_id="19",
+            title="Old News",
+            release_date=(today - timedelta(days=400)).isoformat(),
+            publish_year=today.year - 1,
+        ),
+        raw_release_date=(today - timedelta(days=400)).isoformat(),
+    )
+
+    assert upcoming is not None
+    assert upcoming.reason_label == "Coming soon"
+    assert recent is not None
+    assert recent.reason_label == "New release"
+    assert stale is None
 
 
 def test_dedupe_candidates_keeps_highest_priority_first(requests_module):
@@ -334,92 +419,173 @@ def test_dedupe_candidates_keeps_highest_priority_first(requests_module):
     assert [candidate.reason_label for candidate in deduped] == ["Sooner"]
 
 
-def test_build_requests_workspace_home_uses_expected_sections(requests_module, monkeypatch):
-    monkeypatch.setattr(
-        requests_module,
-        "_build_section_shells",
-        lambda active_view, state_url=None: (
-            requests_module.RequestsSectionShell(
-                key="home-next",
-                title="Continue series",
-                subtitle="Continue series subtitle",
-                empty_message="none",
-                load_url="/requests/sections/home/home-next",
-                loading_message="Loading recommendations…",
-            ),
-            requests_module.RequestsSectionShell(
-                key="home-hot",
-                title="Trending / popular now",
-                subtitle="Hot subtitle",
-                empty_message="none",
-                load_url="/requests/sections/home/home-hot",
-                loading_message="Loading recommendations…",
-            ),
-        ),
-    )
+def test_build_requests_workspace_series_uses_expected_sections(requests_module):
+    workspace = requests_module.build_requests_workspace("series", state_url="/requests/series").to_template_dict()
 
-    workspace = requests_module.build_requests_workspace("home", state_url="/requests").to_template_dict()
-
-    assert workspace["active_view"] == "home"
+    assert workspace["active_view"] == "series"
+    assert workspace["eyebrow"] == "Requests"
+    assert workspace["title"] == "Series"
+    assert [section["key"] for section in workspace["sections"]] == [
+        "series-next",
+        "series-missing",
+        "series-upcoming",
+        "series-new-releases",
+    ]
     assert [section["title"] for section in workspace["sections"]] == [
-        "Continue series",
-        "Trending / popular now",
+        "Next in series",
+        "Missing volumes",
+        "Upcoming in your series",
+        "New releases in your series",
     ]
-    assert [section["load_url"] for section in workspace["sections"]] == [
-        "/requests/sections/home/home-next",
-        "/requests/sections/home/home-hot",
+    assert all("/web/requests_workspace_section?" in section["load_url"] for section in workspace["sections"])
+
+
+def test_build_requests_workspace_new_uses_expected_sections(requests_module):
+    workspace = requests_module.build_requests_workspace("new", state_url="/requests/new").to_template_dict()
+
+    assert workspace["active_view"] == "new"
+    assert workspace["eyebrow"] == "Requests"
+    assert workspace["title"] == "New"
+    assert [section["key"] for section in workspace["sections"]] == [
+        "new-upcoming",
+        "new-releases",
+        "authors-upcoming",
+        "series-upcoming",
+        "authors-new-releases",
+        "series-new-releases",
     ]
-    assert [tab["key"] for tab in workspace["tabs"]] == ["home", "series", "authors", "hot"]
 
 
-def test_build_requests_workspace_normalizes_discover_to_hot(requests_module):
-    workspace = requests_module.build_requests_workspace("discover", state_url="/requests/discover").to_template_dict()
+@pytest.mark.parametrize(
+    ("view_name", "expected_title", "expected_keys"),
+    [
+        ("authors", "Authors", ["authors-popular", "authors-upcoming", "authors-new-releases"]),
+        ("hot", "Hot", ["hot-general", "hot-context"]),
+    ],
+)
+def test_build_requests_workspace_other_views_use_expected_sections(
+    requests_module,
+    view_name,
+    expected_title,
+    expected_keys,
+):
+    workspace = requests_module.build_requests_workspace(view_name, state_url=f"/requests/{view_name}").to_template_dict()
 
-    assert workspace["active_view"] == "hot"
+    assert workspace["title"] == expected_title
+    assert [section["key"] for section in workspace["sections"]] == expected_keys
 
 
-def test_build_requests_section_home_next_uses_series_sections(requests_module, monkeypatch):
-    next_section = requests_module.RequestsSection(
-        key="series-next",
-        title="Next in series",
-        subtitle="Likely next books after the series you already own.",
+def test_requests_view_normalization_defaults_to_series(requests_module):
+    assert requests_module.normalize_requests_view(None) == "series"
+    assert requests_module.normalize_requests_view("home") == "series"
+    assert requests_module.normalize_requests_view("discover") == "hot"
+    assert requests_module.normalize_requests_view("nonsense") == "series"
+
+
+def test_build_section_shells_hot_has_general_and_context_sections(requests_module):
+    sections = requests_module._build_section_shells("hot", state_url="/requests/hot")
+
+    assert [section.key for section in sections] == ["hot-general", "hot-context"]
+
+
+def test_build_requests_section_dispatches_series_bundle(requests_module, monkeypatch):
+    bundle = {
+        "series-next": requests_module.RequestsSection(
+            key="series-next",
+            title="Next in series",
+            subtitle="one",
+            empty_message="none",
+            layout="grouped",
+        ),
+        "series-missing": requests_module.RequestsSection(
+            key="series-missing",
+            title="Missing volumes",
+            subtitle="two",
+            empty_message="none",
+            layout="grouped",
+        ),
+        "series-upcoming": requests_module.RequestsSection(
+            key="series-upcoming",
+            title="Upcoming in your series",
+            subtitle="three",
+            empty_message="none",
+            layout="grouped",
+        ),
+        "series-new-releases": requests_module.RequestsSection(
+            key="series-new-releases",
+            title="New releases in your series",
+            subtitle="four",
+            empty_message="none",
+            layout="grouped",
+        ),
+    }
+
+    monkeypatch.setattr(
+        requests_module,
+        "_cached_series_bundle",
+        lambda state_url=None, cache_scope=None: bundle,
+    )
+
+    section = requests_module.build_requests_section("series", "series-upcoming", state_url="/requests/series", cache_scope=1)
+
+    assert section.title == "Upcoming in your series"
+
+    with pytest.raises(KeyError):
+        requests_module.build_requests_section("series", "authors-upcoming", state_url="/requests/series", cache_scope=1)
+
+
+def test_build_requests_section_new_reuses_general_and_context_bundles(requests_module, monkeypatch):
+    new_section = requests_module.RequestsSection(
+        key="new-upcoming",
+        title="Upcoming you may like",
+        subtitle="Recent releases worth adding next.",
         empty_message="none",
-        layout="grouped",
-        compact=True,
-        groups=(
-            requests_module.RequestsGroup(
-                key="discworld",
-                title="Discworld",
-                hint="12 books in your library",
-                candidates=(
-                    requests_module.RequestsCandidate(
-                        key="discworld:12",
-                        result=_make_result(requests_module, hardcover_id="12", title="Witches Abroad"),
-                        reason_label="Next in series",
-                        sort_key=(0, 0),
-                    ),
-                ),
+        layout="cards",
+        candidates=(
+            requests_module.RequestsCandidate(
+                key="new-upcoming:12",
+                result=_make_result(requests_module, hardcover_id="12", title="A Stroke of the Pen"),
+                reason_label="Coming soon",
+                sort_key=(0, 0),
             ),
         ),
     )
-    missing_section = requests_module.RequestsSection(
-        key="series-missing",
-        title="Missing volumes",
-        subtitle="Gap fills inside series you already started.",
+    author_section = requests_module.RequestsSection(
+        key="authors-upcoming",
+        title="Upcoming from your authors",
+        subtitle="one",
         empty_message="none",
         layout="grouped",
-        compact=True,
-        groups=tuple(),
+    )
+    series_section = requests_module.RequestsSection(
+        key="series-new-releases",
+        title="New releases in your series",
+        subtitle="two",
+        empty_message="none",
+        layout="grouped",
     )
 
     monkeypatch.setattr(
         requests_module,
-        "_cached_series_sections",
-        lambda state_url=None, cache_scope=None: (next_section, missing_section),
+        "_cached_new_sections",
+        lambda state_url=None, cache_scope=None, limit=None: {"new-upcoming": new_section},
+    )
+    monkeypatch.setattr(
+        requests_module,
+        "_cached_author_bundle",
+        lambda state_url=None, cache_scope=None: {"authors-upcoming": author_section},
+    )
+    monkeypatch.setattr(
+        requests_module,
+        "_cached_series_bundle",
+        lambda state_url=None, cache_scope=None: {"series-new-releases": series_section},
     )
 
-    section = requests_module.build_requests_section("home", "home-next", state_url="/requests", cache_scope=1)
+    general = requests_module.build_requests_section("new", "new-upcoming", state_url="/requests/new", cache_scope=1)
+    author = requests_module.build_requests_section("new", "authors-upcoming", state_url="/requests/new", cache_scope=1)
+    series = requests_module.build_requests_section("new", "series-new-releases", state_url="/requests/new", cache_scope=1)
 
-    assert section.key == "home-next"
-    assert section.see_more_url == "/web/requests_workspace_view?view_name=series"
-    assert [candidate.result.title for candidate in section.candidates] == ["Witches Abroad"]
+    assert general.key == "new-upcoming"
+    assert [candidate.result.title for candidate in general.candidates] == ["A Stroke of the Pen"]
+    assert author.key == "authors-upcoming"
+    assert series.key == "series-new-releases"

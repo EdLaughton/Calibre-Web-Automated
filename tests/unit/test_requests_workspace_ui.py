@@ -10,7 +10,7 @@ import sys
 import types
 from pathlib import Path
 
-from flask import Blueprint, Flask, g, render_template
+from flask import Blueprint, Flask, g, redirect, render_template
 from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
 
 
@@ -45,10 +45,14 @@ def _create_requests_app():
 
     @web.route("/requests")
     def requests_workspace():
-        return "requests"
+        return redirect("/requests/series")
 
     @web.route("/requests/<view_name>")
     def requests_workspace_view(view_name):
+        if view_name == "home":
+            return redirect("/requests/series")
+        if view_name == "discover":
+            return redirect("/requests/hot")
         return view_name
 
     @web.route("/book/<int:book_id>")
@@ -113,59 +117,54 @@ def _requests_workspace_context():
     return {
         "requests_workspace": {
             "enabled": True,
-            "active_view": "home",
-            "title": "Requests",
-            "subtitle": "Find likely next additions from the series and authors you already care about.",
+            "active_view": "series",
+            "eyebrow": "Requests",
+            "title": "Series",
+            "subtitle": "Continue the series you own, fill gaps, and catch upcoming or newly released entries.",
             "message": None,
-            "tabs": [
-                {"key": "home", "label": "Home", "url": "/requests", "active": True},
-                {"key": "series", "label": "Series", "url": "/requests/series", "active": False},
-                {"key": "authors", "label": "Authors", "url": "/requests/authors", "active": False},
-                {"key": "hot", "label": "Hot", "url": "/requests/hot", "active": False},
-            ],
             "sections": [
                 {
-                    "key": "home-next",
-                    "title": "Continue series",
-                    "subtitle": "Likely next books to keep your current series moving.",
-                    "empty_message": "No series continuations surfaced right now.",
-                    "layout": "cards",
-                    "compact": False,
-                    "see_more_url": "/requests/series",
-                    "load_url": "/requests/sections/home/home-next?return_to=/requests",
+                    "key": "series-next",
+                    "title": "Next in series",
+                    "subtitle": "Likely continuations after the farthest point you already own.",
+                    "empty_message": "No likely next-in-series requests surfaced right now.",
+                    "layout": "grouped",
+                    "compact": True,
+                    "see_more_url": None,
+                    "load_url": "/requests/sections/series/series-next?return_to=/requests/series",
                     "loading_message": "Loading recommendations…",
                 },
                 {
-                    "key": "home-missing",
+                    "key": "series-missing",
                     "title": "Missing volumes",
-                    "subtitle": "Gap fills inside series you already care about.",
-                    "empty_message": "No missing-volume gap fills surfaced right now.",
-                    "layout": "cards",
-                    "compact": False,
-                    "see_more_url": "/requests/series",
-                    "load_url": "/requests/sections/home/home-missing?return_to=/requests",
+                    "subtitle": "Gap fills inside series you already started.",
+                    "empty_message": "No missing-volume gaps surfaced right now.",
+                    "layout": "grouped",
+                    "compact": True,
+                    "see_more_url": None,
+                    "load_url": "/requests/sections/series/series-missing?return_to=/requests/series",
                     "loading_message": "Loading recommendations…",
                 },
                 {
-                    "key": "home-authors",
-                    "title": "More from authors you own",
-                    "subtitle": "Popular missing books by authors already represented locally.",
-                    "empty_message": "No author-led expansions surfaced right now.",
-                    "layout": "cards",
-                    "compact": False,
-                    "see_more_url": "/requests/authors",
-                    "load_url": "/requests/sections/home/home-authors?return_to=/requests",
+                    "key": "series-upcoming",
+                    "title": "Upcoming in your series",
+                    "subtitle": "Forthcoming entries tied to series already in your library.",
+                    "empty_message": "No upcoming books in your series surfaced right now.",
+                    "layout": "grouped",
+                    "compact": True,
+                    "see_more_url": None,
+                    "load_url": "/requests/sections/series/series-upcoming?return_to=/requests/series",
                     "loading_message": "Loading recommendations…",
                 },
                 {
-                    "key": "home-hot",
-                    "title": "Trending / popular now",
-                    "subtitle": "High-signal discovery candidates beyond your current shelves.",
-                    "empty_message": "No trending or popular discovery candidates surfaced right now.",
-                    "layout": "cards",
-                    "compact": False,
-                    "see_more_url": "/requests/hot",
-                    "load_url": "/requests/sections/home/home-hot?return_to=/requests",
+                    "key": "series-new-releases",
+                    "title": "New releases in your series",
+                    "subtitle": "Recently released books tied to series already in your library.",
+                    "empty_message": "No recent series releases surfaced right now.",
+                    "layout": "grouped",
+                    "compact": True,
+                    "see_more_url": None,
+                    "load_url": "/requests/sections/series/series-new-releases?return_to=/requests/series",
                     "loading_message": "Loading recommendations…",
                 },
             ],
@@ -185,16 +184,24 @@ def _requests_workspace_context():
 def _requests_section_context():
     return {
         "section": {
-            "key": "home-next",
-            "title": "Continue series",
-            "subtitle": "Likely next books to keep your current series moving.",
-            "empty_message": "No series continuations surfaced right now.",
-            "layout": "cards",
-            "compact": False,
-            "see_more_url": "/requests/series",
+            "key": "series-next",
+            "title": "Next in series",
+            "subtitle": "Likely continuations after the farthest point you already own.",
+            "empty_message": "No likely next-in-series requests surfaced right now.",
+            "layout": "grouped",
+            "compact": True,
+            "see_more_url": None,
             "has_content": True,
-            "groups": [],
-            "candidates": [_requests_candidate()],
+            "groups": [
+                {
+                    "key": "discworld",
+                    "title": "Discworld",
+                    "hint": "12 books in your library · Owned through 11",
+                    "count": 1,
+                    "candidates": [_requests_candidate()],
+                }
+            ],
+            "candidates": [],
         },
         "preferred_release_settings": {"enabled": False, "provider": "", "content_type": "ebook", "ranking": "seeders_desc"},
     }
@@ -380,10 +387,14 @@ def _create_real_layout_app(sidebar_sections):
 
     @web.route("/requests")
     def requests_workspace():
-        return render_template("layout_nav_smoke.html", **_layout_context("requests-home", "Requests"))
+        return redirect("/requests/series")
 
     @web.route("/requests/<view_name>")
     def requests_workspace_view(view_name):
+        if view_name == "home":
+            return redirect("/requests/series")
+        if view_name == "discover":
+            return redirect("/requests/hot")
         return render_template(
             "layout_nav_smoke.html",
             **_layout_context("requests-" + view_name, "Requests"),
@@ -405,10 +416,6 @@ def _create_real_layout_app(sidebar_sections):
     def advanced_search():
         return "advanced"
 
-    @search.route("/search/autocomplete")
-    def autocomplete():
-        return "autocomplete"
-
     @shelf.route("/shelf/create")
     def create_shelf():
         return "create-shelf"
@@ -424,29 +431,59 @@ def _create_real_layout_app(sidebar_sections):
     return app
 
 
-def test_requests_template_renders_async_shell_and_light_subnav():
+def test_requests_template_renders_async_shell_without_duplicate_top_subnav():
     app = _create_requests_app()
     context = _requests_workspace_context()
 
-    with app.test_request_context("/requests"):
+    with app.test_request_context("/requests/series"):
         html = render_template("requests.html", **context)
 
     assert "Requests" in html
-    assert "Find likely next additions from the series and authors you already care about." in html
-    assert 'href="/requests/series"' in html
-    assert 'href="/requests/hot"' in html
-    assert "Continue series" in html
-    assert "More from authors you own" in html
-    assert "Trending / popular now" in html
+    assert "Series" in html
+    assert "Continue the series you own, fill gaps, and catch upcoming or newly released entries." in html
+    assert "Next in series" in html
+    assert "Missing volumes" in html
+    assert "Upcoming in your series" in html
+    assert "New releases in your series" in html
     assert "Loading recommendations…" in html
-    assert 'class="requests-workspace-section requests-workspace-section--shell js-requests-section-shell"' in html
-    assert 'data-section-url="/requests/sections/home/home-next?return_to=/requests"' in html
-    assert 'data-section-url="/requests/sections/home/home-hot?return_to=/requests"' in html
+    assert "shelfmark-external-shell requests-workspace-shell" in html
+    assert "requests-workspace-header__eyebrow" in html
+    assert 'data-section-url="/requests/sections/series/series-next?return_to=/requests/series"' in html
+    assert 'data-section-url="/requests/sections/series/series-missing?return_to=/requests/series"' in html
+    assert 'data-section-url="/requests/sections/series/series-upcoming?return_to=/requests/series"' in html
+    assert 'data-section-url="/requests/sections/series/series-new-releases?return_to=/requests/series"' in html
     assert "Witches Abroad" not in html
+    assert "requests-workspace-subnav" not in html
     assert "shelfmark_request_flow.js" in html
     assert "shelfmark_external_search.js" in html
     assert "requests_workspace_async.js" in html
     assert "shelfmarkDetailModal" in html
+
+
+def test_requests_root_redirects_to_series_view():
+    app = _create_requests_app()
+
+    with app.test_client() as client:
+        response = client.get("/requests")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/requests/series")
+
+
+def test_requests_legacy_home_redirects_and_new_page_exists():
+    app = _create_requests_app()
+
+    with app.test_client() as client:
+        home_response = client.get("/requests/home", follow_redirects=False)
+        discover_response = client.get("/requests/discover", follow_redirects=False)
+        new_response = client.get("/requests/new")
+
+    assert home_response.status_code == 302
+    assert home_response.headers["Location"].endswith("/requests/series")
+    assert discover_response.status_code == 302
+    assert discover_response.headers["Location"].endswith("/requests/hot")
+    assert new_response.status_code == 200
+    assert new_response.text == "new"
 
 
 def test_requests_section_partial_renders_grouped_series_section():
@@ -455,8 +492,8 @@ def test_requests_section_partial_renders_grouped_series_section():
     context["section"] = {
         "key": "series-next",
         "title": "Next in series",
-        "subtitle": "Likely next books after the series you already own.",
-        "empty_message": "No likely next-in-series request candidates surfaced right now.",
+        "subtitle": "Likely continuations after the farthest point you already own.",
+        "empty_message": "No likely next-in-series requests surfaced right now.",
         "layout": "grouped",
         "compact": True,
         "see_more_url": None,
@@ -479,8 +516,33 @@ def test_requests_section_partial_renders_grouped_series_section():
     assert "Next in series" in html
     assert "Discworld" in html
     assert "12 books in your library" in html
-    assert "requests-candidate-card--compact" in html
+    assert "shelfmark-results-list--compact" in html
     assert "Missing volume" in html
+    assert "js-shelfmark-action" in html
+    assert "js-shelfmark-detail-link" in html
+
+
+def test_requests_section_partial_renders_compact_empty_state():
+    app = _create_requests_app()
+    context = _requests_section_context()
+    context["section"] = {
+        "key": "hot-context",
+        "title": "Hot from your authors and series",
+        "subtitle": "Popularity-led picks tied to authors and series already in your library.",
+        "empty_message": "No strong popularity-led matches from your authors or series surfaced right now.",
+        "layout": "cards",
+        "compact": False,
+        "see_more_url": None,
+        "has_content": False,
+        "candidates": [],
+        "groups": [],
+    }
+
+    with app.test_request_context("/requests/sections/hot/hot-context?return_to=/requests/hot"):
+        html = render_template("requests_workspace_section.html", **context)
+
+    assert "shelfmark-empty-state requests-workspace-empty-state" in html
+    assert "No strong popularity-led matches from your authors or series surfaced right now." in html
 
 
 def test_requests_sidebar_includes_requests_link(monkeypatch):
@@ -489,33 +551,33 @@ def test_requests_sidebar_includes_requests_link(monkeypatch):
     app = Flask(__name__)
     with app.test_request_context("/", headers={"User-Agent": "Mozilla/5.0"}):
         sidebar, simple = module.get_sidebar_config()
-        sidebar_sections = module.build_sidebar_sections(sidebar)
 
     assert simple is False
     requests_heading = next(item for item in sidebar if item["id"] == "requests-heading")
-    requests_home = next(item for item in sidebar if item["id"] == "requests-home")
     requests_series = next(item for item in sidebar if item["id"] == "requests-series")
     requests_authors = next(item for item in sidebar if item["id"] == "requests-authors")
     requests_hot = next(item for item in sidebar if item["id"] == "requests-hot")
+    requests_new = next(item for item in sidebar if item["id"] == "requests-new")
+    sidebar_sections = module.build_sidebar_sections(sidebar)
 
     assert requests_heading["kind"] == "heading"
     assert requests_heading["text"] == "Requests"
-    assert requests_home["href"] == "/web/requests_workspace"
-    assert requests_series["href"] == "/web/requests_workspace_view?view_name=series"
+    assert "requests-home" not in {item["id"] for item in sidebar}
     assert requests_authors["href"] == "/web/requests_workspace_view?view_name=authors"
+    assert requests_series["href"] == "/web/requests_workspace_view?view_name=series"
     assert requests_hot["href"] == "/web/requests_workspace_view?view_name=hot"
-    assert requests_home["page"] == "requests-home"
+    assert requests_new["href"] == "/web/requests_workspace_view?view_name=new"
     assert requests_hot["page"] == "requests-hot"
     assert [section["id"] for section in sidebar_sections] == ["browse", "requests"]
     assert [item["id"] for item in sidebar_sections[1]["entries"]] == [
-        "requests-home",
         "requests-series",
         "requests-authors",
         "requests-hot",
+        "requests-new",
     ]
 
 
-def test_real_layout_sidebar_renders_requests_home_and_non_requests_pages(monkeypatch):
+def test_real_layout_sidebar_renders_requests_and_non_requests_pages(monkeypatch):
     module = _import_render_template_module(monkeypatch)
     sidebar_sections = module.build_sidebar_sections(
         [
@@ -538,17 +600,6 @@ def test_real_layout_sidebar_renders_requests_home_and_non_requests_pages(monkey
                 "page": "requests",
             },
             {
-                "glyph": "glyphicon-home",
-                "text": "Home",
-                "link": "web.requests_workspace",
-                "href": "/requests",
-                "id": "requests-home",
-                "section": "requests",
-                "visibility": 1,
-                "public": True,
-                "page": "requests-home",
-            },
-            {
                 "glyph": "glyphicon-bookmark",
                 "text": "Series",
                 "link": "web.requests_workspace_view",
@@ -559,24 +610,60 @@ def test_real_layout_sidebar_renders_requests_home_and_non_requests_pages(monkey
                 "public": True,
                 "page": "requests-series",
             },
+            {
+                "glyph": "glyphicon-user",
+                "text": "Authors",
+                "link": "web.requests_workspace_view",
+                "href": "/requests/authors",
+                "id": "requests-authors",
+                "section": "requests",
+                "visibility": 1,
+                "public": True,
+                "page": "requests-authors",
+            },
+            {
+                "glyph": "glyphicon-fire",
+                "text": "Hot",
+                "link": "web.requests_workspace_view",
+                "href": "/requests/hot",
+                "id": "requests-hot",
+                "section": "requests",
+                "visibility": 1,
+                "public": True,
+                "page": "requests-hot",
+            },
+            {
+                "glyph": "glyphicon-time",
+                "text": "New",
+                "link": "web.requests_workspace_view",
+                "href": "/requests/new",
+                "id": "requests-new",
+                "section": "requests",
+                "visibility": 1,
+                "public": True,
+                "page": "requests-new",
+            },
         ]
     )
     app = _create_real_layout_app(sidebar_sections)
 
     with app.test_client() as client:
         home_response = client.get("/")
-        requests_home_response = client.get("/requests")
+        requests_root_response = client.get("/requests", follow_redirects=False)
+        requests_home_response = client.get("/requests/home", follow_redirects=False)
         requests_view_response = client.get("/requests/series")
 
     assert home_response.status_code == 200
-    assert "nav_requests-home" in home_response.text
+    assert "nav_requests-series" in home_response.text
     assert "nav-subitem nav-subitem--requests" in home_response.text
     assert "shell ok" in home_response.text
 
-    assert requests_home_response.status_code == 200
-    assert "Requests" in requests_home_response.text
-    assert 'id="nav_requests-home"' in requests_home_response.text
+    assert requests_root_response.status_code == 302
+    assert requests_root_response.headers["Location"].endswith("/requests/series")
+    assert requests_home_response.status_code == 302
+    assert requests_home_response.headers["Location"].endswith("/requests/series")
 
     assert requests_view_response.status_code == 200
+    assert "Requests" in requests_view_response.text
     assert "Series" in requests_view_response.text
     assert 'id="nav_requests-series"' in requests_view_response.text
