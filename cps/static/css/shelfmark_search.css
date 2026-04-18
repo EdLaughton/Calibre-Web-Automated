@@ -349,11 +349,68 @@
   display: none;
 }
 
+.shelfmark-contextual-async.is-hidden {
+  display: none;
+}
+
+.js-shelfmark-contextual-shell.is-hidden {
+  display: none;
+}
+
+.shelfmark-contextual-async__placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 4px;
+  color: var(--shelfmark-shell-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.shelfmark-contextual-async__spinner {
+  animation: shelfmark-contextual-spin 900ms linear infinite;
+}
+
+.shelfmark-contextual-load-more {
+  margin-top: 12px;
+}
+
+.shelfmark-contextual-load-more__button {
+  min-height: 32px;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--shelfmark-shell-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.shelfmark-contextual-load-more__button[disabled] {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+.shelfmark-contextual-load-more__message {
+  margin: 8px 0 0;
+  color: var(--shelfmark-shell-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .shelfmark-contextual-page__message {
   margin: 0 0 12px;
   color: var(--shelfmark-shell-muted);
   font-size: 13px;
   line-height: 1.45;
+}
+
+@keyframes shelfmark-contextual-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .shelfmark-result-card {

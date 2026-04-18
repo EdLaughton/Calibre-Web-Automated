@@ -120,14 +120,14 @@ def _create_app():
     return app
 
 
-def _build_contextual_result():
+def _build_contextual_result(title="The Amazing Maurice", provider_id="222"):
     return {
         "provider": "hardcover",
-        "provider_id": "222",
-        "title": "The Amazing Maurice",
+        "provider_id": provider_id,
+        "title": title,
         "subtitle": None,
         "authors": ["Terry Pratchett"],
-        "cover_url": "https://covers.example.com/222.jpg",
+        "cover_url": "https://covers.example.com/%s.jpg" % provider_id,
         "description": "A missing, requestable candidate.",
         "facts": ["Discworld (28)", "2001"],
         "series_context": {
@@ -137,11 +137,11 @@ def _build_contextual_result():
         "already_in_library": False,
         "library_book_url": None,
         "library_book_title": None,
-        "detail_url": "/search/external/shelfmark/hardcover/222?query=Discworld",
+        "detail_url": "/search/external/shelfmark/hardcover/%s?query=Discworld" % provider_id,
         "shelfmark_base_url": "https://library.example.com/shelfmark",
-        "shelfmark_open_url": "https://library.example.com/shelfmark/?query=The+Amazing+Maurice",
+        "shelfmark_open_url": "https://library.example.com/shelfmark/?query=%s" % title.replace(" ", "+"),
         "request_payload": {
-            "book_data": {"provider": "hardcover", "provider_id": "222", "title": "The Amazing Maurice"},
+            "book_data": {"provider": "hardcover", "provider_id": provider_id, "title": title},
             "context": {"source": "*", "content_type": "ebook", "request_level": "book"},
         },
         "library_state": {
@@ -170,24 +170,24 @@ def _build_contextual_result():
         "row_index": 0,
         "row_class_name": "shelfmark-result-card js-shelfmark-result-row shelfmark-result-card--info js-shelfmark-status-target js-shelfmark-batch-row",
         "row_status_provider": "hardcover",
-        "row_status_provider_id": "222",
+        "row_status_provider_id": provider_id,
         "row_status_in_library": "0",
         "row_has_cover": "1",
         "row_enrichment_url": None,
     }
 
 
-def _build_contextual_section(subtitle, *, available=True, message=None):
+def _build_contextual_section(subtitle, *, available=True, message=None, load_more_url=None):
     return {
         "enabled": True,
         "available": available,
         "variant": "contextual",
         "has_page_shell": available,
-        "render_modal": available,
-        "render_scripts": available,
+        "render_modal": False,
+        "render_scripts": False,
         "section_title": "Shelfmark",
         "section_subtitle": subtitle,
-        "state_url": "/author/1",
+        "state_url": "/author/stored/1",
         "page": 1,
         "page_size": 8,
         "page_result_count": 1 if available else 0,
@@ -202,43 +202,73 @@ def _build_contextual_section(subtitle, *, available=True, message=None):
         },
         "results": [_build_contextual_result()] if available else [],
         "message": message,
+        "load_more_url": load_more_url,
     }
 
 
-def test_author_template_renders_contextual_shelfmark_section():
+def _build_runtime():
+    return {
+        "enabled": True,
+        "render_modal": True,
+        "render_scripts": True,
+        "state_url": "/author/stored/1",
+    }
+
+
+def _build_loader(initial_url, context_type):
+    return {
+        "container_id": f"shelfmark-contextual-{context_type}",
+        "initial_url": initial_url,
+        "loading_message": "Loading Shelfmark results…",
+        "failure_message": "Shelfmark is unavailable right now.",
+        "load_more_failure_message": "Could not load more Shelfmark results right now.",
+    }
+
+
+def test_author_template_renders_async_placeholder_without_sync_shelfmark_markup():
     app = _create_app()
     context = {
         "title": "Author: Terry Pratchett",
-        "author": None,
+        "author_profile": {
+            "name": "Terry Pratchett",
+            "image_url": "https://assets.hardcover.app/author/terry.jpg",
+            "safe_about": "<p>Discworld creator.</p>",
+            "link": "https://hardcover.app/authors/terry-pratchett",
+            "source_label": "Hardcover",
+        },
         "entries": [DummyEntry(DummyBook(1, "Mort", "Terry Pratchett", "Discworld"))],
         "pagination": None,
         "id": 1,
-        "other_books": [],
         "page": "author",
         "order": "abc",
         "simple": True,
         "current_user": DummyCurrentUser(),
-        "shelfmark_section": _build_contextual_section(
-            "Missing requestable books by this author from Shelfmark"
-        ),
+        "shelfmark_runtime": _build_runtime(),
+        "shelfmark_loader": _build_loader("/author/1/shelfmark?return_to=%2Fauthor%2Fstored%2F1", "author"),
     }
 
-    with app.test_request_context("/author/1"):
+    with app.test_request_context("/author/stored/1"):
         g.config_authors_max = 3
         g.shelves_access = []
         html = render_template("author.html", **context)
 
-    assert "Missing requestable books by this author from Shelfmark" in html
-    assert "The Amazing Maurice" in html
-    assert "Request in Shelfmark" in html
-    assert "Bulk mode" not in html
-    assert "shelfmark-pagination-footer" not in html
+    assert "Discworld creator." in html
+    assert "Hardcover" in html
+    assert "https://assets.hardcover.app/author/terry.jpg" in html
+    assert "The Amazing Maurice" not in html
+    assert "More by" not in html
+    assert "goodreads.svg" not in html
+    assert 'class="shelfmark-contextual-async js-shelfmark-contextual-async"' in html
+    assert 'data-initial-url="/author/1/shelfmark?return_to=%2Fauthor%2Fstored%2F1"' in html
+    assert "Loading Shelfmark results…" in html
     assert 'id="shelfmarkDetailModal"' in html
     assert "shelfmark_request_flow.js" in html
     assert "shelfmark_external_search.js" in html
+    assert "shelfmark_contextual_async.js" in html
+    assert "js-shelfmark-results-list" not in html
 
 
-def test_series_template_renders_contextual_shelfmark_section():
+def test_series_template_renders_async_placeholder_without_sync_shelfmark_markup():
     app = _create_app()
     context = {
         "title": "Series: Discworld",
@@ -250,49 +280,72 @@ def test_series_template_renders_contextual_shelfmark_section():
         "order": "seriesasc",
         "simple": True,
         "current_user": DummyCurrentUser(),
-        "shelfmark_section": _build_contextual_section(
-            "Missing requestable books for this series from Shelfmark"
-        ),
+        "shelfmark_runtime": _build_runtime(),
+        "shelfmark_loader": _build_loader("/series/1/shelfmark?return_to=%2Fseries%2Fstored%2F1", "series"),
     }
 
-    with app.test_request_context("/series/1"):
+    with app.test_request_context("/series/stored/1"):
         g.config_authors_max = 3
         html = render_template("index.html", **context)
 
-    assert "Missing requestable books for this series from Shelfmark" in html
+    assert "The Amazing Maurice" not in html
+    assert 'class="shelfmark-contextual-async js-shelfmark-contextual-async"' in html
+    assert 'data-initial-url="/series/1/shelfmark?return_to=%2Fseries%2Fstored%2F1"' in html
+    assert "Loading Shelfmark results…" in html
+    assert 'id="shelfmarkDetailModal"' in html
+    assert "shelfmark_request_flow.js" in html
+    assert "shelfmark_external_search.js" in html
+    assert "shelfmark_contextual_async.js" in html
+    assert "js-shelfmark-results-list" not in html
+
+
+def test_contextual_async_section_template_renders_exact_author_heading_and_load_more():
+    app = _create_app()
+    section = _build_contextual_section(
+        "Missing most popular requestable books by this author from Shelfmark",
+        load_more_url="/author/1/shelfmark?offset=8&append=1",
+    )
+
+    with app.test_request_context("/author/1/shelfmark"):
+        html = render_template("shelfmark_contextual_async_section.html", shelfmark_section=section)
+
+    assert "Shelfmark" in html
+    assert "Missing most popular requestable books by this author from Shelfmark" in html
     assert "The Amazing Maurice" in html
     assert "Open in Shelfmark" in html
-    assert "Bulk mode" not in html
-    assert "shelfmark-pagination-footer" not in html
-    assert 'id="shelfmarkDetailModal"' in html
+    assert "Load more" in html
+    assert 'data-load-url="/author/1/shelfmark?offset=8&amp;append=1"' in html
 
 
-def test_contextual_templates_render_unavailable_message_without_scripts():
+def test_contextual_async_section_template_renders_unavailable_message_compactly():
     app = _create_app()
-    context = {
-        "title": "Author: Terry Pratchett",
-        "author": None,
-        "entries": [DummyEntry(DummyBook(1, "Mort", "Terry Pratchett", "Discworld"))],
-        "pagination": None,
-        "id": 1,
-        "other_books": [],
-        "page": "author",
-        "order": "abc",
-        "simple": True,
-        "current_user": DummyCurrentUser(),
-        "shelfmark_section": _build_contextual_section(
-            "Missing requestable books by this author from Shelfmark",
-            available=False,
-            message="Shelfmark is unavailable right now.",
-        ),
-    }
+    section = _build_contextual_section(
+        "Missing most popular requestable books by this author from Shelfmark",
+        available=False,
+        message="Shelfmark is unavailable right now.",
+    )
 
-    with app.test_request_context("/author/1"):
-        g.config_authors_max = 3
-        g.shelves_access = []
-        html = render_template("author.html", **context)
+    with app.test_request_context("/author/1/shelfmark"):
+        html = render_template("shelfmark_contextual_async_section.html", shelfmark_section=section)
 
     assert "Shelfmark is unavailable right now." in html
     assert "js-shelfmark-results-list" not in html
-    assert "shelfmark_request_flow.js" not in html
-    assert 'id="shelfmarkDetailModal"' not in html
+
+
+def test_contextual_async_append_template_renders_follow_on_batch_and_optional_load_more():
+    app = _create_app()
+    section = _build_contextual_section(
+        "Missing requestable books for this series from Shelfmark",
+        load_more_url=None,
+    )
+    section["results"] = [
+        _build_contextual_result("Snuff", "401"),
+        _build_contextual_result("Raising Steam", "402"),
+    ]
+
+    with app.test_request_context("/series/1/shelfmark?offset=8&append=1"):
+        html = render_template("shelfmark_contextual_async_append.html", shelfmark_section=section)
+
+    assert "Snuff" in html
+    assert "Raising Steam" in html
+    assert "Load more" not in html

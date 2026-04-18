@@ -1,0 +1,4 @@
+{% import 'shelfmark_external_macros.html' as shelfmark_ui with context %}
+{% if shelfmark_section %}
+  {{ shelfmark_ui.render_shelfmark_section(shelfmark_section) }}
+{% endif %}

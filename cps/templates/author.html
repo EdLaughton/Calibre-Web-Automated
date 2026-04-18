@@ -1,9 +1,10 @@
 {% import 'image.html' as image %}
 {% import 'shelfmark_external_macros.html' as shelfmark_ui with context %}
 {% extends "layout.html" %}
-{% set shelfmark = shelfmark_section if shelfmark_section is defined and shelfmark_section else None %}
+{% set shelfmark = shelfmark_runtime if shelfmark_runtime is defined and shelfmark_runtime else None %}
+{% set shelfmark_loader = shelfmark_loader if shelfmark_loader is defined and shelfmark_loader else None %}
 {% block header %}
-{% if shelfmark %}
+{% if shelfmark_loader %}
 <link href="{{ url_for('static', filename='css/shelfmark_search.css') }}" rel="stylesheet" media="screen">
 {% endif %}
 {% endblock %}
@@ -11,17 +12,26 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <h2>{{title}}</h2>
 
-{% if author is not none %}
+{% if author_profile is not none %}
 <section class="author-bio">
-  {%if author.image_url is not none %}
-  <img title="{{author.name}}" src="{{author.image_url}}" alt="{{author.name}}" class="author-photo pull-left">
+  {% if author_profile.image_url %}
+  <img title="{{ author_profile.name }}" src="{{ author_profile.image_url }}" alt="{{ author_profile.name }}" class="author-photo pull-left">
   {% endif %}
 
-  {%if author.safe_about is not none %}
-  <p>{{author.safe_about|safe}}</p>
+  {% if author_profile.safe_about %}
+  <div class="author-bio__copy">{{ author_profile.safe_about|safe }}</div>
   {% endif %}
 
-  - {{_("via")}} <a href="{{author.link}}" class="author-link" target="_blank" rel="noopener">Goodreads</a>
+  {% if author_profile.source_label %}
+  <p class="author-bio__meta">
+    {{ _("via") }}
+    {% if author_profile.link %}
+      <a href="{{ author_profile.link }}" class="author-link" target="_blank" rel="noopener">{{ author_profile.source_label }}</a>
+    {% else %}
+      <span class="author-link">{{ author_profile.source_label }}</span>
+    {% endif %}
+  </p>
+  {% endif %}
 </section>
 
 <div class="clearfix"></div>
@@ -49,7 +59,7 @@
            data-book-formats="{% for format in entry.Books.data %}{{ format.format.lower() }}{% if not loop.last %},{% endif %}{% endfor %}"
            class="book-cover-link">
             <span class="img" title="{{entry.Books.title}}">
-              {{ image.book_cover(entry.Books, alt=author.name|safe) }}
+              {{ image.book_cover(entry.Books, alt=(author_profile.name if author_profile else entry.Books.title)|safe) }}
               {% if entry[2] == True %}<span class="badge read glyphicon glyphicon-ok"></span>{% endif %}
             </span>
         </a>
@@ -105,63 +115,20 @@
   </div>
 </div>
 
-{% if shelfmark %}
-<div class="discover">
-  {{ shelfmark_ui.render_shelfmark_section(shelfmark) }}
-</div>
-{% endif %}
-
-{% if other_books and author is not none %}
-<div class="discover">
-  <h3>{{_("More by")}} {{ author.name.replace('|',',') }}</h3>
-  <div class="row">
-    {% for entry in other_books %}
-    <div class="col-sm-3 col-lg-2 col-xs-6 book session">
-      <div class="cover">
-        <a href="https://www.goodreads.com/book/show/{{ entry.gid['#text'] }}" target="_blank" rel="noopener">
-          <img title="{{entry.title}}" src="{{ entry.image_url }}" />
-        </a>
-      </div>
-      <div class="meta">
-        <p title="{{ entry.title }}" class="title">{{entry.title|shortentitle}}</p>
-        <p class="author">
-		  {% for author in entry.authors %}
-			{% if loop.index > g.config_authors_max and g.config_authors_max != 0 %}
-				<a class="author-name author-hidden" href="https://www.goodreads.com/author/show/{{ author.gid }}" target="_blank" rel="noopener">{{author.name.replace('|',',')}}</a>
-				{% if loop.last %}
-					<a href="#" class="author-expand" data-authors-max="{{g.config_authors_max}}" data-collapse-caption="({{_('reduce')}})">(...)</a>
-				{% endif %}
-			{% else %}
-				<a class="author-name" href="https://www.goodreads.com/author/show/{{ author.gid }}" target="_blank" rel="noopener">{{author.name.replace('|',',')}}</a>
-		    {% endif %}
-          {% endfor %}
-        </p>
-        {% if entry.series.__len__() > 0 %}
-        <p class="series">
-          <a href="{{url_for('web.books_list', data='series', sort_param='stored', book_id=entry.series[0].id )}}">
-            {{entry.series[0].name}}
-          </a>
-          ({{entry.series_index|formatfloat(2)}})
-        </p>
-        {% endif %}
-        <div class="rating">
-          {% for number in range((entry.average_rating)|float|round|int(2)) %}
-          <span class="glyphicon glyphicon-star good"></span>
-          {% if loop.last and loop.index < 5 %}
-          {% for numer in range(5 - loop.index) %}
-          <span class="glyphicon glyphicon-star-empty"></span>
-          {% endfor %}
-          {% endif %}
-          {% endfor %}
-        </div>
-      </div>
+{% if shelfmark_loader %}
+<div class="discover js-shelfmark-contextual-shell">
+  <div
+    id="{{ shelfmark_loader.container_id }}"
+    class="shelfmark-contextual-async js-shelfmark-contextual-async"
+    data-initial-url="{{ shelfmark_loader.initial_url }}"
+    data-failure-message="{{ shelfmark_loader.failure_message }}"
+    data-load-more-failure-message="{{ shelfmark_loader.load_more_failure_message }}"
+  >
+    <div class="shelfmark-contextual-async__placeholder">
+      <span class="glyphicon glyphicon-refresh shelfmark-contextual-async__spinner" aria-hidden="true"></span>
+      <span>{{ shelfmark_loader.loading_message }}</span>
     </div>
-    {% endfor %}
   </div>
-
-  <a href="{{author.link}}" class="author-link" target="_blank" rel="noopener">
-    <img src="{{ url_for('static', filename='img/goodreads.svg') }}" alt="Goodreads">
-  </a>
 </div>
 {% endif %}
 {% endblock %}
@@ -172,4 +139,7 @@
 
 {% block js %}
 {{ shelfmark_ui.render_shelfmark_scripts(shelfmark) }}
+{% if shelfmark_loader %}
+<script src="{{ url_for('static', filename='js/shelfmark_contextual_async.js') }}"></script>
+{% endif %}
 {% endblock %}

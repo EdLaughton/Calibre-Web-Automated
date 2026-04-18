@@ -1,7 +1,8 @@
 {% import 'image.html' as image %}
 {% import 'shelfmark_external_macros.html' as shelfmark_ui with context %}
 {% extends "layout.html" %}
-{% set shelfmark = shelfmark_section if shelfmark_section is defined and shelfmark_section else None %}
+{% set shelfmark = shelfmark_runtime if shelfmark_runtime is defined and shelfmark_runtime else None %}
+{% set shelfmark_loader = shelfmark_loader if shelfmark_loader is defined and shelfmark_loader else None %}
 {% block header %}
 <style>
 .shelf-actions {
@@ -42,7 +43,7 @@
     }
 }
 </style>
-{% if shelfmark and page == "series" %}
+{% if shelfmark_loader and page == "series" %}
 <link href="{{ url_for('static', filename='css/shelfmark_search.css') }}" rel="stylesheet" media="screen">
 {% endif %}
 {% endblock %}
@@ -262,9 +263,20 @@
   {% endif %}
   </div>
 </div>
-{% if shelfmark and page == "series" %}
-<div class="discover">
-  {{ shelfmark_ui.render_shelfmark_section(shelfmark) }}
+{% if shelfmark_loader and page == "series" %}
+<div class="discover js-shelfmark-contextual-shell">
+  <div
+    id="{{ shelfmark_loader.container_id }}"
+    class="shelfmark-contextual-async js-shelfmark-contextual-async"
+    data-initial-url="{{ shelfmark_loader.initial_url }}"
+    data-failure-message="{{ shelfmark_loader.failure_message }}"
+    data-load-more-failure-message="{{ shelfmark_loader.load_more_failure_message }}"
+  >
+    <div class="shelfmark-contextual-async__placeholder">
+      <span class="glyphicon glyphicon-refresh shelfmark-contextual-async__spinner" aria-hidden="true"></span>
+      <span>{{ shelfmark_loader.loading_message }}</span>
+    </div>
+  </div>
 </div>
 {% endif %}
 {% endblock %}
@@ -278,6 +290,9 @@
 {% block js %}
 {% if shelfmark and page == "series" %}
 {{ shelfmark_ui.render_shelfmark_scripts(shelfmark) }}
+{% endif %}
+{% if shelfmark_loader and page == "series" %}
+<script src="{{ url_for('static', filename='js/shelfmark_contextual_async.js') }}"></script>
 {% endif %}
 {{ super() }}
 {% if page == 'magicshelf' %}
