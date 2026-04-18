@@ -50,6 +50,14 @@
         {% endfor %}
       </p>
     {% endif %}
+    {% if result.recommendation_reason_label %}
+      <p class="shelfmark-result-card__recommendation">
+        <span class="shelfmark-result-card__recommendation-label">{{ result.recommendation_reason_label }}</span>
+        {% if result.recommendation_reason_detail %}
+          <span class="shelfmark-result-card__recommendation-detail">{{ result.recommendation_reason_detail }}</span>
+        {% endif %}
+      </p>
+    {% endif %}
     {% if result.secondary_series_note %}
       <p class="shelfmark-result-card__series-note text-muted">{{ result.secondary_series_note }}</p>
     {% endif %}

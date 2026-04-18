@@ -52,12 +52,15 @@ from .tasks_status import render_task_status
 from .usermanagement import user_login_required
 from .string_helper import strip_whitespaces
 from .author_profile import build_author_profile
+from .services.requests_workspace import build_requests_workspace
 from .shelfmark_ui import (
     build_author_contextual_shelfmark_section_page,
     build_contextual_shelfmark_loader,
     build_contextual_shelfmark_runtime,
     build_series_contextual_shelfmark_section_page,
     current_request_path,
+    render_contextual_shelfmark_append,
+    render_contextual_shelfmark_partial,
 )
 
 # CWA Imports
@@ -628,7 +631,7 @@ def render_author_books(page, author_id, order):
         author = calibre_db.session.query(db.Authors).get(author_id)
     author_name = author.name.replace('|', ',')
 
-    author_profile = build_author_profile(author_name)
+    author_profile = build_author_profile(author_name, library_books=getattr(author, "books", None))
     shelfmark_runtime = build_contextual_shelfmark_runtime()
     shelfmark_loader = (
         build_contextual_shelfmark_loader(
@@ -725,26 +728,39 @@ def render_series_books(page, book_id, order):
                                  shelfmark_runtime=shelfmark_runtime, shelfmark_loader=shelfmark_loader)
 
 
+@web.route("/requests")
+@login_required_if_no_ano
+def requests_workspace():
+    return _render_requests_workspace("home")
+
+
+@web.route("/requests/<view_name>")
+@login_required_if_no_ano
+def requests_workspace_view(view_name):
+    return _render_requests_workspace(view_name)
+
+
+def _render_requests_workspace(view_name):
+    requests_workspace_view_model = build_requests_workspace(
+        view_name,
+        state_url=current_request_path(include_transient=False),
+    ).to_template_dict()
+    shelfmark_runtime = build_contextual_shelfmark_runtime()
+    return render_title_template(
+        "requests.html",
+        title=_("Requests"),
+        page="requests",
+        requests_workspace=requests_workspace_view_model,
+        shelfmark_runtime=shelfmark_runtime,
+    )
+
+
 def _requested_contextual_offset():
     try:
         offset = int(request.args.get("offset", "0"))
     except (TypeError, ValueError):
         return 0
     return offset if offset > 0 else 0
-
-
-def _render_contextual_shelfmark_partial(section):
-    if not section:
-        return ("", 200)
-    return render_template("shelfmark_contextual_async_section.html", shelfmark_section=section)
-
-
-def _render_contextual_shelfmark_append(section):
-    if section and not section.get("available"):
-        return ("", 503)
-    if not section or not (section.get("results") or section.get("load_more_url")):
-        return ("", 200)
-    return render_template("shelfmark_contextual_async_append.html", shelfmark_section=section)
 
 
 @web.route("/author/<int:author_id>/shelfmark")

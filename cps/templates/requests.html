@@ -1,0 +1,51 @@
+{% import 'requests_workspace_macros.html' as requests_ui with context %}
+{% import 'shelfmark_external_macros.html' as shelfmark_ui with context %}
+{% extends "layout.html" %}
+{% set shelfmark = shelfmark_runtime if shelfmark_runtime is defined and shelfmark_runtime else None %}
+{% block header %}
+<link href="{{ url_for('static', filename='css/shelfmark_search.css') }}" rel="stylesheet" media="screen">
+<link href="{{ url_for('static', filename='css/requests_workspace.css') }}" rel="stylesheet" media="screen">
+{% endblock %}
+
+{% block body %}
+<div class="requests-workspace-page">
+  <header class="requests-workspace-hero">
+    <div class="requests-workspace-hero__copy">
+      <p class="requests-workspace-hero__eyebrow">{{ _('Discovery and acquisition') }}</p>
+      <h1 class="requests-workspace-hero__title">{{ requests_workspace.title }}</h1>
+      <p class="requests-workspace-hero__subtitle">{{ requests_workspace.subtitle }}</p>
+    </div>
+  </header>
+
+  <nav class="requests-workspace-tabs" aria-label="{{ _('Requests views') }}">
+    {% for tab in requests_workspace.tabs %}
+      <a
+        class="requests-workspace-tabs__link{% if tab.active %} is-active{% endif %}"
+        href="{{ tab.url }}"
+      >
+        {{ tab.label }}
+      </a>
+    {% endfor %}
+  </nav>
+
+  {% if requests_workspace.message %}
+    <div class="alert alert-info requests-workspace-message">
+      {{ requests_workspace.message }}
+    </div>
+  {% endif %}
+
+  <div class="requests-workspace-sections">
+    {% for section in requests_workspace.sections %}
+      {{ requests_ui.render_requests_section(section, shelfmark.preferred_release_settings if shelfmark and shelfmark.preferred_release_settings is defined else {}) }}
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block modal %}
+{{ shelfmark_ui.render_shelfmark_modal(shelfmark) }}
+{% endblock %}
+
+{% block js %}
+{{ shelfmark_ui.render_shelfmark_scripts(shelfmark) }}
+{% endblock %}

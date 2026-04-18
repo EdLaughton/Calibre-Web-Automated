@@ -21,7 +21,11 @@ def author_profile_module(monkeypatch):
     logger_module = types.ModuleType("cps.logger")
     logger_module.create = lambda: types.SimpleNamespace(warning=lambda *args, **kwargs: None)
 
-    hardcover_module = types.SimpleNamespace(get_author_profile=lambda author_name: None)
+    hardcover_module = types.SimpleNamespace(
+        get_author_profile=lambda author_name: None,
+        get_author_profile_by_id=lambda author_id: None,
+        get_hardcover_client=lambda load_privacy=False: None,
+    )
     goodreads_module = types.SimpleNamespace(get_author_info=lambda author_name: None)
     services_module = types.ModuleType("cps.services")
     services_module.hardcover = hardcover_module
@@ -90,3 +94,75 @@ def test_build_author_profile_falls_back_to_goodreads_when_hardcover_has_nothing
     assert profile.source_label == "Goodreads"
     assert profile.image_url == "https://images.gr-assets.com/profile.jpg"
     assert profile.safe_about == "<p>Fallback bio.</p>"
+
+
+def test_build_author_profile_tries_display_order_variant_for_hardcover(author_profile_module):
+    module, hardcover_module, goodreads_module = author_profile_module
+    seen = []
+
+    def fake_lookup(author_name):
+        seen.append(author_name)
+        if author_name == "Terry Pratchett":
+            return types.SimpleNamespace(
+                name=author_name,
+                image_url="https://assets.hardcover.app/author/profile.jpg",
+                safe_about="<p>Discworld creator.</p>",
+                link="https://hardcover.app/authors/terry-pratchett",
+            )
+        return None
+
+    hardcover_module.get_author_profile = fake_lookup
+    goodreads_module.get_author_info = lambda author_name: None
+
+    profile = module.build_author_profile("Pratchett, Terry")
+
+    assert profile is not None
+    assert profile.source_label == "Hardcover"
+    assert profile.name == "Terry Pratchett"
+    assert seen == ["Pratchett, Terry", "Terry Pratchett"]
+
+
+def test_build_author_profile_prefers_local_book_hardcover_ids_to_resolve_author(author_profile_module):
+    module, hardcover_module, goodreads_module = author_profile_module
+
+    class DummyIdentifier:
+        def __init__(self, type_name, value):
+            self.type = type_name
+            self.val = value
+
+    class DummyBook:
+        def __init__(self, identifiers):
+            self.identifiers = identifiers
+
+    hardcover_module.get_hardcover_client = lambda load_privacy=False: types.SimpleNamespace(
+        list_books_by_ids=lambda ids: [
+            {
+                "id": 101,
+                "title": "Mort",
+                "contributions": [
+                    {"author": {"id": 37, "name": "Terry Pratchett"}},
+                ],
+            }
+        ]
+    )
+    hardcover_module.get_author_profile_by_id = lambda author_id: types.SimpleNamespace(
+        name="Terry Pratchett",
+        image_url="https://assets.hardcover.app/author/profile.jpg",
+        safe_about="<p>Discworld creator.</p>",
+        link="https://hardcover.app/authors/terry-pratchett",
+    )
+    hardcover_module.get_author_profile = lambda author_name: None
+    goodreads_module.get_author_info = lambda author_name: None
+
+    profile = module.build_author_profile(
+        "Pratchett, Terry",
+        library_books=[
+            DummyBook([DummyIdentifier("hardcover-id", "101")]),
+            DummyBook([DummyIdentifier("isbn", "9780552138901")]),
+        ],
+    )
+
+    assert profile is not None
+    assert profile.source_label == "Hardcover"
+    assert profile.name == "Terry Pratchett"
+    assert profile.image_url == "https://assets.hardcover.app/author/profile.jpg"

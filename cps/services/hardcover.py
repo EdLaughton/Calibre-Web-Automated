@@ -16,12 +16,13 @@ This module provides a client for interacting with Hardcover's GraphQL API to:
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from os import getenv
 import requests
 
-from .. import logger
+from .. import config, logger
 from ..clean_html import clean_string
+from ..cw_login import current_user
 
 log = logger.create()
 
@@ -162,7 +163,150 @@ BOOK_BY_ID_QUERY = """
                 }
             }
         }
-    }"""
+}"""
+
+
+BOOK_LIST_FRAGMENT = """
+    fragment hardcoverBookListFields on books {
+        id
+        title
+        subtitle
+        slug
+        description
+        release_date
+        pages
+        rating
+        ratings_count
+        reviews_count
+        users_count
+        editions_count
+        lists_count
+        cached_image
+        contributions(
+            where: {contribution: {_in: ["Author", "author"]}}
+            order_by: {id: asc}
+        ) {
+            contribution
+            author {
+                id
+                name
+                slug
+            }
+        }
+        featured_book_series {
+            featured
+            position
+            series {
+                name
+                slug
+                primary_books_count
+            }
+        }
+        book_series {
+            featured
+            position
+            series {
+                name
+                slug
+                primary_books_count
+            }
+        }
+        default_cover_edition {
+            id
+            title
+            subtitle
+            release_date
+            pages
+            edition_format
+            physical_format
+            audio_seconds
+            cached_image
+        }
+        default_ebook_edition {
+            id
+            title
+            subtitle
+            release_date
+            pages
+            edition_format
+            physical_format
+            audio_seconds
+            cached_image
+        }
+        default_physical_edition {
+            id
+            title
+            subtitle
+            release_date
+            pages
+            edition_format
+            physical_format
+            audio_seconds
+            cached_image
+        }
+        default_audio_edition {
+            id
+            title
+            subtitle
+            release_date
+            pages
+            edition_format
+            physical_format
+            audio_seconds
+            cached_image
+        }
+        taggings {
+            spoiler
+            tag {
+                tag
+                slug
+                tag_category {
+                    category
+                    slug
+                }
+            }
+        }
+    }
+"""
+
+
+BOOKS_BY_IDS_QUERY = (
+    """
+    query HardcoverBooksByIds($ids: [Int!]) {
+        books(where: {id: {_in: $ids}}) {
+            ...hardcoverBookListFields
+        }
+    }
+"""
+    + BOOK_LIST_FRAGMENT
+)
+
+
+POPULAR_BOOKS_QUERY = (
+    """
+    query HardcoverPopularBooks($limit: Int!, $offset: Int!) {
+        books(
+            limit: $limit
+            offset: $offset
+            order_by: {users_count: desc, ratings_count: desc, rating: desc}
+            where: {canonical: {_eq: true}}
+        ) {
+            ...hardcoverBookListFields
+        }
+    }
+"""
+    + BOOK_LIST_FRAGMENT
+)
+
+
+TRENDING_BOOK_IDS_QUERY = """
+    query HardcoverTrendingBooks($from: date!, $to: date!, $limit: Int!, $offset: Int!) {
+        books_trending(from: $from, to: $to, limit: $limit, offset: $offset) {
+            error
+            ids
+        }
+    }
+"""
 
 
 def escape_markdown(text):
@@ -305,6 +449,47 @@ class HardcoverClient:
             return ""
         return " ".join(str(value).strip().lower().replace("|", ",").split())
 
+    @staticmethod
+    def _resolve_cached_image_url(value) -> str | None:
+        if not value:
+            return None
+        if isinstance(value, str):
+            candidate = value.strip()
+            return candidate or None
+        if isinstance(value, dict):
+            for key in ("url", "secure_url", "original_url", "src"):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+        return None
+
+    @classmethod
+    def _build_author_profile_from_payload(
+        cls,
+        author: dict | None,
+        *,
+        fallback_name: str | None = None,
+    ) -> HardcoverAuthorProfile | None:
+        if not isinstance(author, dict):
+            return None
+        author_id = author.get("id")
+        resolved_name = author.get("name") or fallback_name
+        if author_id in (None, "") or not resolved_name:
+            return None
+        bio = author.get("bio")
+        image_url = cls._resolve_cached_image_url(author.get("cached_image"))
+        slug = author.get("slug")
+        safe_about = clean_string(bio) if bio else None
+        return HardcoverAuthorProfile(
+            id=int(author_id),
+            name=resolved_name,
+            slug=slug,
+            bio=bio,
+            safe_about=safe_about,
+            image_url=image_url,
+            link=f"https://hardcover.app/authors/{slug}" if slug else None,
+        )
+
     def _search_author_documents(self, author_name: str) -> list[dict]:
         response = self.execute(AUTHOR_SEARCH_QUERY, {"query": author_name})
         raw_results = response.get("search", {}).get("results", [])
@@ -358,33 +543,73 @@ class HardcoverClient:
         author = response.get("authors_by_pk")
         return author if isinstance(author, dict) else None
 
+    def get_author_profile_by_id(self, author_id: int | str | None) -> HardcoverAuthorProfile | None:
+        author = self.get_author_by_id(author_id)
+        return self._build_author_profile_from_payload(author)
+
+    def list_books_by_ids(self, book_ids: list[int] | tuple[int, ...]) -> list[dict]:
+        normalized_ids = [int(book_id) for book_id in (book_ids or []) if str(book_id).strip()]
+        if not normalized_ids:
+            return []
+        response = self.execute(BOOKS_BY_IDS_QUERY, {"ids": normalized_ids})
+        books = response.get("books")
+        if not isinstance(books, list):
+            return []
+        order = {book_id: index for index, book_id in enumerate(normalized_ids)}
+        normalized_books = [book for book in books if isinstance(book, dict)]
+        normalized_books.sort(key=lambda book: order.get(int(book.get("id") or 0), len(order)))
+        return normalized_books
+
+    def list_popular_books(self, *, limit: int = 12, offset: int = 0) -> list[dict]:
+        response = self.execute(
+            POPULAR_BOOKS_QUERY,
+            {
+                "limit": max(1, int(limit or 12)),
+                "offset": max(0, int(offset or 0)),
+            },
+        )
+        books = response.get("books")
+        return [book for book in books if isinstance(book, dict)] if isinstance(books, list) else []
+
+    def list_trending_books(
+        self,
+        *,
+        limit: int = 12,
+        offset: int = 0,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> list[dict]:
+        window_end = to_date or date.today()
+        window_start = from_date or (window_end - timedelta(days=30))
+        response = self.execute(
+            TRENDING_BOOK_IDS_QUERY,
+            {
+                "from": window_start.isoformat(),
+                "to": window_end.isoformat(),
+                "limit": max(1, int(limit or 12)),
+                "offset": max(0, int(offset or 0)),
+            },
+        )
+        payload = response.get("books_trending") or {}
+        if not isinstance(payload, dict):
+            return []
+        if payload.get("error"):
+            raise Exception(f"GraphQL error: {payload['error']}")
+        ids = payload.get("ids") or []
+        normalized_ids = [int(book_id) for book_id in ids if str(book_id).strip()]
+        if not normalized_ids:
+            return []
+        return self.list_books_by_ids(normalized_ids)
+
     def find_author_profile(self, author_name: str) -> HardcoverAuthorProfile | None:
         document = self._select_author_document(author_name)
         if not document:
             return None
 
         author = self.get_author_by_id(document.get("id")) or document
-        bio = author.get("bio") if isinstance(author, dict) else None
-        cached_image = author.get("cached_image") if isinstance(author, dict) else None
-        if isinstance(cached_image, dict):
-            image_url = cached_image.get("url")
-        else:
-            image_url = (
-                self._safe_get(author, "image", "url", default=None)
-                if isinstance(author, dict)
-                else None
-            )
-        slug = author.get("slug") if isinstance(author, dict) else None
-        resolved_name = author.get("name") if isinstance(author, dict) else None
-        safe_about = clean_string(bio) if bio else None
-        return HardcoverAuthorProfile(
-            id=int(author.get("id") or document.get("id")),
-            name=resolved_name or document.get("name") or author_name,
-            slug=slug,
-            bio=bio,
-            safe_about=safe_about,
-            image_url=image_url,
-            link=f"https://hardcover.app/authors/{slug}" if slug else None,
+        return self._build_author_profile_from_payload(
+            author if isinstance(author, dict) else document,
+            fallback_name=document.get("name") or author_name,
         )
 
     # TODO Add option for autocreate if missing books instead of forcing it.
@@ -791,4 +1016,36 @@ def get_author_profile(author_name: str) -> HardcoverAuthorProfile | None:
         return None
     except Exception as exc:
         log.warning("Hardcover author profile lookup failed for %s: %s", author_name, exc)
+        return None
+
+
+def get_author_profile_by_id(author_id: int | str | None) -> HardcoverAuthorProfile | None:
+    if author_id in (None, ""):
+        return None
+    client = get_hardcover_client(load_privacy=False)
+    if client is None:
+        return None
+    try:
+        return client.get_author_profile_by_id(author_id)
+    except MissingHardcoverToken:
+        return None
+    except Exception as exc:
+        log.warning("Hardcover author profile lookup failed for author_id=%s: %s", author_id, exc)
+        return None
+
+
+def get_hardcover_client(*, load_privacy: bool = False) -> HardcoverClient | None:
+    token = (
+        getattr(current_user, "hardcover_token", None)
+        or getattr(config, "config_hardcover_token", None)
+        or getenv("HARDCOVER_TOKEN")
+    )
+    if not token:
+        return None
+    try:
+        return HardcoverClient(token.replace("Bearer ", ""), load_privacy=load_privacy)
+    except MissingHardcoverToken:
+        return None
+    except Exception as exc:
+        log.warning("Hardcover client initialization failed: %s", exc)
         return None
