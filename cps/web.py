@@ -51,7 +51,14 @@ from .services.worker import WorkerThread
 from .tasks_status import render_task_status
 from .usermanagement import user_login_required
 from .string_helper import strip_whitespaces
-from .shelfmark_ui import build_contextual_shelfmark_section
+from .author_profile import build_author_profile
+from .shelfmark_ui import (
+    build_author_contextual_shelfmark_section_page,
+    build_contextual_shelfmark_loader,
+    build_contextual_shelfmark_runtime,
+    build_series_contextual_shelfmark_section_page,
+    current_request_path,
+)
 
 # CWA Imports
 import sqlite3
@@ -121,8 +128,10 @@ def add_security_headers(resp):
     if request.endpoint == "web.read_book":
         csp += " blob: "
     csp += "; img-src 'self'"
-    if request.path.startswith("/author/") and config.config_use_goodreads:
-        csp += " images.gr-assets.com i.gr-assets.com s.gr-assets.com"
+    if request.path.startswith("/author/"):
+        csp += " https:"
+        if config.config_use_goodreads:
+            csp += " images.gr-assets.com i.gr-assets.com s.gr-assets.com"
     if request.endpoint == "admin.hardcover_review_matches":
         csp += " https:"
     csp += " data:"
@@ -619,23 +628,24 @@ def render_author_books(page, author_id, order):
         author = calibre_db.session.query(db.Authors).get(author_id)
     author_name = author.name.replace('|', ',')
 
-    author_info = None
-    other_books = []
-    if services.goodreads_support and config.config_use_goodreads:
-        author_info = services.goodreads_support.get_author_info(author_name)
-        book_entries = [entry.Books for entry in entries]
-        other_books = services.goodreads_support.get_other_books(author_info, book_entries)
-    shelfmark_section = build_contextual_shelfmark_section(
-        author_name,
-        context_type="author",
-        context_value=author_name,
-        section_title=_("Shelfmark"),
-        section_subtitle=_("Missing requestable books by this author from Shelfmark"),
+    author_profile = build_author_profile(author_name)
+    shelfmark_runtime = build_contextual_shelfmark_runtime()
+    shelfmark_loader = (
+        build_contextual_shelfmark_loader(
+            url_for(
+                "web.author_shelfmark_section",
+                author_id=author_id,
+                return_to=current_request_path(include_transient=False),
+            ),
+            context_type="author",
+        )
+        if shelfmark_runtime.get("enabled")
+        else None
     )
     return render_title_template('author.html', entries=entries, pagination=pagination, id=author_id,
-                                 title=_("Author: %(name)s", name=author_name), author=author_info,
-                                 other_books=other_books, page="author", order=order[1],
-                                 shelfmark_section=shelfmark_section)
+                                 title=_("Author: %(name)s", name=author_name), author_profile=author_profile,
+                                 page="author", order=order[1], shelfmark_runtime=shelfmark_runtime,
+                                 shelfmark_loader=shelfmark_loader)
 
 
 def render_publisher_books(page, book_id, order):
@@ -697,16 +707,92 @@ def render_series_books(page, book_id, order):
             series_name = series_name.name
         else:
             abort(404)
-    shelfmark_section = build_contextual_shelfmark_section(
-        series_name,
-        context_type="series",
-        context_value=series_name,
-        section_title=_("Shelfmark"),
-        section_subtitle=_("Missing requestable books for this series from Shelfmark"),
+    shelfmark_runtime = build_contextual_shelfmark_runtime()
+    shelfmark_loader = (
+        build_contextual_shelfmark_loader(
+            url_for(
+                "web.series_shelfmark_section",
+                series_id=book_id,
+                return_to=current_request_path(include_transient=False),
+            ),
+            context_type="series",
+        )
+        if shelfmark_runtime.get("enabled")
+        else None
     )
     return render_title_template('index.html', random=random, pagination=pagination, entries=entries, id=book_id,
                                  title=_("Series: %(serie)s", serie=series_name), page="series", order=order[1],
-                                 shelfmark_section=shelfmark_section)
+                                 shelfmark_runtime=shelfmark_runtime, shelfmark_loader=shelfmark_loader)
+
+
+def _requested_contextual_offset():
+    try:
+        offset = int(request.args.get("offset", "0"))
+    except (TypeError, ValueError):
+        return 0
+    return offset if offset > 0 else 0
+
+
+def _render_contextual_shelfmark_partial(section):
+    if not section:
+        return ("", 200)
+    return render_template("shelfmark_contextual_async_section.html", shelfmark_section=section)
+
+
+def _render_contextual_shelfmark_append(section):
+    if section and not section.get("available"):
+        return ("", 503)
+    if not section or not (section.get("results") or section.get("load_more_url")):
+        return ("", 200)
+    return render_template("shelfmark_contextual_async_append.html", shelfmark_section=section)
+
+
+@web.route("/author/<int:author_id>/shelfmark")
+@login_required_if_no_ano
+def author_shelfmark_section(author_id):
+    if sqlalchemy_version2:
+        author = calibre_db.session.get(db.Authors, author_id)
+    else:
+        author = calibre_db.session.query(db.Authors).get(author_id)
+    if not author:
+        abort(404)
+
+    author_name = author.name.replace('|', ',')
+    offset = _requested_contextual_offset()
+    state_url = request.args.get("return_to")
+    section = build_author_contextual_shelfmark_section_page(
+        author_name,
+        author_id=author_id,
+        state_url=state_url,
+        offset=offset,
+    )
+    if request.args.get("append") == "1":
+        return _render_contextual_shelfmark_append(section)
+    return _render_contextual_shelfmark_partial(section)
+
+
+@web.route("/series/<int:series_id>/shelfmark")
+@login_required_if_no_ano
+def series_shelfmark_section(series_id):
+    if str(series_id) == "-1":
+        series_name = _("None")
+    else:
+        series = calibre_db.session.query(db.Series).filter(db.Series.id == series_id).first()
+        if not series:
+            abort(404)
+        series_name = series.name
+
+    offset = _requested_contextual_offset()
+    state_url = request.args.get("return_to")
+    section = build_series_contextual_shelfmark_section_page(
+        series_name,
+        series_id=series_id,
+        state_url=state_url,
+        offset=offset,
+    )
+    if request.args.get("append") == "1":
+        return _render_contextual_shelfmark_append(section)
+    return _render_contextual_shelfmark_partial(section)
 
 
 def render_ratings_books(page, book_id, order):

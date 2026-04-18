@@ -15,10 +15,13 @@ This module provides a client for interacting with Hardcover's GraphQL API to:
 - Update book status (Want to Read, Reading, Read)
 """
 
+from dataclasses import dataclass
 from datetime import datetime
+from os import getenv
 import requests
 
 from .. import logger
+from ..clean_html import clean_string
 
 log = logger.create()
 
@@ -184,6 +187,41 @@ class MissingHardcoverToken(Exception):
     pass
 
 
+@dataclass(frozen=True)
+class HardcoverAuthorProfile:
+    id: int
+    name: str
+    slug: str | None = None
+    bio: str | None = None
+    safe_about: str | None = None
+    image_url: str | None = None
+    link: str | None = None
+
+
+AUTHOR_SEARCH_QUERY = """
+    query SearchAuthors($query: String!) {
+        search(query: $query, query_type: "Author", per_page: 5) {
+            results
+        }
+    }
+"""
+
+
+AUTHOR_BY_ID_QUERY = """
+    query HardcoverAuthorById($id: Int!) {
+        authors_by_pk(id: $id) {
+            id
+            name
+            slug
+            bio
+            cached_image {
+                url
+            }
+        }
+    }
+"""
+
+
 class HardcoverClient:
     def __init__(self, token: str, *, load_privacy: bool = True):
         if not token:
@@ -260,6 +298,94 @@ class HardcoverClient:
         response = self.execute(BOOK_BY_ID_QUERY, {"id": int(hardcover_id)})
         book = response.get("books_by_pk")
         return book if isinstance(book, dict) else None
+
+    @staticmethod
+    def _normalize_author_name(value: str | None) -> str:
+        if not value:
+            return ""
+        return " ".join(str(value).strip().lower().replace("|", ",").split())
+
+    def _search_author_documents(self, author_name: str) -> list[dict]:
+        response = self.execute(AUTHOR_SEARCH_QUERY, {"query": author_name})
+        raw_results = response.get("search", {}).get("results", [])
+        if isinstance(raw_results, str):
+            import json as _json
+            try:
+                raw_results = _json.loads(raw_results)
+            except Exception:
+                raw_results = []
+        hits = raw_results.get("hits", []) if isinstance(raw_results, dict) else []
+        return [
+            hit.get("document")
+            for hit in hits
+            if isinstance(hit, dict) and isinstance(hit.get("document"), dict)
+        ]
+
+    def _select_author_document(self, author_name: str) -> dict | None:
+        normalized_query = self._normalize_author_name(author_name)
+        documents = self._search_author_documents(author_name)
+        if not documents:
+            return None
+
+        exact_match = next(
+            (
+                document
+                for document in documents
+                if self._normalize_author_name(document.get("name")) == normalized_query
+            ),
+            None,
+        )
+        if exact_match:
+            return exact_match
+
+        token_match = next(
+            (
+                document
+                for document in documents
+                if normalized_query and normalized_query in self._normalize_author_name(document.get("name"))
+            ),
+            None,
+        )
+        if token_match:
+            return token_match
+
+        return documents[0]
+
+    def get_author_by_id(self, author_id: int | str | None) -> dict | None:
+        if author_id in (None, ""):
+            return None
+        response = self.execute(AUTHOR_BY_ID_QUERY, {"id": int(author_id)})
+        author = response.get("authors_by_pk")
+        return author if isinstance(author, dict) else None
+
+    def find_author_profile(self, author_name: str) -> HardcoverAuthorProfile | None:
+        document = self._select_author_document(author_name)
+        if not document:
+            return None
+
+        author = self.get_author_by_id(document.get("id")) or document
+        bio = author.get("bio") if isinstance(author, dict) else None
+        cached_image = author.get("cached_image") if isinstance(author, dict) else None
+        if isinstance(cached_image, dict):
+            image_url = cached_image.get("url")
+        else:
+            image_url = (
+                self._safe_get(author, "image", "url", default=None)
+                if isinstance(author, dict)
+                else None
+            )
+        slug = author.get("slug") if isinstance(author, dict) else None
+        resolved_name = author.get("name") if isinstance(author, dict) else None
+        safe_about = clean_string(bio) if bio else None
+        return HardcoverAuthorProfile(
+            id=int(author.get("id") or document.get("id")),
+            name=resolved_name or document.get("name") or author_name,
+            slug=slug,
+            bio=bio,
+            safe_about=safe_about,
+            image_url=image_url,
+            link=f"https://hardcover.app/authors/{slug}" if slug else None,
+        )
 
     # TODO Add option for autocreate if missing books instead of forcing it.
     def update_reading_progress(self, identifiers, progress_percent):
@@ -647,3 +773,22 @@ class HardcoverClient:
         if "errors" in result:
             raise Exception(f"GraphQL error: {result['errors']}")
         return result.get("data", {})
+
+
+def get_author_profile(author_name: str) -> HardcoverAuthorProfile | None:
+    token = (
+        getattr(current_user, "hardcover_token", None)
+        or getattr(config, "config_hardcover_token", None)
+        or getenv("HARDCOVER_TOKEN")
+    )
+    if not token or not author_name:
+        return None
+
+    try:
+        client = HardcoverClient(token.replace("Bearer ", ""), load_privacy=False)
+        return client.find_author_profile(author_name)
+    except MissingHardcoverToken:
+        return None
+    except Exception as exc:
+        log.warning("Hardcover author profile lookup failed for %s: %s", author_name, exc)
+        return None

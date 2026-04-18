@@ -112,6 +112,22 @@
 {%- endmacro %}
 
 
+{% macro render_contextual_load_more_control(shelfmark) -%}
+  {% if shelfmark and shelfmark.load_more_url %}
+    <div class="shelfmark-contextual-load-more js-shelfmark-contextual-load-more-wrap">
+      <button
+        type="button"
+        class="btn btn-default btn-sm shelfmark-contextual-load-more__button js-shelfmark-contextual-load-more"
+        data-load-url="{{ shelfmark.load_more_url }}"
+      >
+        {{ _('Load more') }}
+      </button>
+      <p class="shelfmark-contextual-load-more__message js-shelfmark-contextual-load-more-message is-hidden"></p>
+    </div>
+  {% endif %}
+{%- endmacro %}
+
+
 {% macro render_shelfmark_section(shelfmark) -%}
   {% if not shelfmark or not shelfmark.enabled %}
     {# no-op #}
@@ -213,6 +229,9 @@
           <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ shelfmark.results[0].shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
         {% endif %}
         {{ render_shelfmark_results_list(shelfmark, interactive_shell=is_search) }}
+        {% if not is_search %}
+          {{ render_contextual_load_more_control(shelfmark) }}
+        {% endif %}
         {% if is_search and has_page_shell %}
           {{ render_shelfmark_pagination(
             shelfmark,

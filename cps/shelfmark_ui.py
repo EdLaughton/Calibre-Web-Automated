@@ -16,11 +16,14 @@ from .services.shelfmark_search import (
     DEFAULT_SHELFMARK_SERIES_FILTER,
     DEFAULT_SHELFMARK_SORT,
     fetch_shelfmark_detail,
+    get_shelfmark_client_config,
     get_shelfmark_preferred_release_settings,
     result_matches_shelfmark_filters,
     search_shelfmark_contextual_results,
     search_shelfmark_results,
 )
+
+DEFAULT_CONTEXTUAL_ASYNC_BATCH_SIZE = DEFAULT_SHELFMARK_CONTEXTUAL_LIMIT
 
 
 def search_page_has_shell(section):
@@ -307,19 +310,75 @@ def build_search_page_shelfmark_section(query, **kwargs):
     return apply_shelfmark_render_state(section)
 
 
-def build_contextual_shelfmark_section(
+def shelfmark_contextual_enabled():
+    return bool(get_shelfmark_client_config().enabled)
+
+
+def build_contextual_shelfmark_runtime():
+    enabled = shelfmark_contextual_enabled()
+    return {
+        "enabled": enabled,
+        "render_modal": enabled,
+        "render_scripts": enabled,
+        "state_url": current_request_path(include_transient=False),
+    }
+
+
+def build_contextual_shelfmark_loader(initial_url, *, context_type):
+    if not initial_url:
+        return None
+    return {
+        "context_type": context_type,
+        "container_id": f"shelfmark-contextual-{context_type}",
+        "initial_url": initial_url,
+        "loading_message": _("Loading Shelfmark results…"),
+        "failure_message": _("Shelfmark is unavailable right now."),
+        "load_more_failure_message": _("Could not load more Shelfmark results right now."),
+    }
+
+
+def _slice_contextual_section_results(section, *, query, offset, limit):
+    results = list(section.get("results") or [])
+    batch_results = results[offset:offset + limit]
+    section["results"] = batch_results
+    section["page"] = 1
+    section["page_size"] = limit
+    section["page_result_count"] = len(batch_results)
+    section["offset"] = offset
+    section["variant"] = "contextual"
+    section["has_page_shell"] = bool(batch_results)
+    section["render_modal"] = False
+    section["render_scripts"] = False
+    decorate_shelfmark_result_rows(
+        section,
+        query=query,
+        enable_progressive_enrichment=False,
+    )
+    for index, result in enumerate(section.get("results") or []):
+        result["row_index"] = offset + index
+    return section
+
+
+def build_contextual_shelfmark_section_page(
     query,
     *,
     context_type,
     context_value,
     section_title,
     section_subtitle,
-    limit=DEFAULT_SHELFMARK_CONTEXTUAL_LIMIT,
+    endpoint_name,
+    endpoint_kwargs,
+    state_url=None,
+    offset=0,
+    limit=DEFAULT_CONTEXTUAL_ASYNC_BATCH_SIZE,
     sort="relevance",
     empty_message=None,
 ):
+    contextual_limit = max(1, int(limit or DEFAULT_CONTEXTUAL_ASYNC_BATCH_SIZE))
+    requested_offset = max(0, int(offset or 0))
+    requested_total = requested_offset + contextual_limit
     preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
-    return_to = current_request_path(include_transient=False)
+    return_to = safe_local_return_url(state_url) or current_request_path(include_transient=False)
     section = search_shelfmark_contextual_results(
         query,
         detail_url_builder=lambda book: build_shelfmark_detail_url(
@@ -329,28 +388,67 @@ def build_contextual_shelfmark_section(
         ),
         context_type=context_type,
         context_value=context_value,
-        limit=limit,
+        limit=requested_total,
         sort=sort,
         filter_requestable=True,
         filter_has_cover=True,
         empty_message=empty_message,
     ).to_template_dict()
+
     if not section.get("enabled"):
         return None
-    if section.get("available") and not (section.get("results") or []):
-        return None
 
-    section["variant"] = "contextual"
     section["section_title"] = section_title
     section["section_subtitle"] = section_subtitle
     section["state_url"] = return_to
     section["preferred_release_settings"] = preferred_release
-    decorate_shelfmark_result_rows(
+    section = _slice_contextual_section_results(
         section,
         query=query,
-        enable_progressive_enrichment=False,
+        offset=requested_offset,
+        limit=contextual_limit,
     )
-    return apply_shelfmark_render_state(section)
+    remaining_results = requested_offset + len(section.get("results") or [])
+    has_more = bool(section.get("has_more"))
+    section["has_more_contextual"] = has_more
+    section["next_offset"] = remaining_results if has_more else None
+    section["load_more_url"] = (
+        url_for(endpoint_name, offset=remaining_results, append=1, return_to=return_to, **endpoint_kwargs)
+        if has_more
+        else None
+    )
+    if not section.get("available") and not section.get("message"):
+        section["message"] = _("Shelfmark is unavailable right now.")
+    return section
+
+
+def build_author_contextual_shelfmark_section_page(author_name, *, author_id, state_url=None, offset=0):
+    return build_contextual_shelfmark_section_page(
+        author_name,
+        context_type="author",
+        context_value=author_name,
+        section_title=_("Shelfmark"),
+        section_subtitle=_("Missing most popular requestable books by this author from Shelfmark"),
+        endpoint_name="web.author_shelfmark_section",
+        endpoint_kwargs={"author_id": author_id},
+        state_url=state_url,
+        offset=offset,
+        sort="popularity",
+    )
+
+
+def build_series_contextual_shelfmark_section_page(series_name, *, series_id, state_url=None, offset=0):
+    return build_contextual_shelfmark_section_page(
+        series_name,
+        context_type="series",
+        context_value=series_name,
+        section_title=_("Shelfmark"),
+        section_subtitle=_("Missing requestable books for this series from Shelfmark"),
+        endpoint_name="web.series_shelfmark_section",
+        endpoint_kwargs={"series_id": series_id},
+        state_url=state_url,
+        offset=offset,
+    )
 
 
 def build_shelfmark_row_response(result_view, *, preferred_release, requestable_only, has_cover_only):
