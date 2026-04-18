@@ -51,6 +51,7 @@ from .services.worker import WorkerThread
 from .tasks_status import render_task_status
 from .usermanagement import user_login_required
 from .string_helper import strip_whitespaces
+from .shelfmark_ui import build_contextual_shelfmark_section
 
 # CWA Imports
 import sqlite3
@@ -624,9 +625,17 @@ def render_author_books(page, author_id, order):
         author_info = services.goodreads_support.get_author_info(author_name)
         book_entries = [entry.Books for entry in entries]
         other_books = services.goodreads_support.get_other_books(author_info, book_entries)
+    shelfmark_section = build_contextual_shelfmark_section(
+        author_name,
+        context_type="author",
+        context_value=author_name,
+        section_title=_("Shelfmark"),
+        section_subtitle=_("Missing requestable books by this author from Shelfmark"),
+    )
     return render_title_template('author.html', entries=entries, pagination=pagination, id=author_id,
                                  title=_("Author: %(name)s", name=author_name), author=author_info,
-                                 other_books=other_books, page="author", order=order[1])
+                                 other_books=other_books, page="author", order=order[1],
+                                 shelfmark_section=shelfmark_section)
 
 
 def render_publisher_books(page, book_id, order):
@@ -688,8 +697,16 @@ def render_series_books(page, book_id, order):
             series_name = series_name.name
         else:
             abort(404)
+    shelfmark_section = build_contextual_shelfmark_section(
+        series_name,
+        context_type="series",
+        context_value=series_name,
+        section_title=_("Shelfmark"),
+        section_subtitle=_("Missing requestable books for this series from Shelfmark"),
+    )
     return render_title_template('index.html', random=random, pagination=pagination, entries=entries, id=book_id,
-                                 title=_("Series: %(serie)s", serie=series_name), page="series", order=order[1])
+                                 title=_("Series: %(serie)s", serie=series_name), page="series", order=order[1],
+                                 shelfmark_section=shelfmark_section)
 
 
 def render_ratings_books(page, book_id, order):

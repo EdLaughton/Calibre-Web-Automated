@@ -1803,6 +1803,193 @@ def test_search_results_default_to_requestable_with_covers_on_the_current_page(s
     assert section.results[1].progressive_filter_pending is True
 
 
+def test_contextual_series_results_fill_from_later_source_pages_and_exclude_in_library(shelfmark_module):
+    fake_client = mock.Mock()
+    source_books = {
+        "111": {
+            "provider": "hardcover",
+            "provider_id": "111",
+            "title": "Already Owned",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/hardcover_111?url=owned",
+            "series_name": "Discworld",
+            "series_position": 1,
+            "identifiers": {"hardcover-id": "111"},
+        },
+        "222": {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "The Amazing Maurice",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/hardcover_222?url=maurice",
+            "series_name": "Discworld",
+            "series_position": 28,
+            "identifiers": {"hardcover-id": "222"},
+        },
+    }
+    fake_client.search_books.side_effect = [
+        shelfmark_module.ShelfmarkSearchResponse(
+            books=(source_books["111"],),
+            page=1,
+            total_found=4,
+            has_more=True,
+        ),
+        shelfmark_module.ShelfmarkSearchResponse(
+            books=(source_books["222"],),
+            page=2,
+            total_found=4,
+            has_more=False,
+        ),
+    ]
+    fake_client.fetch_book.side_effect = lambda provider, provider_id: dict(source_books[provider_id])
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={"111": shelfmark_module.ShelfmarkLibraryMatch("111", 7, "Already Owned")},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={
+            "discworld": shelfmark_module.ShelfmarkOwnedSeries(
+                key="discworld",
+                series_name="Discworld",
+                book_count=2,
+                owned_positions=(1.0, 27.0),
+                max_position=27.0,
+                contiguous_position=27,
+            )
+        },
+    ):
+        section = shelfmark_module.search_shelfmark_contextual_results(
+            "discworld",
+            detail_url_builder=lambda _: "/external/discworld",
+            context_type="series",
+            context_value="Discworld",
+            limit=1,
+        )
+
+    assert [result.title for result in section.results] == ["The Amazing Maurice"]
+    assert fake_client.search_books.call_count == 2
+    assert section.results[0].already_in_library is False
+    assert section.results[0].series_context is not None
+    assert section.results[0].series_context.matched is True
+
+
+def test_contextual_author_results_require_requestable_matching_author(shelfmark_module):
+    fake_client = mock.Mock()
+    source_books = {
+        "222": {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "The Amazing Maurice",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/hardcover_222?url=maurice",
+            "identifiers": {"hardcover-id": "222"},
+        },
+        "333": {
+            "provider": "hardcover",
+            "provider_id": "333",
+            "title": "Shared Anthology",
+            "authors": ["Someone Else"],
+            "cover_url": "/api/covers/hardcover_333?url=anthology",
+            "identifiers": {"hardcover-id": "333"},
+        },
+        "444": {
+            "provider": "other",
+            "provider_id": "444",
+            "title": "No Hardcover Match",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/other_444?url=missing",
+        },
+    }
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=(source_books["222"], source_books["333"], source_books["444"]),
+        page=1,
+        total_found=3,
+        has_more=False,
+    )
+    fake_client.fetch_book.side_effect = lambda provider, provider_id: dict(source_books[provider_id])
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={},
+    ):
+        section = shelfmark_module.search_shelfmark_contextual_results(
+            "Terry Pratchett",
+            detail_url_builder=lambda _: "/external/pratchett",
+            context_type="author",
+            context_value="Pratchett, Terry",
+            limit=8,
+        )
+
+    assert [result.title for result in section.results] == ["The Amazing Maurice"]
+
+
+def test_contextual_results_report_unavailable_without_raising(shelfmark_module):
+    fake_client = mock.Mock()
+    fake_client.search_books.side_effect = shelfmark_module.ShelfmarkIntegrationError("search failed")
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ):
+        section = shelfmark_module.search_shelfmark_contextual_results(
+            "discworld",
+            detail_url_builder=lambda _: "/external/discworld",
+            context_type="series",
+            context_value="Discworld",
+            limit=4,
+        )
+
+    assert section.available is False
+    assert section.message == "search failed"
+
+
 def test_search_results_apply_requested_page_size_sort_and_shelfmark_totals(shelfmark_module):
     fake_client = mock.Mock()
     fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(

@@ -340,28 +340,9 @@ function createDom(options) {
 
 function createProgressiveDom() {
   const root = new FakeElement('div', { className: 'page-root shelfmark-search-page' });
-  const stateBlock = root.appendChild(new FakeElement('div', {
-    className: 'js-shelfmark-results-state',
-    dataset: {
-      totalAvailable: '9',
-      seriesFilter: 'owned',
-      filterHasCover: '1',
-      filterRequestable: '0'
-    }
-  }));
-  const statePrimary = stateBlock.appendChild(new FakeElement('p', {
-    className: 'js-shelfmark-results-state-primary',
-    textContent: '3 shown · 9 total on Shelfmark'
-  }));
-  const stateSecondary = stateBlock.appendChild(new FakeElement('p', {
-    className: 'js-shelfmark-results-state-secondary is-hidden'
-  }));
   const pageSummary = root.appendChild(new FakeElement('span', {
     className: 'js-shelfmark-page-summary',
     textContent: '3 shown on this page'
-  }));
-  const emptyState = root.appendChild(new FakeElement('div', {
-    className: 'js-shelfmark-progressive-empty-state is-hidden'
   }));
   const resultsList = root.appendChild(new FakeElement('div', {
     className: 'js-shelfmark-results-list',
@@ -370,7 +351,6 @@ function createProgressiveDom() {
       nextPage: '2',
       topUpUrl: '/search/external/shelfmark/topup?query=terry+pratchett',
       totalAvailable: '9',
-      seriesFilter: 'owned',
       filterHasCover: '1',
       filterRequestable: '0'
     }
@@ -405,10 +385,7 @@ function createProgressiveDom() {
   return {
     document: new FakeDocument(root, 'complete'),
     rows,
-    statePrimary,
-    stateSecondary,
     pageSummary,
-    emptyState,
     resultsList
   };
 }
@@ -419,22 +396,6 @@ function createDisplayPaginationDom(options) {
   const displayPage = String(config.displayPage || 1);
   const rowCount = config.rowCount || 166;
   const root = new FakeElement('div', { className: 'page-root shelfmark-search-page' });
-  const stateBlock = root.appendChild(new FakeElement('div', {
-    className: 'js-shelfmark-results-state',
-    dataset: {
-      totalAvailable: String(rowCount),
-      seriesFilter: 'all',
-      filterHasCover: '1',
-      filterRequestable: '0'
-    }
-  }));
-  const statePrimary = stateBlock.appendChild(new FakeElement('p', {
-    className: 'js-shelfmark-results-state-primary',
-    textContent: ''
-  }));
-  stateBlock.appendChild(new FakeElement('p', {
-    className: 'js-shelfmark-results-state-secondary is-hidden'
-  }));
   const pageSummary = root.appendChild(new FakeElement('span', {
     className: 'js-shelfmark-page-summary',
     textContent: ''
@@ -454,7 +415,6 @@ function createDisplayPaginationDom(options) {
       nextPage: '',
       topUpUrl: '',
       totalAvailable: String(rowCount),
-      seriesFilter: 'all',
       filterHasCover: '1',
       filterRequestable: '0'
     }
@@ -484,7 +444,6 @@ function createDisplayPaginationDom(options) {
     document: new FakeDocument(root, 'complete'),
     root,
     resultsList,
-    statePrimary,
     pageSummary,
     footer
   };
@@ -492,28 +451,9 @@ function createDisplayPaginationDom(options) {
 
 function createEmptyShellDom() {
   const root = new FakeElement('div', { className: 'page-root shelfmark-search-page' });
-  const stateBlock = root.appendChild(new FakeElement('div', {
-    className: 'js-shelfmark-results-state',
-    dataset: {
-      totalAvailable: '267',
-      seriesFilter: 'all',
-      filterHasCover: '1',
-      filterRequestable: '1'
-    }
-  }));
-  const statePrimary = stateBlock.appendChild(new FakeElement('p', {
-    className: 'js-shelfmark-results-state-primary',
-    textContent: '0 shown · 267 total on Shelfmark'
-  }));
-  stateBlock.appendChild(new FakeElement('p', {
-    className: 'js-shelfmark-results-state-secondary is-hidden'
-  }));
   const pageSummary = root.appendChild(new FakeElement('span', {
     className: 'js-shelfmark-page-summary',
     textContent: 'No matching results'
-  }));
-  const emptyState = root.appendChild(new FakeElement('div', {
-    className: 'js-shelfmark-progressive-empty-state is-hidden'
   }));
   const resultsList = root.appendChild(new FakeElement('div', {
     className: 'js-shelfmark-results-list',
@@ -523,7 +463,6 @@ function createEmptyShellDom() {
       nextPage: '2',
       topUpUrl: '/search/external/shelfmark/topup?query=terry+pratchett',
       totalAvailable: '267',
-      seriesFilter: 'all',
       filterHasCover: '1',
       filterRequestable: '1'
     }
@@ -540,9 +479,7 @@ function createEmptyShellDom() {
     document: new FakeDocument(root, 'complete'),
     root,
     resultsList,
-    statePrimary,
     pageSummary,
-    emptyState,
     footer
   };
 }
@@ -1835,14 +1772,7 @@ async function runEmptyShellTopUpScenario() {
   assert.equal(progressive.dom.rows[0].classList.contains('is-shelfmark-filter-hidden'), false);
   assert.equal(progressive.dom.rows[1].classList.contains('is-shelfmark-filter-hidden'), false);
   assert.equal(progressive.dom.rows[2].classList.contains('is-shelfmark-filter-hidden'), true);
-  assert.equal(progressive.dom.statePrimary.textContent, '3 shown · 9 total on Shelfmark · 2 hidden');
-  assert.equal(
-    progressive.dom.stateSecondary.textContent,
-    'Hidden: 1 already in library, 1 without a cover'
-  );
-  assert.equal(progressive.dom.stateSecondary.classList.contains('is-hidden'), false);
   assert.equal(progressive.dom.pageSummary.textContent, '3 shown on this page');
-  assert.equal(progressive.dom.emptyState.classList.contains('is-hidden'), true);
   assert.equal(progressive.dom.resultsList.children.length, 6);
   assert.equal(
     progressive.dom.resultsList.querySelectorAll('.js-shelfmark-result-row').length,
@@ -1854,7 +1784,6 @@ async function runEmptyShellTopUpScenario() {
     pageSize: 100,
     displayPage: 2
   });
-  assert.equal(paged.statePrimary.textContent, '66 shown · 166 total on Shelfmark');
   assert.equal(paged.pageSummary.textContent, '66 shown on this page');
   assert.equal(
     paged.resultsList.querySelectorAll('.js-shelfmark-result-row').filter((row) => !row.classList.contains('is-shelfmark-page-hidden')).length,
@@ -1880,9 +1809,7 @@ async function runEmptyShellTopUpScenario() {
     emptyShell.dom.resultsList.children[0].classList.contains('is-shelfmark-filter-hidden'),
     false
   );
-  assert.equal(emptyShell.dom.statePrimary.textContent, '1 shown · 267 total on Shelfmark');
   assert.equal(emptyShell.dom.pageSummary.textContent, '1 shown on this page');
-  assert.equal(emptyShell.dom.emptyState.classList.contains('is-hidden'), true);
 
   console.log('test_shelfmark_external_search_dom.js: ok');
 })().catch((error) => {

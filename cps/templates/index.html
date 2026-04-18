@@ -1,5 +1,7 @@
 {% import 'image.html' as image %}
+{% import 'shelfmark_external_macros.html' as shelfmark_ui with context %}
 {% extends "layout.html" %}
+{% set shelfmark = shelfmark_section if shelfmark_section is defined and shelfmark_section else None %}
 {% block header %}
 <style>
 .shelf-actions {
@@ -40,6 +42,9 @@
     }
 }
 </style>
+{% if shelfmark and page == "series" %}
+<link href="{{ url_for('static', filename='css/shelfmark_search.css') }}" rel="stylesheet" media="screen">
+{% endif %}
 {% endblock %}
 {% block body %}
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -187,7 +192,7 @@
    {% endif %}
   {% if show_shelf_actions %}</div>{% endif %}
   <div class="row display-flex">
-    {% if entries[0] %}
+  {% if entries[0] %}
     {% for entry in entries %}
     <div class="col-sm-3 col-lg-2 col-xs-6 book session" id="books">
       <div class="cover">
@@ -257,8 +262,23 @@
   {% endif %}
   </div>
 </div>
+{% if shelfmark and page == "series" %}
+<div class="discover">
+  {{ shelfmark_ui.render_shelfmark_section(shelfmark) }}
+</div>
+{% endif %}
 {% endblock %}
+
+{% block modal %}
+{% if shelfmark and page == "series" %}
+{{ shelfmark_ui.render_shelfmark_modal(shelfmark) }}
+{% endif %}
+{% endblock %}
+
 {% block js %}
+{% if shelfmark and page == "series" %}
+{{ shelfmark_ui.render_shelfmark_scripts(shelfmark) }}
+{% endif %}
 {{ super() }}
 {% if page == 'magicshelf' %}
 <script>

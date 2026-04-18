@@ -2000,12 +2000,6 @@
     });
   }
 
-  function getHiddenResultRows(scope) {
-    return getScopedClassNodes(scope, 'js-shelfmark-result-row').filter(function (row) {
-      return isFilterHiddenRow(row);
-    });
-  }
-
   function isUnsettledProgressiveRow(row) {
     var state = getProgressiveRowState(row);
     return state === 'pending' || state === 'queued' || state === 'loading';
@@ -2021,10 +2015,6 @@
     return document.querySelector('.js-shelfmark-results-list');
   }
 
-  function getResultsStateBlock() {
-    return document.querySelector('.js-shelfmark-results-state');
-  }
-
   function getConfiguredDisplayPage(resultsList) {
     var parsed = toOptionalNumber(resultsList && resultsList.dataset ? resultsList.dataset.displayPage : null);
     return parsed && parsed > 0 ? parsed : 1;
@@ -2033,15 +2023,6 @@
   function getConfiguredPageSize(resultsList) {
     var parsed = toOptionalNumber(resultsList && resultsList.dataset ? resultsList.dataset.pageSize : null);
     return parsed && parsed > 0 ? parsed : 0;
-  }
-
-  function getConfiguredTotalAvailable(resultsList) {
-    var parsed = toOptionalNumber(resultsList && resultsList.dataset ? resultsList.dataset.totalAvailable : null);
-    return parsed && parsed > 0 ? parsed : 0;
-  }
-
-  function getConfiguredSeriesFilter(resultsList) {
-    return toOptionalText(resultsList && resultsList.dataset ? resultsList.dataset.seriesFilter : '').toLowerCase() || 'all';
   }
 
   function isHasCoverFilterEnabled(resultsList) {
@@ -2116,64 +2097,10 @@
       payload.row_already_in_library || (payload.row_status_in_library === '1' ? '1' : '0')
     );
     setRowDatasetValue(row, 'hasCover', payload.row_has_cover || '0');
-    setRowDatasetValue(row, 'seriesMatched', payload.row_series_matched || '0');
-    setRowDatasetValue(row, 'seriesNextMissing', payload.row_series_next_missing || '0');
-    if (Array.isArray(payload.hidden_reasons) && payload.hidden_reasons.length) {
-      setRowDatasetValue(row, 'hiddenReasons', payload.hidden_reasons.join(','));
-      return;
-    }
-    delete row.dataset.hiddenReasons;
   }
 
   function isDisplayHiddenRow(row) {
     return Boolean(row && row.classList && row.classList.contains('is-shelfmark-page-hidden'));
-  }
-
-  function getHiddenReasonKeys(row) {
-    if (!row || !row.dataset) {
-      return [];
-    }
-    return toOptionalText(row.dataset.hiddenReasons)
-      .split(',')
-      .map(function (reason) {
-        return toOptionalText(reason).toLowerCase();
-      })
-      .filter(Boolean);
-  }
-
-  function getHiddenBucketKey(row, resultsList) {
-    var explicitReasons = getHiddenReasonKeys(row);
-    if (explicitReasons.indexOf('already_in_library') !== -1) {
-      return 'already_in_library';
-    }
-    if (explicitReasons.indexOf('no_cover') !== -1) {
-      return 'no_cover';
-    }
-    if (explicitReasons.indexOf('owned_series') !== -1) {
-      return 'owned_series';
-    }
-    if (explicitReasons.indexOf('next_missing') !== -1) {
-      return 'next_missing';
-    }
-    if (
-      (row.dataset.statusInLibrary === '1' || row.dataset.alreadyInLibrary === '1')
-      && isRequestableFilterEnabled(resultsList)
-    ) {
-      return 'already_in_library';
-    }
-    if (isHasCoverFilterEnabled(resultsList) && row.dataset.hasCover === '0') {
-      return 'no_cover';
-    }
-    if (getConfiguredSeriesFilter(resultsList) === 'owned' && row.dataset.seriesMatched !== '1') {
-      return 'owned_series';
-    }
-    if (getConfiguredSeriesFilter(resultsList) === 'next_missing' && row.dataset.seriesNextMissing !== '1') {
-      return 'next_missing';
-    }
-    if (isRequestableFilterEnabled(resultsList)) {
-      return 'not_requestable';
-    }
-    return 'filtered';
   }
 
   function getDisplayEligibleRows(resultsList) {
@@ -2182,88 +2109,6 @@
     }).sort(function (left, right) {
       return getRowOrder(left) - getRowOrder(right);
     });
-  }
-
-  function formatStatePrimaryLine(visibleCount, totalCount, hiddenCount) {
-    var parts = [visibleCount === 1 ? '1 shown' : visibleCount + ' shown'];
-    if (totalCount > 0) {
-      parts.push(totalCount + ' total on Shelfmark');
-    }
-    if (hiddenCount > 0) {
-      parts.push(hiddenCount === 1 ? '1 hidden' : hiddenCount + ' hidden');
-    }
-    return parts.join(' · ');
-  }
-
-  function formatHiddenBucketLabel(bucketKey, count) {
-    if (bucketKey === 'already_in_library') {
-      return count === 1 ? '1 already in library' : count + ' already in library';
-    }
-    if (bucketKey === 'no_cover') {
-      return count === 1 ? '1 without a cover' : count + ' without a cover';
-    }
-    if (bucketKey === 'owned_series') {
-      return count === 1 ? '1 filtered by owned series' : count + ' filtered by owned series';
-    }
-    if (bucketKey === 'next_missing') {
-      return count === 1 ? '1 filtered by next missing' : count + ' filtered by next missing';
-    }
-    if (bucketKey === 'not_requestable') {
-      return count === 1 ? '1 not requestable' : count + ' not requestable';
-    }
-    return count === 1 ? '1 other filter or check' : count + ' other filters or checks';
-  }
-
-  function updateResultsStateBlock(resultsList, visibleCount) {
-    var stateBlock = getResultsStateBlock();
-    if (!stateBlock) {
-      return;
-    }
-    var primaryNode = stateBlock.querySelector('.js-shelfmark-results-state-primary');
-    var secondaryNode = stateBlock.querySelector('.js-shelfmark-results-state-secondary');
-    var hiddenRows = getHiddenResultRows(resultsList);
-    var hiddenCounts = {
-      already_in_library: 0,
-      no_cover: 0,
-      owned_series: 0,
-      next_missing: 0,
-      not_requestable: 0,
-      filtered: 0
-    };
-
-    hiddenRows.forEach(function (row) {
-      var bucketKey = getHiddenBucketKey(row, resultsList);
-      hiddenCounts[bucketKey] = (hiddenCounts[bucketKey] || 0) + 1;
-    });
-
-    if (primaryNode) {
-      primaryNode.textContent = formatStatePrimaryLine(
-        visibleCount,
-        getConfiguredTotalAvailable(resultsList),
-        hiddenRows.length
-      );
-    }
-
-    if (!secondaryNode) {
-      return;
-    }
-
-    var breakdown = Object.keys(hiddenCounts).filter(function (bucketKey) {
-      return hiddenCounts[bucketKey] > 0;
-    }).map(function (bucketKey) {
-      return formatHiddenBucketLabel(bucketKey, hiddenCounts[bucketKey]);
-    });
-
-    if (!breakdown.length) {
-      secondaryNode.textContent = '';
-      secondaryNode.classList.add('is-hidden');
-      secondaryNode.setAttribute('aria-hidden', 'true');
-      return;
-    }
-
-    secondaryNode.textContent = 'Hidden: ' + breakdown.join(', ');
-    secondaryNode.classList.remove('is-hidden');
-    secondaryNode.setAttribute('aria-hidden', 'false');
   }
 
   function buildPaginationUrl(pageNumber) {
@@ -2510,7 +2355,9 @@
       row.setAttribute('aria-hidden', isVisibleOnPage ? 'false' : 'true');
     });
 
-    getHiddenResultRows(resultsList).forEach(function (row) {
+    getScopedClassNodes(resultsList, 'js-shelfmark-result-row').filter(function (row) {
+      return isFilterHiddenRow(row);
+    }).forEach(function (row) {
       row.classList.remove('is-shelfmark-page-hidden');
     });
 
@@ -2535,27 +2382,16 @@
 
   function updateProgressiveCounts() {
     var resultsList = getResultsList();
-    var pageState = applyDisplayPagination(resultsList);
+    applyDisplayPagination(resultsList);
     var visibleCount = resultsList ? getVisibleResultRows(resultsList).length : getVisibleResultRows(document).length;
-    var canStillTopUp = canTopUpResults(resultsList, resultsList ? pageState.eligibleCount : getDisplayEligibleRows(document).length)
-      || isTopUpPending(resultsList)
-      || hasPendingProgressiveRows(resultsList);
     var summaryNodes = toArray(document.querySelectorAll('.js-shelfmark-page-summary'));
-    var emptyState = document.querySelector('.js-shelfmark-progressive-empty-state');
 
-    updateResultsStateBlock(resultsList, visibleCount);
     updatePaginationFooter(resultsList, visibleCount);
     summaryNodes.forEach(function (node) {
       node.textContent = visibleCount > 0
         ? (visibleCount === 1 ? '1 shown on this page' : visibleCount + ' shown on this page')
         : 'No visible results on this page';
     });
-
-    if (emptyState) {
-      var showEmptyState = visibleCount < 1 && !canStillTopUp;
-      emptyState.classList.toggle('is-hidden', !showEmptyState);
-      emptyState.setAttribute('aria-hidden', showEmptyState ? 'false' : 'true');
-    }
   }
 
   function setProgressiveRowState(row, state) {
