@@ -127,12 +127,12 @@ def _base_context():
     saved_state_url = (
         "/search/stored/?query=Dune&shelfmark_page=2&shelfmark_page_size=24"
         "&shelfmark_sort=rating&shelfmark_filter_requestable=1"
-        "&shelfmark_filter_has_cover=1&shelfmark_series_filter=owned"
+        "&shelfmark_filter_has_cover=1"
     )
     saved_state_return = (
         "%2Fsearch%2Fstored%2F%3Fquery%3DDune%26shelfmark_page%3D2%26shelfmark_page_size%3D24"
         "%26shelfmark_sort%3Drating%26shelfmark_filter_requestable%3D1"
-        "%26shelfmark_filter_has_cover%3D1%26shelfmark_series_filter%3Downed"
+        "%26shelfmark_filter_has_cover%3D1"
     )
 
     local_book = DummyBook(
@@ -433,10 +433,9 @@ def _base_context():
                 "/search/external/shelfmark/hardcover/222/row?query=Dune"
                 "&shelfmark_page=2&shelfmark_page_size=24&shelfmark_sort=rating"
                 "&shelfmark_filter_requestable=1&shelfmark_filter_has_cover=1"
-                "&shelfmark_series_filter=owned&return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"
+                "&return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"
                 "%26shelfmark_page%3D2%26shelfmark_page_size%3D24%26shelfmark_sort%3Drating"
                 "%26shelfmark_filter_requestable%3D1%26shelfmark_filter_has_cover%3D1"
-                "%26shelfmark_series_filter%3Downed"
             ),
         }
     )
@@ -587,11 +586,7 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert "895 total" in html
     assert "3 shown on this page" in html
     assert "895 total on Shelfmark" in html
-    assert 'class="shelfmark-results-state js-shelfmark-results-state"' in html
-    assert 'class="shelfmark-results-state__primary js-shelfmark-results-state-primary"' in html
-    assert 'class="shelfmark-results-state__secondary js-shelfmark-results-state-secondary is-hidden"' in html
     assert 'data-total-available="895"' in html
-    assert 'data-series-filter="all"' in html
     assert 'data-filter-has-cover="1"' in html
     assert "Page 1" in html
     assert "Page 1 of 75" not in html
@@ -600,11 +595,10 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'id="shelfmark_page_size_footer"' in html
     assert html.index('id="shelfmark_page_size_footer"') > html.index('class="shelfmark-pagination-footer js-shelfmark-pagination-footer"')
     assert 'name="shelfmark_sort"' in html
-    assert 'name="shelfmark_series_filter"' in html
-    assert 'id="shelfmark_series_filter_owned"' in html
-    assert 'id="shelfmark_series_filter"' not in html
-    assert "Owned series" in html
-    assert html.count('shelfmark-external-controls__checkbox-group') == 2
+    assert 'name="shelfmark_series_filter"' not in html
+    assert 'id="shelfmark_series_filter_owned"' not in html
+    assert "Owned series" not in html
+    assert html.count('shelfmark-external-controls__checkbox-group') == 1
     assert "Next missing" not in html
     assert "Strong candidates" not in html
     assert "Candidates" not in html
@@ -663,14 +657,14 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'data-detail-provider-id="222"' in html
     assert 'data-row-enrich-url="/search/external/shelfmark/hardcover/222/row?query=Dune' in html
     assert 'return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune%26shelfmark_page%3D2' in html
-    assert "No usable Shelfmark results remained" in html
+    assert "No usable Shelfmark results remained" not in html
     assert "Reset filters" not in html
     assert ">Go<" not in html
     assert "shelfmark-pagination-footer__jump" not in html
     assert 'id="shelfmarkDetailModal"' in html
     assert 'id="shelfmarkDetailModalLabel"' in html
     assert 'class="modal fade shelfmark-detail-modal"' in html
-    assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1&amp;shelfmark_series_filter=owned"' in html
+    assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1"' in html
     assert "4.3 ★" in html
     assert "The Lord of the Rings (2)" in html
     assert "304 pages" in html
@@ -731,11 +725,10 @@ def test_search_template_keeps_shelfmark_shell_when_current_page_is_empty_but_la
     assert "No Results Found" not in html
     assert "No Shelfmark external results found" not in html
     assert 'class="shelfmark-results-list js-shelfmark-results-list"' in html
-    assert 'class="shelfmark-results-state js-shelfmark-results-state"' in html
     assert 'class="shelfmark-pagination-footer js-shelfmark-pagination-footer"' in html
     assert 'data-next-page="2"' in html
     assert "895 total on Shelfmark" in html
-    assert "No usable Shelfmark results remained" in html
+    assert "No usable Shelfmark results remained" not in html
     assert "Reset filters" not in html
     assert 'id="shelfmarkDetailModal"' in html
     assert "shelfmark_request_flow.js" in html
@@ -1060,7 +1053,7 @@ def test_search_template_strips_removed_filter_params_from_saved_state():
         "state_url": (
             "/search/stored/?query=Dune&shelfmark_page=2&shelfmark_page_size=24"
             "&shelfmark_sort=rating&shelfmark_filter_requestable=1"
-            "&shelfmark_filter_has_cover=1&shelfmark_series_filter=owned"
+            "&shelfmark_filter_has_cover=1"
         ),
         "clear_filters_url": "/search/stored/?query=Dune&shelfmark_page=1",
     }
@@ -1076,7 +1069,7 @@ def test_search_template_strips_removed_filter_params_from_saved_state():
 
     assert 'name="shelfmark_filter_high_confidence"' not in html
     assert 'name="shelfmark_triage_filter"' not in html
-    assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1&amp;shelfmark_series_filter=owned"' in html
+    assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1"' in html
 
 
 def test_search_template_omits_transient_modal_state_from_search_forms():
@@ -1094,7 +1087,7 @@ def test_search_template_omits_transient_modal_state_from_search_forms():
 
     assert 'name="shelfmark_detail_provider"' not in html
     assert 'name="shelfmark_detail_id"' not in html
-    assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1&amp;shelfmark_series_filter=owned"' in html
+    assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1"' in html
 
 
 def test_detail_template_back_link_preserves_full_saved_search_state():
@@ -1113,4 +1106,4 @@ def test_detail_template_back_link_preserves_full_saved_search_state():
             shelfmark_error=None,
         )
 
-    assert 'href="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1&amp;shelfmark_series_filter=owned"' in html
+    assert 'href="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1"' in html

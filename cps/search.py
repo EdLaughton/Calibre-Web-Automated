@@ -590,16 +590,13 @@ def shelfmark_external_row(provider, provider_id):
                         "shelfmark_filter_has_cover",
                         default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
                     ),
-                    series_filter=_requested_shelfmark_series_filter(),
+                    series_filter=DEFAULT_SHELFMARK_SERIES_FILTER,
                 ),
                 "row_class_name": result["row_class_name"],
                 "row_status_provider": result["row_status_provider"],
                 "row_status_provider_id": result["row_status_provider_id"],
                 "row_status_in_library": result["row_status_in_library"],
                 "row_has_cover": result["row_has_cover"],
-                "row_series_matched": result["row_series_matched"],
-                "row_series_next_missing": result["row_series_next_missing"],
-                "hidden_reasons": _build_shelfmark_hidden_reason_keys(result_view),
                 "library_book_url": result.get("library_book_url"),
                 "library_book_title": result.get("library_book_title"),
                 "html": render_template(
@@ -637,7 +634,7 @@ def shelfmark_external_topup():
             page=source_page,
             page_size=_requested_shelfmark_page_size(),
             sort=_requested_shelfmark_sort(),
-            series_filter=_requested_shelfmark_series_filter(),
+            series_filter=DEFAULT_SHELFMARK_SERIES_FILTER,
             filter_requestable=_requested_shelfmark_flag(
                 "shelfmark_filter_requestable",
                 default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
@@ -660,8 +657,6 @@ def shelfmark_external_topup():
                     "row_status_provider_id": result.get("row_status_provider_id") or "",
                     "row_status_in_library": result.get("row_status_in_library") or "0",
                     "row_has_cover": result.get("row_has_cover") or "0",
-                    "row_series_matched": result.get("row_series_matched") or "0",
-                    "row_series_next_missing": result.get("row_series_next_missing") or "0",
                     "library_book_url": result.get("library_book_url"),
                     "library_book_title": result.get("library_book_title"),
                     "row_enrichment_url": result.get("row_enrichment_url") or "",
@@ -762,49 +757,6 @@ def _build_shelfmark_top_up_url(*, query, return_to=None):
     return url_for("search.shelfmark_external_topup", **params)
 
 
-def _build_shelfmark_hidden_reason_keys(result_view):
-    requestable_only = _requested_shelfmark_flag(
-        "shelfmark_filter_requestable",
-        default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
-    )
-    has_cover_only = _requested_shelfmark_flag(
-        "shelfmark_filter_has_cover",
-        default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
-    )
-    series_filter = _requested_shelfmark_series_filter()
-    reasons = []
-
-    if requestable_only and (
-        result_view.already_in_library
-        or not result_view.hardcover_id
-        or not result_view.request_payload
-    ):
-        if result_view.already_in_library:
-            reasons.append("already_in_library")
-        else:
-            reasons.append("filtered")
-    if has_cover_only and not result_view.cover_url:
-        reasons.append("no_cover")
-    if series_filter == "owned" and not (
-        result_view.series_context and result_view.series_context.matched
-    ):
-        reasons.append("owned_series")
-    if series_filter == "next_missing" and not (
-        result_view.series_context and result_view.series_context.is_next_missing
-    ):
-        reasons.append("next_missing")
-
-    if not reasons and not result_matches_shelfmark_filters(
-        result_view,
-        requestable_only=requestable_only,
-        has_cover_only=has_cover_only,
-        series_filter=series_filter,
-    ):
-        reasons.append("filtered")
-
-    return reasons
-
-
 def _build_shelfmark_result_row_class_name(result):
     library_state = result.get("library_state") or {}
     classes = [
@@ -833,11 +785,6 @@ def _populate_shelfmark_row_state(result):
     result["row_status_provider_id"] = result.get("hardcover_id") or ""
     result["row_status_in_library"] = "1" if result.get("already_in_library") else "0"
     result["row_has_cover"] = "1" if result.get("cover_url") else "0"
-    series_context = result.get("series_context") or {}
-    result["row_series_matched"] = "1" if series_context.get("matched") else "0"
-    result["row_series_next_missing"] = (
-        "1" if series_context.get("is_next_missing") else "0"
-    )
 
 
 def _decorate_shelfmark_result_rows(section, *, query):
@@ -861,6 +808,7 @@ def _current_request_params(*, include_transient=True):
     params = request.args.to_dict(flat=True)
     if include_transient:
         return params
+    params.pop("shelfmark_series_filter", None)
     for key in SHELFMARK_TRANSIENT_QUERY_KEYS:
         params.pop(key, None)
     return params
@@ -909,13 +857,6 @@ def _requested_shelfmark_sort():
     return (request.args.get("shelfmark_sort", "popularity") or "popularity").strip().lower()
 
 
-def _requested_shelfmark_series_filter():
-    values = request.args.getlist("shelfmark_series_filter")
-    if not values:
-        return DEFAULT_SHELFMARK_SERIES_FILTER
-    return (values[-1] or DEFAULT_SHELFMARK_SERIES_FILTER).strip().lower()
-
-
 def _requested_shelfmark_flag(name, default=False):
     values = request.args.getlist(name)
     if not values:
@@ -941,7 +882,7 @@ def _build_shelfmark_section(query, **kwargs):
         page=1,
         page_size=requested_page_size,
         sort=_requested_shelfmark_sort(),
-        series_filter=_requested_shelfmark_series_filter(),
+        series_filter=DEFAULT_SHELFMARK_SERIES_FILTER,
         filter_requestable=_requested_shelfmark_flag(
             "shelfmark_filter_requestable",
             default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
@@ -973,7 +914,6 @@ def _build_shelfmark_section(query, **kwargs):
         shelfmark_page=section.get("page") or 1,
         shelfmark_page_size=section.get("page_size") or 12,
         shelfmark_sort=section.get("selected_sort"),
-        shelfmark_series_filter=section.get("selected_series_filter"),
         shelfmark_filter_requestable="1" if section.get("filter_requestable") else "0",
         shelfmark_filter_has_cover="1" if section.get("filter_has_cover") else "0",
     )
@@ -993,7 +933,6 @@ def _build_shelfmark_section(query, **kwargs):
     section["clear_filters_url"] = _current_request_url_with(
         shelfmark_page=1,
         shelfmark_sort=None,
-        shelfmark_series_filter=None,
         shelfmark_filter_requestable=None,
         shelfmark_filter_has_cover=None,
     )

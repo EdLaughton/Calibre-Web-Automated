@@ -31,7 +31,6 @@
         {% endfor %}
         <input type="hidden" name="shelfmark_page" value="1">
         <input type="hidden" name="shelfmark_sort" value="{{ shelfmark.selected_sort }}">
-        <input type="hidden" name="shelfmark_series_filter" value="{{ shelfmark.selected_series_filter }}">
         <input type="hidden" name="shelfmark_filter_requestable" value="{{ 1 if shelfmark.filter_requestable else 0 }}">
         <input type="hidden" name="shelfmark_filter_has_cover" value="{{ 1 if shelfmark.filter_has_cover else 0 }}">
         <label class="shelfmark-pagination-footer__page-size-label" for="shelfmark_page_size_footer">{{ _('Per page') }}</label>
@@ -221,11 +220,7 @@
               {{ _('Shelfmark Results') }}
             </h3>
             <p class="shelfmark-section-line__subtitle">
-              {% if shelfmark.selected_series_filter == 'next_missing' %}
-                {{ _('Likely next books in series you already own.') }}
-              {% elif shelfmark.selected_series_filter == 'owned' %}
-                {{ _('Matches from series already in your library.') }}
-              {% elif shelfmark.filter_requestable %}
+              {% if shelfmark.filter_requestable %}
                 {{ _('Request-ready matches from Shelfmark.') }}
               {% else %}
                 {{ _('Additional matches from Shelfmark.') }}
@@ -249,13 +244,6 @@
                   <option value="{{ option.value }}"{% if option.value == shelfmark.selected_sort %} selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
               </select>
-            </div>
-            <div class="form-group shelfmark-external-controls__group shelfmark-external-controls__checkbox-group">
-              <input type="hidden" name="shelfmark_series_filter" value="all">
-              <label class="shelfmark-external-controls__checkbox-label" for="shelfmark_series_filter_owned">
-                <input class="shelfmark-external-controls__checkbox" id="shelfmark_series_filter_owned" type="checkbox" name="shelfmark_series_filter" value="owned"{% if shelfmark.selected_series_filter != 'all' %} checked{% endif %}>
-                <span>{{ _('Owned series') }}</span>
-              </label>
             </div>
             <input type="hidden" name="shelfmark_page_size" value="{{ shelfmark.page_size }}">
             <input type="hidden" name="shelfmark_filter_has_cover" value="0">
@@ -303,27 +291,6 @@
           <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ shelfmark.results[0].shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
         {% endif %}
         <div
-          class="shelfmark-results-state js-shelfmark-results-state"
-          data-total-available="{{ shelfmark.raw_total_available or shelfmark.total_available or 0 }}"
-          data-series-filter="{{ shelfmark.selected_series_filter }}"
-          data-filter-has-cover="{{ 1 if shelfmark.filter_has_cover else 0 }}"
-          data-filter-requestable="{{ 1 if shelfmark.filter_requestable else 0 }}"
-        >
-          <p class="shelfmark-results-state__primary js-shelfmark-results-state-primary">
-            {% if external_count > 0 %}
-              {{ _('%(count)s shown', count=external_count) }}
-              {% if shelfmark.raw_total_available or shelfmark.total_available %}
-                · {{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available or shelfmark.total_available) }}
-              {% endif %}
-            {% elif shelfmark.raw_total_available or shelfmark.total_available %}
-              {{ _('0 shown') }} · {{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available or shelfmark.total_available) }}
-            {% else %}
-              {{ _('No matches') }}
-            {% endif %}
-          </p>
-          <p class="shelfmark-results-state__secondary js-shelfmark-results-state-secondary is-hidden" aria-hidden="true"></p>
-        </div>
-        <div
           class="shelfmark-results-list js-shelfmark-results-list"
           role="list"
           data-display-page="{{ shelfmark.page }}"
@@ -332,7 +299,6 @@
           data-total-pages="{{ shelfmark.source_total_pages or shelfmark.total_pages or 0 }}"
           data-top-up-url="{{ shelfmark.top_up_url or '' }}"
           data-total-available="{{ shelfmark.raw_total_available or shelfmark.total_available or 0 }}"
-          data-series-filter="{{ shelfmark.selected_series_filter }}"
           data-filter-has-cover="{{ 1 if shelfmark.filter_has_cover else 0 }}"
           data-filter-requestable="{{ 1 if shelfmark.filter_requestable else 0 }}"
         >
@@ -363,17 +329,6 @@
               {% include 'shelfmark_external_result_card_inner.html' %}
             </article>
           {% endfor %}
-        </div>
-        <div class="shelfmark-empty-state shelfmark-empty-state--progressive js-shelfmark-progressive-empty-state is-hidden" aria-hidden="true">
-          <div class="shelfmark-empty-state__icon">
-            <span class="glyphicon glyphicon-filter" aria-hidden="true"></span>
-          </div>
-          <div class="shelfmark-empty-state__body">
-            <h4 class="shelfmark-empty-state__title">{{ _('No usable Shelfmark results remained') }}</h4>
-            <p class="shelfmark-empty-state__message">
-              {{ _('CWA checked later Shelfmark pages for this view, but nothing usable remained after the current filters and library checks.') }}
-            </p>
-          </div>
         </div>
         {% if shelfmark_has_page_shell %}
           {{ render_shelfmark_pagination(
