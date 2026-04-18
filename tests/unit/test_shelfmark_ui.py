@@ -14,6 +14,7 @@ import pytest
 
 
 MODULE_PATH = Path(__file__).resolve().parents[2] / "cps" / "shelfmark_ui.py"
+WEB_MODULE_PATH = Path(__file__).resolve().parents[2] / "cps" / "web.py"
 
 
 class _FakeArgs(dict):
@@ -185,3 +186,12 @@ def test_render_contextual_append_handles_empty_and_unavailable_states(shelfmark
     assert shelfmark_ui_module.render_contextual_shelfmark_append(
         {"available": True, "results": [], "load_more_url": None}
     ) == ("", 200)
+
+
+def test_web_contextual_endpoints_use_shared_render_helpers():
+    source = WEB_MODULE_PATH.read_text(encoding="utf-8")
+
+    assert "return render_contextual_shelfmark_partial(section)" in source
+    assert "return render_contextual_shelfmark_append(section)" in source
+    assert "_render_contextual_shelfmark_partial" not in source
+    assert "_render_contextual_shelfmark_append" not in source

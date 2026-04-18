@@ -358,9 +358,7 @@ AUTHOR_BY_ID_QUERY = """
             name
             slug
             bio
-            cached_image {
-                url
-            }
+            cached_image
         }
     }
 """
