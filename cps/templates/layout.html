@@ -282,16 +282,16 @@
         {% if current_user.is_authenticated or g.allow_anonymous %}
         <div class="col-sm-2">
           <nav class="navigation">
-            <ul class="list-unstyled" id="scnd-nav" intent in-standard-append="nav.navigation" in-mobile-after="#main-nav" in-mobile-class="nav navbar-nav">
-              <li class="nav-head hidden-xs">{{_('Browse')}}</li>
+              <ul class="list-unstyled" id="scnd-nav" intent in-standard-append="nav.navigation" in-mobile-after="#main-nav" in-mobile-class="nav navbar-nav">
               {% set nav_active_page = nav_active_page if nav_active_page is defined and nav_active_page else page %}
-              {% for element in sidebar %}
-                {% if element.get('kind') == 'heading' %}
-                  {% if current_user.check_visibility(element['visibility']) and element['public'] %}
-                    <li class="nav-head hidden-xs">{{ _(element['text']) }}</li>
-                  {% endif %}
-                {% elif current_user.check_visibility(element['visibility']) and element['public'] %}
-                  <li id="nav_{{element['id']}}" {% if nav_active_page == element['page'] %}class="active"{% endif %} style="{% if element['id'] == 'duplicates' %}position: relative;{% endif %}">
+              {% for section in sidebar_sections %}
+                <li class="nav-head hidden-xs{% if section['id'] == 'requests' %} nav-head--requests{% endif %}">{{ _(section['title']) }}</li>
+                {% for element in section['entries'] %}
+                  <li
+                    id="nav_{{element['id']}}"
+                    class="{% if nav_active_page == element['page'] %}active {% endif %}{% if section['id'] != 'browse' %}nav-subitem nav-subitem--{{ section['id'] }}{% endif %}"
+                    style="{% if element['id'] == 'duplicates' %}position: relative;{% endif %}"
+                  >
                     <a href="{{ element.get('href') or url_for(element['link'], data=element['page'], sort_param='stored') }}">
                       <span class="glyphicon {{element['glyph']}}"></span> {{_(element['text'])}}
                       {% if element['id'] == 'duplicates' %}
@@ -302,7 +302,7 @@
                       {% endif %}
                     </a>
                   </li>
-                {% endif %}
+                {% endfor %}
               {% endfor %}
               {% if current_user.is_authenticated or g.allow_anonymous %}
                 <li class="nav-head hidden-xs public-shelves">{{_('Shelves')}}</li>
