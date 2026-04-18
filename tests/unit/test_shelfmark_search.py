@@ -770,6 +770,101 @@ def test_series_context_flags_next_missing_and_owned_series(shelfmark_module):
     assert contexts[2] is None
 
 
+def test_result_view_preserves_multiple_series_memberships(shelfmark_module):
+    result = shelfmark_module.build_shelfmark_result_view(
+        {
+            "provider": "hardcover",
+            "provider_id": "501",
+            "title": "The Well of Ascension",
+            "authors": ["Brandon Sanderson"],
+            "book_series": [
+                {
+                    "featured": True,
+                    "position": 7,
+                    "series": {"name": "Cosmere", "slug": "cosmere"},
+                },
+                {
+                    "featured": False,
+                    "position": 2,
+                    "series": {"name": "Mistborn", "slug": "mistborn"},
+                },
+            ],
+            "identifiers": {"hardcover-id": "501"},
+        },
+        library_match=None,
+        detail_url="/external/501",
+        shelfmark_browser_base_url="https://library.example.com/shelfmark",
+    )
+
+    assert [membership.name for membership in result.series_memberships] == [
+        "Cosmere",
+        "Mistborn",
+    ]
+    assert [entry["display"] for entry in result.series_entries] == [
+        "Cosmere (7)",
+        "Mistborn (2)",
+    ]
+
+
+def test_multi_series_context_prefers_actionable_subseries_for_primary_display(shelfmark_module):
+    result = shelfmark_module.build_shelfmark_result_view(
+        {
+            "provider": "hardcover",
+            "provider_id": "502",
+            "title": "The Bands of Mourning",
+            "authors": ["Brandon Sanderson"],
+            "book_series": [
+                {
+                    "featured": True,
+                    "position": 10,
+                    "series": {"name": "Cosmere", "slug": "cosmere"},
+                },
+                {
+                    "featured": False,
+                    "position": 3,
+                    "series": {"name": "Mistborn Era 2", "slug": "mistborn-era-2"},
+                },
+            ],
+            "identifiers": {"hardcover-id": "502"},
+        },
+        library_match=None,
+        detail_url="/external/502",
+        shelfmark_browser_base_url="https://library.example.com/shelfmark",
+    )
+    contexts = shelfmark_module.build_shelfmark_series_membership_contexts(
+        (result,),
+        {
+            "cosmere": shelfmark_module.ShelfmarkOwnedSeries(
+                key="cosmere",
+                series_name="Cosmere",
+                book_count=8,
+                owned_positions=(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+                max_position=6.0,
+                contiguous_position=6,
+            ),
+            "mistborn era 2": shelfmark_module.ShelfmarkOwnedSeries(
+                key="mistborn era 2",
+                series_name="Mistborn Era 2",
+                book_count=2,
+                owned_positions=(1.0, 2.0),
+                max_position=2.0,
+                contiguous_position=2,
+            ),
+        },
+    )[0]
+    result = shelfmark_module.apply_primary_series_context(
+        shelfmark_module.replace(result, series_contexts=contexts),
+    )
+
+    assert len(contexts) == 2
+    assert result.best_series_context is not None
+    assert result.best_series_context.series_name == "Mistborn Era 2"
+    assert result.best_series_context.is_next_missing is True
+    assert result.series_display == "Mistborn Era 2 (3)"
+    assert result.secondary_series_note == "Also in Cosmere"
+    assert result.facts[-1] == "Mistborn Era 2 (3)"
+
+
 def test_build_triage_state_flags_strong_candidate_for_popular_metadata_rich_match(shelfmark_module):
     result = shelfmark_module.build_shelfmark_result_view(
         {
@@ -1424,6 +1519,10 @@ def test_fetch_shelfmark_detail_prefers_direct_hardcover_book_by_id_when_availab
     assert result.series_display == "Discworld (4)"
     assert result.series_url == "https://hardcover.app/series/discworld"
     assert result.series_count == 41
+    assert [membership.name for membership in result.series_memberships] == [
+        "Discworld",
+        "Death",
+    ]
     assert [entry["display"] for entry in result.series_entries] == [
         "Discworld (4)",
         "Death (3)",
@@ -1801,6 +1900,279 @@ def test_search_results_default_to_requestable_with_covers_on_the_current_page(s
     assert [result.title for result in section.results] == ["Request Ready", "Missing Cover"]
     assert section.results[0].progressive_filter_pending is False
     assert section.results[1].progressive_filter_pending is True
+
+
+def test_contextual_series_results_fill_from_later_source_pages_and_exclude_in_library(shelfmark_module):
+    fake_client = mock.Mock()
+    source_books = {
+        "111": {
+            "provider": "hardcover",
+            "provider_id": "111",
+            "title": "Already Owned",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/hardcover_111?url=owned",
+            "series_name": "Discworld",
+            "series_position": 1,
+            "identifiers": {"hardcover-id": "111"},
+        },
+        "222": {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "The Amazing Maurice",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/hardcover_222?url=maurice",
+            "series_name": "Discworld",
+            "series_position": 28,
+            "identifiers": {"hardcover-id": "222"},
+        },
+    }
+    fake_client.search_books.side_effect = [
+        shelfmark_module.ShelfmarkSearchResponse(
+            books=(source_books["111"],),
+            page=1,
+            total_found=4,
+            has_more=True,
+        ),
+        shelfmark_module.ShelfmarkSearchResponse(
+            books=(source_books["222"],),
+            page=2,
+            total_found=4,
+            has_more=False,
+        ),
+    ]
+    fake_client.fetch_book.side_effect = lambda provider, provider_id: dict(source_books[provider_id])
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={"111": shelfmark_module.ShelfmarkLibraryMatch("111", 7, "Already Owned")},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={
+            "discworld": shelfmark_module.ShelfmarkOwnedSeries(
+                key="discworld",
+                series_name="Discworld",
+                book_count=2,
+                owned_positions=(1.0, 27.0),
+                max_position=27.0,
+                contiguous_position=27,
+            )
+        },
+    ):
+        section = shelfmark_module.search_shelfmark_contextual_results(
+            "discworld",
+            detail_url_builder=lambda _: "/external/discworld",
+            context_type="series",
+            context_value="Discworld",
+            limit=1,
+        )
+
+    assert [result.title for result in section.results] == ["The Amazing Maurice"]
+    assert fake_client.search_books.call_count == 2
+    assert section.results[0].already_in_library is False
+    assert section.results[0].series_context is not None
+    assert section.results[0].series_context.matched is True
+
+
+def test_contextual_series_results_prefer_matching_membership_over_broader_featured_series(shelfmark_module):
+    fake_client = mock.Mock()
+    source_book = {
+        "provider": "hardcover",
+        "provider_id": "777",
+        "title": "The Lost Metal",
+        "authors": ["Brandon Sanderson"],
+        "cover_url": "/api/covers/hardcover_777?url=lost-metal",
+        "book_series": [
+            {
+                "featured": True,
+                "position": 10,
+                "series": {"name": "Cosmere", "slug": "cosmere"},
+            },
+            {
+                "featured": False,
+                "position": 4,
+                "series": {"name": "Mistborn Era 2", "slug": "mistborn-era-2"},
+            },
+        ],
+        "identifiers": {"hardcover-id": "777"},
+    }
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=(source_book,),
+        page=1,
+        total_found=1,
+        has_more=False,
+    )
+    fake_client.fetch_book.side_effect = lambda provider, provider_id: dict(source_book)
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={
+            "mistborn era 2": shelfmark_module.ShelfmarkOwnedSeries(
+                key="mistborn era 2",
+                series_name="Mistborn Era 2",
+                book_count=3,
+                owned_positions=(1.0, 2.0, 3.0),
+                max_position=3.0,
+                contiguous_position=3,
+            ),
+            "cosmere": shelfmark_module.ShelfmarkOwnedSeries(
+                key="cosmere",
+                series_name="Cosmere",
+                book_count=9,
+                owned_positions=(1.0, 2.0, 3.0, 4.0, 5.0),
+                max_position=5.0,
+                contiguous_position=5,
+            ),
+        },
+    ):
+        section = shelfmark_module.search_shelfmark_contextual_results(
+            "Mistborn",
+            detail_url_builder=lambda _: "/external/mistborn",
+            context_type="series",
+            context_value="Mistborn Era 2",
+            limit=4,
+        )
+
+    assert [result.title for result in section.results] == ["The Lost Metal"]
+    assert section.results[0].series_display == "Mistborn Era 2 (4)"
+    assert section.results[0].secondary_series_note == "Also in Cosmere"
+    assert section.results[0].best_series_context is not None
+    assert section.results[0].best_series_context.series_name == "Mistborn Era 2"
+    assert section.results[0].best_series_context.is_next_missing is True
+
+
+def test_contextual_author_results_require_requestable_matching_author(shelfmark_module):
+    fake_client = mock.Mock()
+    source_books = {
+        "222": {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "The Amazing Maurice",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/hardcover_222?url=maurice",
+            "identifiers": {"hardcover-id": "222"},
+        },
+        "333": {
+            "provider": "hardcover",
+            "provider_id": "333",
+            "title": "Shared Anthology",
+            "authors": ["Someone Else"],
+            "cover_url": "/api/covers/hardcover_333?url=anthology",
+            "identifiers": {"hardcover-id": "333"},
+        },
+        "444": {
+            "provider": "other",
+            "provider_id": "444",
+            "title": "No Hardcover Match",
+            "authors": ["Terry Pratchett"],
+            "cover_url": "/api/covers/other_444?url=missing",
+        },
+    }
+    fake_client.search_books.return_value = shelfmark_module.ShelfmarkSearchResponse(
+        books=(source_books["222"], source_books["333"], source_books["444"]),
+        page=1,
+        total_found=3,
+        has_more=False,
+    )
+    fake_client.fetch_book.side_effect = lambda provider, provider_id: dict(source_books[provider_id])
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_library_matches",
+        return_value={},
+    ), mock.patch.object(
+        shelfmark_module,
+        "lookup_visible_owned_series",
+        return_value={},
+    ):
+        section = shelfmark_module.search_shelfmark_contextual_results(
+            "Terry Pratchett",
+            detail_url_builder=lambda _: "/external/pratchett",
+            context_type="author",
+            context_value="Pratchett, Terry",
+            limit=8,
+        )
+
+    assert [result.title for result in section.results] == ["The Amazing Maurice"]
+
+
+def test_contextual_results_report_unavailable_without_raising(shelfmark_module):
+    fake_client = mock.Mock()
+    fake_client.search_books.side_effect = shelfmark_module.ShelfmarkIntegrationError("search failed")
+
+    with mock.patch.object(
+        shelfmark_module,
+        "get_shelfmark_client_config",
+        return_value=shelfmark_module.ShelfmarkClientConfig(
+            enabled=True,
+            base_url="https://shelfmark.example.com",
+            browser_base_url="https://library.example.com/shelfmark",
+            username=None,
+            password=None,
+        ),
+    ), mock.patch.object(
+        shelfmark_module,
+        "ShelfmarkClient",
+        return_value=fake_client,
+    ):
+        section = shelfmark_module.search_shelfmark_contextual_results(
+            "discworld",
+            detail_url_builder=lambda _: "/external/discworld",
+            context_type="series",
+            context_value="Discworld",
+            limit=4,
+        )
+
+    assert section.available is False
+    assert section.message == "search failed"
 
 
 def test_search_results_apply_requested_page_size_sort_and_shelfmark_totals(shelfmark_module):

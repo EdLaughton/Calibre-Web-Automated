@@ -50,6 +50,9 @@
         {% endfor %}
       </p>
     {% endif %}
+    {% if result.secondary_series_note %}
+      <p class="shelfmark-result-card__series-note text-muted">{{ result.secondary_series_note }}</p>
+    {% endif %}
     {% if result.description %}
       <p class="shelfmark-result-card__description">
         {{ result.description[:220] }}{% if result.description|length > 220 %}...{% endif %}

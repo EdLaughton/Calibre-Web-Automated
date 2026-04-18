@@ -1,3 +1,6 @@
+{% set preferred_release = preferred_release or {} %}
+{% set series_contexts = result.series_contexts if result and result.series_contexts is defined and result.series_contexts else ([result.best_series_context] if result and result.best_series_context is defined and result.best_series_context else ([result.series_context] if result and result.series_context else [])) %}
+{% set series_memberships = result.series_memberships if result and result.series_memberships is defined and result.series_memberships else result.series_entries if result and result.series_entries else [] %}
 <div
   class="shelfmark-detail-pane{% if modal_mode %} shelfmark-detail-pane--modal{% endif %}{% if result and result.workflow_state %} js-shelfmark-status-target{% endif %}"
   {% if result and result.title %}data-detail-title="{{ result.title }}"{% endif %}
@@ -7,7 +10,6 @@
     data-status-in-library="{{ 1 if result.already_in_library else 0 }}"
   {% endif %}
 >
-  {% set preferred_release = preferred_release or {} %}
   {% if shelfmark_error %}
     <div class="alert alert-warning">{{ shelfmark_error }}</div>
   {% elif result %}
@@ -57,9 +59,9 @@
                 {% endfor %}
               </p>
             {% endif %}
-            {% if result.series_context and result.series_context.facts %}
+            {% if result.best_series_context and result.best_series_context.facts %}
               <p class="shelfmark-detail-hero__series-context" aria-label="{{ _('Library series context') }}">
-                {% for fact in result.series_context.facts %}
+                {% for fact in result.best_series_context.facts %}
                   <span class="shelfmark-detail-hero__series-context-fact">{{ fact }}</span>
                 {% endfor %}
               </p>
@@ -139,22 +141,30 @@
         <div class="shelfmark-detail-section">
           <h3 class="shelfmark-detail-section__title">{{ _("Book details") }}</h3>
           <dl class="shelfmark-detail-meta-list">
-            {% if result.series_context and (result.series_context.facts or result.series_context.detail_value) %}
-              <dt>{{ _("Library series") }}</dt>
-              <dd>
-                {% if result.series_context.facts %}
-                  {% for fact in result.series_context.facts %}
-                    <span class="shelfmark-detail-meta-list__inline-fact">{{ fact }}</span>
-                  {% endfor %}
-                {% else %}
-                  {{ result.series_context.detail_value }}
-                {% endif %}
+            {% if series_contexts %}
+              <dt>{{ _("Library series context") }}</dt>
+              <dd class="shelfmark-detail-meta-list__context-list">
+                {% for context in series_contexts %}
+                  <div class="shelfmark-detail-meta-list__context-entry">
+                    <span class="shelfmark-detail-meta-list__context-name">{{ context.series_display or context.membership.display or context.membership.name }}</span>
+                    {% if context.detail_value %}
+                      <span class="shelfmark-detail-meta-list__context-detail">{{ context.detail_value }}</span>
+                    {% elif context.facts %}
+                      <span class="shelfmark-detail-meta-list__context-detail">
+                        {% for fact in context.facts %}
+                          {% if not loop.first %}<span class="shelfmark-detail-meta-list__separator" aria-hidden="true">·</span>{% endif %}
+                          <span class="shelfmark-detail-meta-list__inline-fact">{{ fact }}</span>
+                        {% endfor %}
+                      </span>
+                    {% endif %}
+                  </div>
+                {% endfor %}
               </dd>
             {% endif %}
-            {% if result.series_entries %}
+            {% if series_memberships %}
               <dt>{{ _("Series") }}</dt>
               <dd class="shelfmark-detail-meta-list__series-row">
-                {% for series in result.series_entries %}
+                {% for series in series_memberships %}
                   {% if not loop.first %}
                     <span class="shelfmark-detail-meta-list__separator" aria-hidden="true">·</span>
                   {% endif %}
