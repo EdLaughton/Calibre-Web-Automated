@@ -334,92 +334,76 @@ def test_dedupe_candidates_keeps_highest_priority_first(requests_module):
     assert [candidate.reason_label for candidate in deduped] == ["Sooner"]
 
 
-def test_build_requests_workspace_home_uses_expected_sections(requests_module, monkeypatch):
+def test_build_requests_workspace_series_uses_expected_sections(requests_module, monkeypatch):
     monkeypatch.setattr(
         requests_module,
         "_build_section_shells",
         lambda active_view, state_url=None: (
             requests_module.RequestsSectionShell(
-                key="home-next",
-                title="Continue series",
-                subtitle="Continue series subtitle",
+                key="series-next",
+                title="Next in series",
+                subtitle="Next in series subtitle",
                 empty_message="none",
-                load_url="/requests/sections/home/home-next",
+                load_url="/requests/sections/series/series-next",
                 loading_message="Loading recommendations…",
+                layout="grouped",
+                compact=True,
             ),
             requests_module.RequestsSectionShell(
-                key="home-hot",
-                title="Trending / popular now",
-                subtitle="Hot subtitle",
+                key="series-missing",
+                title="Missing volumes",
+                subtitle="Missing volumes subtitle",
                 empty_message="none",
-                load_url="/requests/sections/home/home-hot",
+                load_url="/requests/sections/series/series-missing",
                 loading_message="Loading recommendations…",
+                layout="grouped",
+                compact=True,
             ),
         ),
     )
 
-    workspace = requests_module.build_requests_workspace("home", state_url="/requests").to_template_dict()
+    workspace = requests_module.build_requests_workspace("series", state_url="/requests/series").to_template_dict()
 
-    assert workspace["active_view"] == "home"
+    assert workspace["active_view"] == "series"
     assert [section["title"] for section in workspace["sections"]] == [
-        "Continue series",
-        "Trending / popular now",
+        "Next in series",
+        "Missing volumes",
     ]
     assert [section["load_url"] for section in workspace["sections"]] == [
-        "/requests/sections/home/home-next",
-        "/requests/sections/home/home-hot",
+        "/requests/sections/series/series-next",
+        "/requests/sections/series/series-missing",
     ]
-    assert [tab["key"] for tab in workspace["tabs"]] == ["home", "series", "authors", "hot"]
+
+def test_requests_view_normalization_defaults_to_series(requests_module):
+    assert requests_module.normalize_requests_view(None) == "series"
+    assert requests_module.normalize_requests_view("home") == "series"
+    assert requests_module.normalize_requests_view("discover") == "hot"
 
 
-def test_build_requests_workspace_normalizes_discover_to_hot(requests_module):
-    workspace = requests_module.build_requests_workspace("discover", state_url="/requests/discover").to_template_dict()
-
-    assert workspace["active_view"] == "hot"
-
-
-def test_build_requests_section_home_next_uses_series_sections(requests_module, monkeypatch):
-    next_section = requests_module.RequestsSection(
-        key="series-next",
-        title="Next in series",
-        subtitle="Likely next books after the series you already own.",
+def test_build_requests_section_new_uses_new_cache(requests_module, monkeypatch):
+    new_section = requests_module.RequestsSection(
+        key="new",
+        title="New and notable",
+        subtitle="Recent releases worth adding next.",
         empty_message="none",
-        layout="grouped",
-        compact=True,
-        groups=(
-            requests_module.RequestsGroup(
-                key="discworld",
-                title="Discworld",
-                hint="12 books in your library",
-                candidates=(
-                    requests_module.RequestsCandidate(
-                        key="discworld:12",
-                        result=_make_result(requests_module, hardcover_id="12", title="Witches Abroad"),
-                        reason_label="Next in series",
-                        sort_key=(0, 0),
-                    ),
-                ),
+        layout="cards",
+        candidates=(
+            requests_module.RequestsCandidate(
+                key="new:12",
+                result=_make_result(requests_module, hardcover_id="12", title="A Stroke of the Pen"),
+                reason_label="New and notable",
+                sort_key=(0, 0),
             ),
         ),
-    )
-    missing_section = requests_module.RequestsSection(
-        key="series-missing",
-        title="Missing volumes",
-        subtitle="Gap fills inside series you already started.",
-        empty_message="none",
-        layout="grouped",
-        compact=True,
-        groups=tuple(),
     )
 
     monkeypatch.setattr(
         requests_module,
-        "_cached_series_sections",
-        lambda state_url=None, cache_scope=None: (next_section, missing_section),
+        "_cached_new_section",
+        lambda state_url=None, cache_scope=None, limit=None: new_section,
     )
 
-    section = requests_module.build_requests_section("home", "home-next", state_url="/requests", cache_scope=1)
+    section = requests_module.build_requests_section("new", "new", state_url="/requests/new", cache_scope=1)
 
-    assert section.key == "home-next"
-    assert section.see_more_url == "/web/requests_workspace_view?view_name=series"
-    assert [candidate.result.title for candidate in section.candidates] == ["Witches Abroad"]
+    assert section.key == "new"
+    assert [candidate.result.title for candidate in section.candidates] == ["A Stroke of the Pen"]

@@ -8,22 +8,11 @@
 {% endblock %}
 
 {% block body %}
-<div class="requests-workspace-page">
+<div class="requests-workspace-page requests-workspace-page--{{ requests_workspace.active_view }}">
   <header class="requests-workspace-header">
     <h1 class="requests-workspace-header__title">{{ requests_workspace.title }}</h1>
     <p class="requests-workspace-header__subtitle">{{ requests_workspace.subtitle }}</p>
   </header>
-
-  <nav class="requests-workspace-subnav" aria-label="{{ _('Requests views') }}">
-    {% for tab in requests_workspace.tabs %}
-      <a
-        class="requests-workspace-subnav__link{% if tab.active %} is-active{% endif %}"
-        href="{{ tab.url }}"
-      >
-        {{ tab.label }}
-      </a>
-    {% endfor %}
-  </nav>
 
   {% if requests_workspace.message %}
     <div class="alert alert-info requests-workspace-message">

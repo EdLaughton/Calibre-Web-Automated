@@ -255,12 +255,17 @@ def test_author_template_renders_async_placeholder_without_sync_shelfmark_markup
     assert "Discworld creator." in html
     assert "Hardcover" in html
     assert "https://assets.hardcover.app/author/terry.jpg" in html
+    assert 'class="author-page author-page--detail"' in html
+    assert 'class="author-page__header"' in html
+    assert 'class="author-page__title"' in html
     assert 'class="author-bio__content"' in html
     assert 'class="author-bio__copy is-collapsed js-author-bio-copy"' in html
     assert 'class="author-bio__toggle js-author-bio-toggle"' in html
     assert 'data-collapsed-label="Read more"' in html
     assert 'data-expanded-label="Show less"' in html
     assert 'class="author-bio__meta"' in html
+    assert 'class="discover load-more author-page__section author-library-section"' in html
+    assert 'class="discover js-shelfmark-contextual-shell author-page__section author-shelfmark-section"' in html
     assert "Read more" in html
     assert "Show less" in html
     assert "The Amazing Maurice" not in html

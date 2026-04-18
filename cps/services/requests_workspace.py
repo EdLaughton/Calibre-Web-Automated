@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import time
+from datetime import date
 from dataclasses import dataclass, field, replace
 from typing import Any, Mapping, Sequence
 
@@ -34,8 +35,8 @@ log = logger.create()
 
 REQUESTS_SERIES_CONTEXT_LIMIT = 4
 REQUESTS_AUTHOR_CONTEXT_LIMIT = 4
-REQUESTS_HOME_SECTION_LIMIT = 4
 REQUESTS_DISCOVER_LIMIT = 12
+REQUESTS_NEW_LIMIT = 12
 REQUESTS_MAX_SERIES = 8
 REQUESTS_MAX_AUTHORS = 8
 REQUESTS_SECTION_CACHE_TTL_SECONDS = 60
@@ -194,7 +195,6 @@ class RequestsWorkspaceView:
     active_view: str
     title: str
     subtitle: str
-    tabs: tuple[dict[str, Any], ...]
     sections: tuple[RequestsSectionShell, ...] = field(default_factory=tuple)
     message: str | None = None
 
@@ -204,7 +204,6 @@ class RequestsWorkspaceView:
             "active_view": self.active_view,
             "title": self.title,
             "subtitle": self.subtitle,
-            "tabs": [dict(tab) for tab in self.tabs],
             "sections": [section.to_template_dict() for section in self.sections],
             "message": self.message,
         }
@@ -426,6 +425,38 @@ def _build_discover_candidate(result: ShelfmarkResultView, *, trending: bool) ->
         source_kind="discover",
         priority_bucket="normal",
         sort_key=(-(popularity or 0), result.title.casefold()),
+    )
+
+
+def _release_sort_value(raw_release_date: str | None, publish_year: int | None) -> int:
+    if raw_release_date:
+        try:
+            return date.fromisoformat(str(raw_release_date).split("T", 1)[0]).toordinal()
+        except ValueError:
+            pass
+    if publish_year:
+        return date(int(publish_year), 1, 1).toordinal()
+    return 0
+
+
+def _build_new_candidate(
+    result: ShelfmarkResultView,
+    *,
+    raw_release_date: str | None,
+) -> RequestsCandidate | None:
+    if result.already_in_library or not result.cover_url:
+        return None
+    popularity = result.readers_count or result.ratings_count or 0
+    release_value = _release_sort_value(raw_release_date, result.publish_year)
+    return RequestsCandidate(
+        key=f"new:{_result_key(result)}",
+        result=result,
+        reason_label=_("New and notable"),
+        reason_detail=_("Recent release not already in your library"),
+        reason_icon="glyphicon glyphicon-time",
+        source_kind="new",
+        priority_bucket="normal",
+        sort_key=(-(release_value or 0), -(popularity or 0), result.title.casefold()),
     )
 
 
@@ -661,9 +692,58 @@ def _collect_hot_section(*, state_url: str | None, limit: int) -> RequestsSectio
     )
 
 
-def _limit_grouped_candidates(groups: Sequence[RequestsGroup], *, limit: int) -> tuple[RequestsCandidate, ...]:
-    flattened = [candidate for group in groups for candidate in group.candidates]
-    return _dedupe_candidates(flattened, limit=limit)
+def _collect_new_section(*, state_url: str | None, limit: int) -> RequestsSection:
+    client = get_hardcover_client(load_privacy=False)
+    if client is None:
+        return RequestsSection(
+            key="new",
+            title=_("New and notable"),
+            subtitle=_("Recent releases worth adding next."),
+            empty_message=_("Hardcover discovery data is unavailable right now."),
+            layout="cards",
+        )
+
+    books: list[dict] = []
+    try:
+        books = client.list_popular_books(limit=max(limit * 3, limit))
+    except Exception as exc:
+        log.warning("Hardcover recent-books lookup failed for Requests workspace: %s", exc)
+        books = []
+
+    ranked_books = sorted(
+        (book for book in books if isinstance(book, Mapping)),
+        key=lambda book: (
+            -_release_sort_value(book.get("release_date"), None),
+            -(book.get("users_count") or book.get("ratings_count") or 0),
+            str(book.get("title") or "").casefold(),
+        ),
+    )
+
+    candidates: list[RequestsCandidate] = []
+    for book in ranked_books:
+        result = _build_hardcover_result(
+            book,
+            state_url=state_url,
+            detail_query=str(book.get("title") or ""),
+        )
+        if result is None:
+            continue
+        candidate = _build_new_candidate(
+            result,
+            raw_release_date=book.get("release_date"),
+        )
+        if candidate is None:
+            continue
+        candidates.append(candidate)
+
+    return RequestsSection(
+        key="new",
+        title=_("New and notable"),
+        subtitle=_("Recent releases worth adding next."),
+        empty_message=_("No recent notable books are available right now."),
+        layout="cards",
+        candidates=_dedupe_candidates(candidates, limit=limit),
+    )
 
 
 def _cached_series_sections(*, state_url: str | None, cache_scope: Any) -> tuple[RequestsSection, RequestsSection]:
@@ -698,91 +778,43 @@ def _cached_hot_section(*, state_url: str | None, cache_scope: Any, limit: int) 
     )
 
 
-def _home_section_from_grouped(
-    section: RequestsSection,
-    *,
-    key: str,
-    title: str,
-    subtitle: str,
-    empty_message: str,
-    see_more_url: str | None,
-    limit: int,
-) -> RequestsSection:
-    return RequestsSection(
-        key=key,
-        title=title,
-        subtitle=subtitle,
-        empty_message=empty_message,
-        layout="cards",
-        see_more_url=see_more_url,
-        candidates=_limit_grouped_candidates(section.groups, limit=limit),
-    )
-
-
-def _home_section_from_cards(
-    section: RequestsSection,
-    *,
-    key: str,
-    title: str,
-    subtitle: str,
-    empty_message: str,
-    see_more_url: str | None,
-    limit: int,
-) -> RequestsSection:
-    return RequestsSection(
-        key=key,
-        title=title,
-        subtitle=subtitle,
-        empty_message=empty_message,
-        layout="cards",
-        see_more_url=see_more_url,
-        candidates=_dedupe_candidates(section.candidates, limit=limit),
+def _cached_new_section(*, state_url: str | None, cache_scope: Any, limit: int) -> RequestsSection:
+    return _cache_value(
+        ("new-section", cache_scope, state_url, limit),
+        lambda: _collect_new_section(
+            state_url=state_url,
+            limit=limit,
+        ),
     )
 
 
 def normalize_requests_view(active_view: str | None) -> str:
-    normalized_view = (active_view or "home").strip().lower()
+    normalized_view = (active_view or "series").strip().lower()
     if normalized_view == "discover":
         return "hot"
-    if normalized_view not in {"home", "series", "authors", "hot"}:
-        return "home"
+    if normalized_view == "home":
+        return "series"
+    if normalized_view not in {"series", "authors", "hot", "new"}:
+        return "series"
     return normalized_view
 
 
 def _requests_state_url_for_view(active_view: str, state_url: str | None) -> str:
     if state_url:
         return state_url
-    if active_view == "home":
-        return url_for("web.requests_workspace")
     return url_for("web.requests_workspace_view", view_name=active_view)
 
 
 def _requests_view_subtitle(active_view: str) -> str:
+    if active_view == "authors":
+        return _("Missing books by authors you already own, ranked by likely value.")
     if active_view == "series":
         return _("Track likely next entries and missing gaps across the series you already own.")
-    if active_view == "authors":
-        return _("Surface notable missing books by authors already represented in your library.")
     if active_view == "hot":
         return _("Browse popular missing books worth adding next.")
-    return _("Find likely next additions from the series and authors you already care about.")
-
-
-def _build_tabs(active_view: str) -> tuple[dict[str, Any], ...]:
-    tabs = (
-        ("home", _("Home")),
-        ("series", _("Series")),
-        ("authors", _("Authors")),
-        ("hot", _("Hot")),
-    )
-    return tuple(
-        {
-            "key": key,
-            "label": label,
-            "url": url_for("web.requests_workspace_view", view_name=key) if key != "home" else url_for("web.requests_workspace"),
-            "active": key == active_view,
-        }
-        for key, label in tabs
-    )
+    if active_view == "new":
+        return _("Recent notable books that are missing from your library.")
+    return _("Browse popular missing books worth adding next.")
 
 
 def _build_section_shell(
@@ -816,6 +848,19 @@ def _build_section_shell(
 
 
 def _build_section_shells(active_view: str, *, state_url: str) -> tuple[RequestsSectionShell, ...]:
+    if active_view == "authors":
+        return (
+            _build_section_shell(
+                active_view=active_view,
+                state_url=state_url,
+                key="authors",
+                title=_("More from authors you own"),
+                subtitle=_("Notable missing works by authors already represented in your library."),
+                empty_message=_("No author-led request candidates surfaced right now."),
+                layout="grouped",
+                compact=True,
+            ),
+        )
     if active_view == "series":
         return (
             _build_section_shell(
@@ -839,19 +884,6 @@ def _build_section_shells(active_view: str, *, state_url: str) -> tuple[Requests
                 compact=True,
             ),
         )
-    if active_view == "authors":
-        return (
-            _build_section_shell(
-                active_view=active_view,
-                state_url=state_url,
-                key="authors",
-                title=_("More from authors you own"),
-                subtitle=_("Notable missing works by authors already represented in your library."),
-                empty_message=_("No author-led request candidates surfaced right now."),
-                layout="grouped",
-                compact=True,
-            ),
-        )
     if active_view == "hot":
         return (
             _build_section_shell(
@@ -868,38 +900,11 @@ def _build_section_shells(active_view: str, *, state_url: str) -> tuple[Requests
         _build_section_shell(
             active_view=active_view,
             state_url=state_url,
-            key="home-next",
-            title=_("Continue series"),
-            subtitle=_("Likely next books to keep your current series moving."),
-            empty_message=_("No series continuations surfaced right now."),
-            see_more_url=url_for("web.requests_workspace_view", view_name="series"),
-        ),
-        _build_section_shell(
-            active_view=active_view,
-            state_url=state_url,
-            key="home-missing",
-            title=_("Missing volumes"),
-            subtitle=_("Gap fills inside series you already care about."),
-            empty_message=_("No missing-volume gap fills surfaced right now."),
-            see_more_url=url_for("web.requests_workspace_view", view_name="series"),
-        ),
-        _build_section_shell(
-            active_view=active_view,
-            state_url=state_url,
-            key="home-authors",
-            title=_("More from authors you own"),
-            subtitle=_("Popular missing books by authors already represented locally."),
-            empty_message=_("No author-led expansions surfaced right now."),
-            see_more_url=url_for("web.requests_workspace_view", view_name="authors"),
-        ),
-        _build_section_shell(
-            active_view=active_view,
-            state_url=state_url,
-            key="home-hot",
-            title=_("Trending / popular now"),
-            subtitle=_("High-signal discovery candidates beyond your current shelves."),
-            empty_message=_("No trending or popular discovery candidates surfaced right now."),
-            see_more_url=url_for("web.requests_workspace_view", view_name="hot"),
+            key="new",
+            title=_("New and notable"),
+            subtitle=_("Recent releases worth adding next."),
+            empty_message=_("No recent notable books are available right now."),
+            layout="cards",
         ),
     )
 
@@ -935,64 +940,13 @@ def build_requests_section(active_view: str, section_key: str, *, state_url: str
             cache_scope=cache_scope,
             limit=REQUESTS_DISCOVER_LIMIT,
         )
-
-    if normalized_view != "home":
-        raise KeyError(section_key)
-
-    if section_key in {"home-next", "home-missing"}:
-        next_section, missing_section = _cached_series_sections(
+    if normalized_view == "new":
+        if section_key != "new":
+            raise KeyError(section_key)
+        return _cached_new_section(
             state_url=resolved_state_url,
             cache_scope=cache_scope,
-        )
-        if section_key == "home-next":
-            return _home_section_from_grouped(
-                next_section,
-                key="home-next",
-                title=_("Continue series"),
-                subtitle=_("Likely next books to keep your current series moving."),
-                empty_message=_("No series continuations surfaced right now."),
-                see_more_url=url_for("web.requests_workspace_view", view_name="series"),
-                limit=REQUESTS_HOME_SECTION_LIMIT,
-            )
-        return _home_section_from_grouped(
-            missing_section,
-            key="home-missing",
-            title=_("Missing volumes"),
-            subtitle=_("Gap fills inside series you already care about."),
-            empty_message=_("No missing-volume gap fills surfaced right now."),
-            see_more_url=url_for("web.requests_workspace_view", view_name="series"),
-            limit=REQUESTS_HOME_SECTION_LIMIT,
-        )
-
-    if section_key == "home-authors":
-        authors_section = _cached_author_section(
-            state_url=resolved_state_url,
-            cache_scope=cache_scope,
-        )
-        return _home_section_from_grouped(
-            authors_section,
-            key="home-authors",
-            title=_("More from authors you own"),
-            subtitle=_("Popular missing books by authors already represented locally."),
-            empty_message=_("No author-led expansions surfaced right now."),
-            see_more_url=url_for("web.requests_workspace_view", view_name="authors"),
-            limit=REQUESTS_HOME_SECTION_LIMIT,
-        )
-
-    if section_key == "home-hot":
-        hot_section = _cached_hot_section(
-            state_url=resolved_state_url,
-            cache_scope=cache_scope,
-            limit=REQUESTS_DISCOVER_LIMIT,
-        )
-        return _home_section_from_cards(
-            hot_section,
-            key="home-hot",
-            title=_("Trending / popular now"),
-            subtitle=_("High-signal discovery candidates beyond your current shelves."),
-            empty_message=_("No trending or popular discovery candidates surfaced right now."),
-            see_more_url=url_for("web.requests_workspace_view", view_name="hot"),
-            limit=REQUESTS_HOME_SECTION_LIMIT,
+            limit=REQUESTS_NEW_LIMIT,
         )
 
     raise KeyError(section_key)
@@ -1008,7 +962,6 @@ def build_requests_workspace(active_view: str, *, state_url: str | None) -> Requ
             active_view=normalized_view,
             title=_("Requests"),
             subtitle=_requests_view_subtitle(normalized_view),
-            tabs=_build_tabs(normalized_view),
             sections=tuple(),
             message=_("Enable Shelfmark Search to use Requests."),
         )
@@ -1018,7 +971,6 @@ def build_requests_workspace(active_view: str, *, state_url: str | None) -> Requ
         active_view=normalized_view,
         title=_("Requests"),
         subtitle=_requests_view_subtitle(normalized_view),
-        tabs=_build_tabs(normalized_view),
         sections=_build_section_shells(normalized_view, state_url=resolved_state_url),
         message=None,
     )

@@ -735,7 +735,7 @@ def render_series_books(page, book_id, order):
 @web.route("/requests")
 @login_required_if_no_ano
 def requests_workspace():
-    return _render_requests_workspace("home")
+    return redirect(url_for("web.requests_workspace_view", view_name="series"))
 
 
 @web.route("/requests/<view_name>")
