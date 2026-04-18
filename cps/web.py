@@ -741,7 +741,10 @@ def requests_workspace():
 @web.route("/requests/<view_name>")
 @login_required_if_no_ano
 def requests_workspace_view(view_name):
-    return _render_requests_workspace(view_name)
+    normalized_view = normalize_requests_view(view_name)
+    if normalized_view != (view_name or "").strip().lower():
+        return redirect(url_for("web.requests_workspace_view", view_name=normalized_view))
+    return _render_requests_workspace(normalized_view)
 
 
 def _render_requests_workspace(view_name):

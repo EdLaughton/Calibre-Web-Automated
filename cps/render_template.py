@@ -79,19 +79,6 @@ def get_sidebar_config(kwargs=None):
         "config_show": True,
     })
     sidebar.append({
-        "glyph": "glyphicon-user",
-        "text": _('Authors'),
-        "link": 'web.requests_workspace_view',
-        "href": url_for('web.requests_workspace_view', view_name='authors'),
-        "id": "requests-authors",
-        "section": "requests",
-        "visibility": constants.SIDEBAR_REQUESTS,
-        'public': (not current_user.is_anonymous),
-        "page": "requests-authors",
-        "show_text": _('Show Requests workspace'),
-        "config_show": False,
-    })
-    sidebar.append({
         "glyph": "glyphicon-bookmark",
         "text": _('Series'),
         "link": 'web.requests_workspace_view',
@@ -101,6 +88,19 @@ def get_sidebar_config(kwargs=None):
         "visibility": constants.SIDEBAR_REQUESTS,
         'public': (not current_user.is_anonymous),
         "page": "requests-series",
+        "show_text": _('Show Requests workspace'),
+        "config_show": False,
+    })
+    sidebar.append({
+        "glyph": "glyphicon-user",
+        "text": _('Authors'),
+        "link": 'web.requests_workspace_view',
+        "href": url_for('web.requests_workspace_view', view_name='authors'),
+        "id": "requests-authors",
+        "section": "requests",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests-authors",
         "show_text": _('Show Requests workspace'),
         "config_show": False,
     })

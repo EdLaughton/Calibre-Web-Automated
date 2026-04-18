@@ -1,8 +1,8 @@
 {% macro render_requests_section_header(title, subtitle, see_more_url) -%}
-  <div class="requests-workspace-section__header">
-    <div class="requests-workspace-section__lead">
-      <h2 class="requests-workspace-section__title">{{ title }}</h2>
-      <p class="requests-workspace-section__subtitle">{{ subtitle }}</p>
+  <div class="shelfmark-section-line requests-workspace-section__header">
+    <div class="shelfmark-section-line__lead">
+      <h2 class="shelfmark-section-line__title">{{ title }}</h2>
+      <p class="shelfmark-section-line__subtitle">{{ subtitle }}</p>
     </div>
     {% if see_more_url %}
       <a class="btn btn-default btn-sm requests-workspace-section__more" href="{{ see_more_url }}">
@@ -21,9 +21,13 @@
     data-failure-message="{{ _('Could not load this Requests section right now.') }}"
   >
     {{ render_requests_section_header(section.title, section.subtitle, section.see_more_url) }}
-    <div class="requests-workspace-section__placeholder">
-      <span class="glyphicon glyphicon-refresh requests-workspace-section__spinner" aria-hidden="true"></span>
-      <span>{{ section.loading_message }}</span>
+    <div class="shelfmark-empty-state requests-workspace-section__placeholder">
+      <div class="shelfmark-empty-state__icon">
+        <span class="glyphicon glyphicon-refresh requests-workspace-section__spinner" aria-hidden="true"></span>
+      </div>
+      <div class="shelfmark-empty-state__body">
+        <p class="shelfmark-empty-state__message">{{ section.loading_message }}</p>
+      </div>
     </div>
   </section>
 {%- endmacro %}
@@ -34,13 +38,8 @@
   {% set row_classes = [
     'shelfmark-result-card',
     'js-shelfmark-result-row',
-    'shelfmark-result-card--' ~ (result.library_state.row_class or 'info'),
-    'requests-candidate-card',
-    'requests-candidate-card--' ~ candidate.priority_bucket
+    'shelfmark-result-card--' ~ (result.library_state.row_class or 'info')
   ] %}
-  {% if compact %}
-    {% set row_classes = row_classes + ['requests-candidate-card--compact'] %}
-  {% endif %}
   {% if result.workflow_state and not result.already_in_library %}
     {% set row_classes = row_classes + ['js-shelfmark-status-target'] %}
   {% endif %}
@@ -74,15 +73,14 @@
         {% for group in section.groups %}
           <section class="requests-workspace-group">
             <header class="requests-workspace-group__header">
-              <div>
+              <div class="requests-workspace-group__lead">
                 <h3 class="requests-workspace-group__title">{{ group.title }}</h3>
                 {% if group.hint %}
                   <p class="requests-workspace-group__hint">{{ group.hint }}</p>
                 {% endif %}
               </div>
-              <span class="requests-workspace-group__count">{{ _('%(count)s shown', count=group.count) }}</span>
             </header>
-            <div class="requests-workspace-results requests-workspace-results--{{ section.layout }}">
+            <div class="shelfmark-results-list shelfmark-results-list--compact requests-workspace-results">
               {% for candidate in group.candidates %}
                 {{ render_requests_candidate(candidate, preferred_release, compact=section.compact) }}
               {% endfor %}
@@ -91,15 +89,19 @@
         {% endfor %}
       </div>
     {% elif section.candidates %}
-      <div class="requests-workspace-results requests-workspace-results--{{ section.layout }}">
+      <div class="shelfmark-results-list{% if section.compact %} shelfmark-results-list--compact{% endif %} requests-workspace-results">
         {% for candidate in section.candidates %}
           {{ render_requests_candidate(candidate, preferred_release, compact=section.compact) }}
         {% endfor %}
       </div>
     {% else %}
-      <div class="requests-workspace-empty-state">
-        <span class="glyphicon glyphicon-inbox" aria-hidden="true"></span>
-        <span>{{ section.empty_message }}</span>
+      <div class="shelfmark-empty-state requests-workspace-empty-state">
+        <div class="shelfmark-empty-state__icon">
+          <span class="glyphicon glyphicon-inbox" aria-hidden="true"></span>
+        </div>
+        <div class="shelfmark-empty-state__body">
+          <p class="shelfmark-empty-state__message">{{ section.empty_message }}</p>
+        </div>
       </div>
     {% endif %}
   </section>

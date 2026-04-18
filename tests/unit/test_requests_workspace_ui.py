@@ -49,6 +49,10 @@ def _create_requests_app():
 
     @web.route("/requests/<view_name>")
     def requests_workspace_view(view_name):
+        if view_name == "home":
+            return redirect("/requests/series")
+        if view_name == "discover":
+            return redirect("/requests/hot")
         return view_name
 
     @web.route("/book/<int:book_id>")
@@ -114,15 +118,16 @@ def _requests_workspace_context():
         "requests_workspace": {
             "enabled": True,
             "active_view": "series",
-            "title": "Requests",
-            "subtitle": "Track likely next entries and missing gaps across the series you already own.",
+            "eyebrow": "Requests",
+            "title": "Series",
+            "subtitle": "Continue the series you own, fill gaps, and catch upcoming or newly released entries.",
             "message": None,
             "sections": [
                 {
                     "key": "series-next",
                     "title": "Next in series",
-                    "subtitle": "Likely next books after the series you already own.",
-                    "empty_message": "No likely next-in-series request candidates surfaced right now.",
+                    "subtitle": "Likely continuations after the farthest point you already own.",
+                    "empty_message": "No likely next-in-series requests surfaced right now.",
                     "layout": "grouped",
                     "compact": True,
                     "see_more_url": None,
@@ -138,6 +143,28 @@ def _requests_workspace_context():
                     "compact": True,
                     "see_more_url": None,
                     "load_url": "/requests/sections/series/series-missing?return_to=/requests/series",
+                    "loading_message": "Loading recommendations…",
+                },
+                {
+                    "key": "series-upcoming",
+                    "title": "Upcoming in your series",
+                    "subtitle": "Forthcoming entries tied to series already in your library.",
+                    "empty_message": "No upcoming books in your series surfaced right now.",
+                    "layout": "grouped",
+                    "compact": True,
+                    "see_more_url": None,
+                    "load_url": "/requests/sections/series/series-upcoming?return_to=/requests/series",
+                    "loading_message": "Loading recommendations…",
+                },
+                {
+                    "key": "series-new-releases",
+                    "title": "New releases in your series",
+                    "subtitle": "Recently released books tied to series already in your library.",
+                    "empty_message": "No recent series releases surfaced right now.",
+                    "layout": "grouped",
+                    "compact": True,
+                    "see_more_url": None,
+                    "load_url": "/requests/sections/series/series-new-releases?return_to=/requests/series",
                     "loading_message": "Loading recommendations…",
                 },
             ],
@@ -159,8 +186,8 @@ def _requests_section_context():
         "section": {
             "key": "series-next",
             "title": "Next in series",
-            "subtitle": "Likely next books after the series you already own.",
-            "empty_message": "No likely next-in-series request candidates surfaced right now.",
+            "subtitle": "Likely continuations after the farthest point you already own.",
+            "empty_message": "No likely next-in-series requests surfaced right now.",
             "layout": "grouped",
             "compact": True,
             "see_more_url": None,
@@ -364,6 +391,10 @@ def _create_real_layout_app(sidebar_sections):
 
     @web.route("/requests/<view_name>")
     def requests_workspace_view(view_name):
+        if view_name == "home":
+            return redirect("/requests/series")
+        if view_name == "discover":
+            return redirect("/requests/hot")
         return render_template(
             "layout_nav_smoke.html",
             **_layout_context("requests-" + view_name, "Requests"),
@@ -408,13 +439,19 @@ def test_requests_template_renders_async_shell_without_duplicate_top_subnav():
         html = render_template("requests.html", **context)
 
     assert "Requests" in html
-    assert "Track likely next entries and missing gaps across the series you already own." in html
+    assert "Series" in html
+    assert "Continue the series you own, fill gaps, and catch upcoming or newly released entries." in html
     assert "Next in series" in html
     assert "Missing volumes" in html
+    assert "Upcoming in your series" in html
+    assert "New releases in your series" in html
     assert "Loading recommendations…" in html
-    assert 'class="requests-workspace-section requests-workspace-section--shell js-requests-section-shell"' in html
+    assert "shelfmark-external-shell requests-workspace-shell" in html
+    assert "requests-workspace-header__eyebrow" in html
     assert 'data-section-url="/requests/sections/series/series-next?return_to=/requests/series"' in html
     assert 'data-section-url="/requests/sections/series/series-missing?return_to=/requests/series"' in html
+    assert 'data-section-url="/requests/sections/series/series-upcoming?return_to=/requests/series"' in html
+    assert 'data-section-url="/requests/sections/series/series-new-releases?return_to=/requests/series"' in html
     assert "Witches Abroad" not in html
     assert "requests-workspace-subnav" not in html
     assert "shelfmark_request_flow.js" in html
@@ -433,14 +470,30 @@ def test_requests_root_redirects_to_series_view():
     assert response.headers["Location"].endswith("/requests/series")
 
 
+def test_requests_legacy_home_redirects_and_new_page_exists():
+    app = _create_requests_app()
+
+    with app.test_client() as client:
+        home_response = client.get("/requests/home", follow_redirects=False)
+        discover_response = client.get("/requests/discover", follow_redirects=False)
+        new_response = client.get("/requests/new")
+
+    assert home_response.status_code == 302
+    assert home_response.headers["Location"].endswith("/requests/series")
+    assert discover_response.status_code == 302
+    assert discover_response.headers["Location"].endswith("/requests/hot")
+    assert new_response.status_code == 200
+    assert new_response.text == "new"
+
+
 def test_requests_section_partial_renders_grouped_series_section():
     app = _create_requests_app()
     context = _requests_section_context()
     context["section"] = {
         "key": "series-next",
         "title": "Next in series",
-        "subtitle": "Likely next books after the series you already own.",
-        "empty_message": "No likely next-in-series request candidates surfaced right now.",
+        "subtitle": "Likely continuations after the farthest point you already own.",
+        "empty_message": "No likely next-in-series requests surfaced right now.",
         "layout": "grouped",
         "compact": True,
         "see_more_url": None,
@@ -463,8 +516,33 @@ def test_requests_section_partial_renders_grouped_series_section():
     assert "Next in series" in html
     assert "Discworld" in html
     assert "12 books in your library" in html
-    assert "requests-candidate-card--compact" in html
+    assert "shelfmark-results-list--compact" in html
     assert "Missing volume" in html
+    assert "js-shelfmark-action" in html
+    assert "js-shelfmark-detail-link" in html
+
+
+def test_requests_section_partial_renders_compact_empty_state():
+    app = _create_requests_app()
+    context = _requests_section_context()
+    context["section"] = {
+        "key": "hot-context",
+        "title": "Hot from your authors and series",
+        "subtitle": "Popularity-led picks tied to authors and series already in your library.",
+        "empty_message": "No strong popularity-led matches from your authors or series surfaced right now.",
+        "layout": "cards",
+        "compact": False,
+        "see_more_url": None,
+        "has_content": False,
+        "candidates": [],
+        "groups": [],
+    }
+
+    with app.test_request_context("/requests/sections/hot/hot-context?return_to=/requests/hot"):
+        html = render_template("requests_workspace_section.html", **context)
+
+    assert "shelfmark-empty-state requests-workspace-empty-state" in html
+    assert "No strong popularity-led matches from your authors or series surfaced right now." in html
 
 
 def test_requests_sidebar_includes_requests_link(monkeypatch):
@@ -492,8 +570,8 @@ def test_requests_sidebar_includes_requests_link(monkeypatch):
     assert requests_hot["page"] == "requests-hot"
     assert [section["id"] for section in sidebar_sections] == ["browse", "requests"]
     assert [item["id"] for item in sidebar_sections[1]["entries"]] == [
-        "requests-authors",
         "requests-series",
+        "requests-authors",
         "requests-hot",
         "requests-new",
     ]
@@ -532,6 +610,39 @@ def test_real_layout_sidebar_renders_requests_and_non_requests_pages(monkeypatch
                 "public": True,
                 "page": "requests-series",
             },
+            {
+                "glyph": "glyphicon-user",
+                "text": "Authors",
+                "link": "web.requests_workspace_view",
+                "href": "/requests/authors",
+                "id": "requests-authors",
+                "section": "requests",
+                "visibility": 1,
+                "public": True,
+                "page": "requests-authors",
+            },
+            {
+                "glyph": "glyphicon-fire",
+                "text": "Hot",
+                "link": "web.requests_workspace_view",
+                "href": "/requests/hot",
+                "id": "requests-hot",
+                "section": "requests",
+                "visibility": 1,
+                "public": True,
+                "page": "requests-hot",
+            },
+            {
+                "glyph": "glyphicon-time",
+                "text": "New",
+                "link": "web.requests_workspace_view",
+                "href": "/requests/new",
+                "id": "requests-new",
+                "section": "requests",
+                "visibility": 1,
+                "public": True,
+                "page": "requests-new",
+            },
         ]
     )
     app = _create_real_layout_app(sidebar_sections)
@@ -539,6 +650,7 @@ def test_real_layout_sidebar_renders_requests_and_non_requests_pages(monkeypatch
     with app.test_client() as client:
         home_response = client.get("/")
         requests_root_response = client.get("/requests", follow_redirects=False)
+        requests_home_response = client.get("/requests/home", follow_redirects=False)
         requests_view_response = client.get("/requests/series")
 
     assert home_response.status_code == 200
@@ -548,6 +660,8 @@ def test_real_layout_sidebar_renders_requests_and_non_requests_pages(monkeypatch
 
     assert requests_root_response.status_code == 302
     assert requests_root_response.headers["Location"].endswith("/requests/series")
+    assert requests_home_response.status_code == 302
+    assert requests_home_response.headers["Location"].endswith("/requests/series")
 
     assert requests_view_response.status_code == 200
     assert "Requests" in requests_view_response.text

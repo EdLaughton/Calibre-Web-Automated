@@ -325,6 +325,7 @@ class ShelfmarkResultView:
     triage_state: ShelfmarkTriageState | None = None
     needs_progressive_enrichment: bool = False
     progressive_filter_pending: bool = False
+    release_date: str | None = None
 
     def to_template_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -1632,6 +1633,7 @@ def build_shelfmark_result_view(
             _resolve_shelfmark_cover_value(book),
         ),
         description=_plain_text_from_html(description_html),
+        release_date=_normalize_text(book.get("release_date")),
         publish_year=publish_year,
         source_url=_resolve_source_url(book),
         display_fields=_normalize_display_fields(book.get("display_fields")),
