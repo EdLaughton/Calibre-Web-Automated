@@ -10,7 +10,7 @@ import sys
 import types
 from pathlib import Path
 
-from flask import Blueprint, Flask, redirect, render_template
+from flask import Blueprint, Flask, g, redirect, render_template
 from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
 
 
@@ -180,74 +180,7 @@ def _requests_section_context():
     }
 
 
-def test_requests_template_renders_async_shell_without_duplicate_top_subnav():
-    app = _create_requests_app()
-    context = _requests_workspace_context()
-
-    with app.test_request_context("/requests/series"):
-        html = render_template("requests.html", **context)
-
-    assert "Requests" in html
-    assert "Track likely next entries and missing gaps across the series you already own." in html
-    assert "Next in series" in html
-    assert "Missing volumes" in html
-    assert "Loading recommendations…" in html
-    assert 'class="requests-workspace-section requests-workspace-section--shell js-requests-section-shell"' in html
-    assert 'data-section-url="/requests/sections/series/series-next?return_to=/requests/series"' in html
-    assert 'data-section-url="/requests/sections/series/series-missing?return_to=/requests/series"' in html
-    assert "Witches Abroad" not in html
-    assert "requests-workspace-subnav" not in html
-    assert "shelfmark_request_flow.js" in html
-    assert "shelfmark_external_search.js" in html
-    assert "requests_workspace_async.js" in html
-    assert "shelfmarkDetailModal" in html
-
-
-def test_requests_root_redirects_to_series_view():
-    app = _create_requests_app()
-
-    with app.test_client() as client:
-        response = client.get("/requests")
-
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/requests/series")
-
-
-def test_requests_section_partial_renders_grouped_series_section():
-    app = _create_requests_app()
-    context = _requests_section_context()
-    context["section"] = {
-        "key": "series-next",
-        "title": "Next in series",
-        "subtitle": "Likely next books after the series you already own.",
-        "empty_message": "No likely next-in-series request candidates surfaced right now.",
-        "layout": "grouped",
-        "compact": True,
-        "see_more_url": None,
-        "has_content": True,
-        "candidates": [],
-        "groups": [
-            {
-                "key": "discworld",
-                "title": "Discworld",
-                "hint": "12 books in your library · Owned through 11",
-                "count": 1,
-                "candidates": [_requests_candidate(reason_label="Missing volume")],
-            }
-        ],
-    }
-
-    with app.test_request_context("/requests/sections/series/series-next?return_to=/requests/series"):
-        html = render_template("requests_workspace_section.html", **context)
-
-    assert "Next in series" in html
-    assert "Discworld" in html
-    assert "12 books in your library" in html
-    assert "requests-candidate-card--compact" in html
-    assert "Missing volume" in html
-
-
-def test_requests_sidebar_includes_requests_link(monkeypatch):
+def _import_render_template_module(monkeypatch):
     class _DummyCurrentUser:
         is_anonymous = False
         id = 1
@@ -334,6 +267,208 @@ def test_requests_sidebar_includes_requests_link(monkeypatch):
             else ""
         ),
     )
+    return module
+
+
+class _LayoutCurrentUser:
+    locale = "en"
+    name = "Reader"
+    is_authenticated = True
+    is_anonymous = False
+
+    @staticmethod
+    def role_admin():
+        return False
+
+    @staticmethod
+    def role_edit():
+        return False
+
+    @staticmethod
+    def role_upload():
+        return False
+
+
+def _create_real_layout_app(sidebar_sections):
+    app = Flask(__name__, template_folder=str(TEMPLATES_DIR))
+    app.config["SECRET_KEY"] = "test-secret"
+    app.jinja_loader = ChoiceLoader(
+        [
+            DictLoader(
+                {
+                    "image.html": (
+                        "{% macro book_cover(book, alt=None) %}"
+                        "<img alt=\"{{ alt or 'cover' }}\" src=\"/static/test-cover.png\">"
+                        "{% endmacro %}"
+                    ),
+                    "layout_nav_smoke.html": (
+                        "{% extends 'layout.html' %}"
+                        "{% block body %}<div id=\"page-body\">shell ok</div>{% endblock %}"
+                    ),
+                }
+            ),
+            FileSystemLoader(str(TEMPLATES_DIR)),
+        ]
+    )
+    app.jinja_env.globals["csrf_token"] = lambda: "csrf-token"
+    app.jinja_env.globals["_"] = lambda value, **kwargs: value % kwargs if kwargs else value
+    app.jinja_env.filters["shortentitle"] = lambda value, *args, **kwargs: value
+    app.jinja_env.filters["formatfloat"] = lambda value, *args, **kwargs: f"{value:.2f}"
+    app.jinja_env.filters["music"] = lambda value: False
+
+    @app.before_request
+    def _setup_globals():
+        g.google_site_verification = ""
+        g.current_theme = 0
+        g.allow_anonymous = False
+        g.allow_registration = False
+        g.allow_upload = False
+        g.shelves_access = []
+        g.magic_shelves_access = []
+
+    def _layout_context(page, title):
+        return {
+            "instance": "Calibre-Web Automated",
+            "title": title,
+            "page": page,
+            "nav_active_page": page,
+            "bodyClass": "",
+            "cwa_settings": {},
+            "current_user": _LayoutCurrentUser(),
+            "searchterm": "",
+            "simple": True,
+            "sidebar": [],
+            "sidebar_sections": sidebar_sections,
+            "magic_shelf_routes": {"render": False, "create": False},
+            "duplicate_notification": {"count": 0},
+            "accept": [],
+            "pagination": None,
+        }
+
+    web = Blueprint("web", __name__)
+    search = Blueprint("search", __name__)
+    shelf = Blueprint("shelf", __name__)
+    about = Blueprint("about", __name__)
+
+    @web.route("/")
+    def index():
+        return render_template("layout_nav_smoke.html", **_layout_context("hot", "Home"))
+
+    @web.route("/list")
+    def books_list():
+        return "books"
+
+    @web.route("/requests")
+    def requests_workspace():
+        return redirect("/requests/series")
+
+    @web.route("/requests/<view_name>")
+    def requests_workspace_view(view_name):
+        return render_template(
+            "layout_nav_smoke.html",
+            **_layout_context("requests-" + view_name, "Requests"),
+        )
+
+    @web.route("/profile")
+    def profile():
+        return "profile"
+
+    @web.route("/logout")
+    def logout():
+        return "logout"
+
+    @search.route("/search")
+    def simple_search():
+        return "search"
+
+    @search.route("/search/advanced")
+    def advanced_search():
+        return "advanced"
+
+    @shelf.route("/shelf/create")
+    def create_shelf():
+        return "create-shelf"
+
+    @about.route("/about")
+    def package_versions():
+        return "about"
+
+    app.register_blueprint(web)
+    app.register_blueprint(search)
+    app.register_blueprint(shelf)
+    app.register_blueprint(about)
+    return app
+
+
+def test_requests_template_renders_async_shell_without_duplicate_top_subnav():
+    app = _create_requests_app()
+    context = _requests_workspace_context()
+
+    with app.test_request_context("/requests/series"):
+        html = render_template("requests.html", **context)
+
+    assert "Requests" in html
+    assert "Track likely next entries and missing gaps across the series you already own." in html
+    assert "Next in series" in html
+    assert "Missing volumes" in html
+    assert "Loading recommendations…" in html
+    assert 'class="requests-workspace-section requests-workspace-section--shell js-requests-section-shell"' in html
+    assert 'data-section-url="/requests/sections/series/series-next?return_to=/requests/series"' in html
+    assert 'data-section-url="/requests/sections/series/series-missing?return_to=/requests/series"' in html
+    assert "Witches Abroad" not in html
+    assert "requests-workspace-subnav" not in html
+    assert "shelfmark_request_flow.js" in html
+    assert "shelfmark_external_search.js" in html
+    assert "requests_workspace_async.js" in html
+    assert "shelfmarkDetailModal" in html
+
+
+def test_requests_root_redirects_to_series_view():
+    app = _create_requests_app()
+
+    with app.test_client() as client:
+        response = client.get("/requests")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/requests/series")
+
+
+def test_requests_section_partial_renders_grouped_series_section():
+    app = _create_requests_app()
+    context = _requests_section_context()
+    context["section"] = {
+        "key": "series-next",
+        "title": "Next in series",
+        "subtitle": "Likely next books after the series you already own.",
+        "empty_message": "No likely next-in-series request candidates surfaced right now.",
+        "layout": "grouped",
+        "compact": True,
+        "see_more_url": None,
+        "has_content": True,
+        "candidates": [],
+        "groups": [
+            {
+                "key": "discworld",
+                "title": "Discworld",
+                "hint": "12 books in your library · Owned through 11",
+                "count": 1,
+                "candidates": [_requests_candidate(reason_label="Missing volume")],
+            }
+        ],
+    }
+
+    with app.test_request_context("/requests/sections/series/series-next?return_to=/requests/series"):
+        html = render_template("requests_workspace_section.html", **context)
+
+    assert "Next in series" in html
+    assert "Discworld" in html
+    assert "12 books in your library" in html
+    assert "requests-candidate-card--compact" in html
+    assert "Missing volume" in html
+
+
+def test_requests_sidebar_includes_requests_link(monkeypatch):
+    module = _import_render_template_module(monkeypatch)
 
     app = Flask(__name__)
     with app.test_request_context("/", headers={"User-Agent": "Mozilla/5.0"}):
@@ -356,9 +491,65 @@ def test_requests_sidebar_includes_requests_link(monkeypatch):
     assert requests_new["href"] == "/web/requests_workspace_view?view_name=new"
     assert requests_hot["page"] == "requests-hot"
     assert [section["id"] for section in sidebar_sections] == ["browse", "requests"]
-    assert [item["id"] for item in sidebar_sections[1]["items"]] == [
+    assert [item["id"] for item in sidebar_sections[1]["entries"]] == [
         "requests-authors",
         "requests-series",
         "requests-hot",
         "requests-new",
     ]
+
+
+def test_real_layout_sidebar_renders_requests_and_non_requests_pages(monkeypatch):
+    module = _import_render_template_module(monkeypatch)
+    sidebar_sections = module.build_sidebar_sections(
+        [
+            {
+                "glyph": "glyphicon-fire",
+                "text": "Hot Books",
+                "link": "web.books_list",
+                "id": "hot",
+                "visibility": 1,
+                "public": True,
+                "page": "hot",
+            },
+            {
+                "kind": "heading",
+                "text": "Requests",
+                "id": "requests-heading",
+                "section": "requests",
+                "visibility": 1,
+                "public": True,
+                "page": "requests",
+            },
+            {
+                "glyph": "glyphicon-bookmark",
+                "text": "Series",
+                "link": "web.requests_workspace_view",
+                "href": "/requests/series",
+                "id": "requests-series",
+                "section": "requests",
+                "visibility": 1,
+                "public": True,
+                "page": "requests-series",
+            },
+        ]
+    )
+    app = _create_real_layout_app(sidebar_sections)
+
+    with app.test_client() as client:
+        home_response = client.get("/")
+        requests_root_response = client.get("/requests", follow_redirects=False)
+        requests_view_response = client.get("/requests/series")
+
+    assert home_response.status_code == 200
+    assert "nav_requests-series" in home_response.text
+    assert "nav-subitem nav-subitem--requests" in home_response.text
+    assert "shell ok" in home_response.text
+
+    assert requests_root_response.status_code == 302
+    assert requests_root_response.headers["Location"].endswith("/requests/series")
+
+    assert requests_view_response.status_code == 200
+    assert "Requests" in requests_view_response.text
+    assert "Series" in requests_view_response.text
+    assert 'id="nav_requests-series"' in requests_view_response.text

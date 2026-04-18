@@ -174,8 +174,8 @@ def get_sidebar_config(kwargs=None):
 
 
 def build_sidebar_sections(sidebar):
-    browse_section = {"id": "browse", "title": _('Browse'), "items": []}
-    requests_section = {"id": "requests", "title": _('Requests'), "items": []}
+    browse_section = {"id": "browse", "title": _('Browse'), "entries": []}
+    requests_section = {"id": "requests", "title": _('Requests'), "entries": []}
 
     for element in sidebar:
         if element.get("kind") == "heading":
@@ -187,12 +187,12 @@ def build_sidebar_sections(sidebar):
             continue
 
         target = requests_section if element.get("section") == "requests" else browse_section
-        target["items"].append(element)
+        target["entries"].append(element)
 
     sections = [browse_section]
-    if requests_section["items"]:
+    if requests_section["entries"]:
         sections.append(requests_section)
-    return tuple(section for section in sections if section["items"])
+    return tuple(section for section in sections if section["entries"])
 
 # Checks if an update for CWA is available, returning True if yes
 def cwa_update_available() -> tuple[bool, str, str]:
