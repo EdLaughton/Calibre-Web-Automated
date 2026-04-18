@@ -35,6 +35,9 @@ DEFAULT_SHELFMARK_FILTER_HAS_COVER = True
 DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE = False
 DEFAULT_SHELFMARK_SERIES_FILTER = "all"
 DEFAULT_SHELFMARK_TRIAGE_FILTER = "all"
+DEFAULT_SHELFMARK_CONTEXTUAL_LIMIT = 8
+SHELFMARK_CONTEXT_SCAN_PAGE_SIZE = 24
+SHELFMARK_CONTEXT_MAX_SOURCE_PAGES = 5
 SHELFMARK_PAGE_SIZE_OPTIONS = (12, 24, 50, 100)
 SHELFMARK_SORT_OPTIONS = (
     ("popularity", "Most popular"),
@@ -2185,6 +2188,231 @@ def result_matches_shelfmark_filters(
         series_filter=series_filter,
         triage_filter=triage_filter,
     )
+
+
+def _normalize_context_tokens(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return tuple()
+    normalized = _normalize_text(
+        str(value)
+        .replace("|", " ")
+        .replace(",", " ")
+        .replace(".", " ")
+    )
+    if not normalized:
+        return tuple()
+    return tuple(sorted(token for token in normalized.split() if token))
+
+
+def _result_matches_series_context_name(
+    result: ShelfmarkResultView,
+    series_name: str | None,
+) -> bool:
+    target = _normalize_text(series_name)
+    if not target:
+        return True
+    if (
+        result.series_context
+        and result.series_context.matched
+        and _normalize_text(result.series_context.owned_series_name) == target
+    ):
+        return True
+    if _normalize_text(result.series_name) == target:
+        return True
+    return any(_normalize_text((entry or {}).get("name")) == target for entry in result.series_entries)
+
+
+def _result_matches_author_context_name(
+    result: ShelfmarkResultView,
+    author_name: str | None,
+) -> bool:
+    target_tokens = _normalize_context_tokens(author_name)
+    if not target_tokens:
+        return True
+    return any(_normalize_context_tokens(author) == target_tokens for author in result.authors)
+
+
+def _contextual_result_matches(
+    result: ShelfmarkResultView,
+    *,
+    context_type: str | None = None,
+    context_value: str | None = None,
+) -> bool:
+    normalized_context_type = _normalize_text(context_type)
+    if normalized_context_type == "series":
+        return _result_matches_series_context_name(result, context_value)
+    if normalized_context_type == "author":
+        return _result_matches_author_context_name(result, context_value)
+    return True
+
+
+def _result_identity_key(result: ShelfmarkResultView) -> tuple[str, str]:
+    return result.provider, result.provider_id
+
+
+def search_shelfmark_contextual_results(
+    query: str | None,
+    *,
+    detail_url_builder: Callable[[Mapping[str, Any]], str | None],
+    context_type: str | None = None,
+    context_value: str | None = None,
+    limit: int = DEFAULT_SHELFMARK_CONTEXTUAL_LIMIT,
+    sort: str = "relevance",
+    max_source_pages: int = SHELFMARK_CONTEXT_MAX_SOURCE_PAGES,
+    scan_page_size: int = SHELFMARK_CONTEXT_SCAN_PAGE_SIZE,
+    filter_requestable: bool = True,
+    filter_has_cover: bool = True,
+    filter_high_confidence: bool = False,
+    query_label: str | None = None,
+    context_hint: str | None = None,
+    empty_message: str | None = None,
+) -> ShelfmarkSearchSection:
+    normalized_query = _normalize_text(query)
+    contextual_limit = max(1, _normalize_int(limit) or DEFAULT_SHELFMARK_CONTEXTUAL_LIMIT)
+    selected_sort = _normalize_sort(sort)
+    sort_options = get_shelfmark_sort_options()
+    config_data = get_shelfmark_client_config()
+
+    if not config_data.enabled:
+        return ShelfmarkSearchSection(enabled=False, available=False, query=normalized_query or "")
+
+    if not normalized_query:
+        return ShelfmarkSearchSection(
+            enabled=True,
+            available=True,
+            query="",
+            page=1,
+            page_size=contextual_limit,
+            selected_sort=selected_sort,
+            sort_options=sort_options,
+            page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
+            query_label=query_label,
+            context_hint=context_hint,
+            message=empty_message,
+            message_level="info",
+            results=tuple(),
+            groups=tuple(),
+            summary=ShelfmarkResultSummary(),
+        )
+
+    client = ShelfmarkClient(config_data)
+    effective_scan_page_size = max(
+        contextual_limit,
+        _normalize_int(scan_page_size) or SHELFMARK_CONTEXT_SCAN_PAGE_SIZE,
+    )
+    allowed_pages = max(1, _normalize_int(max_source_pages) or SHELFMARK_CONTEXT_MAX_SOURCE_PAGES)
+    collected_results: list[ShelfmarkResultView] = []
+    seen_keys: set[tuple[str, str]] = set()
+    total_found = 0
+    has_more = False
+
+    try:
+        for source_page in range(1, allowed_pages + 1):
+            search_response = _fetch_shelfmark_search_page(
+                client,
+                normalized_query,
+                page=source_page,
+                page_size=effective_scan_page_size,
+                sort=selected_sort,
+            )
+            total_found = max(total_found, search_response.total_found or 0)
+            page_results, _ = _build_search_result_views(
+                search_response.books,
+                detail_url_builder=detail_url_builder,
+                shelfmark_browser_base_url=config_data.browser_base_url,
+                enrich_with_details=True,
+                detail_client=client,
+            )
+            page_results = _filter_visible_results(
+                page_results,
+                requestable_only=bool(filter_requestable),
+                has_cover_only=bool(filter_has_cover),
+                high_confidence_only=bool(filter_high_confidence),
+            )
+            page_results = _rank_visible_results(
+                tuple(
+                    result
+                    for result in page_results
+                    if _contextual_result_matches(
+                        result,
+                        context_type=context_type,
+                        context_value=context_value,
+                    )
+                )
+            )
+
+            for result in page_results:
+                identity_key = _result_identity_key(result)
+                if identity_key in seen_keys:
+                    continue
+                seen_keys.add(identity_key)
+                collected_results.append(result)
+
+            has_more = bool(search_response.has_more)
+            if len(collected_results) >= contextual_limit or not has_more:
+                break
+
+        results = _rank_visible_results(tuple(collected_results))[:contextual_limit]
+        summary = summarize_shelfmark_results(
+            results,
+            total_available=total_found,
+            raw_total_available=total_found,
+            has_more=bool(has_more or len(collected_results) > len(results)),
+        )
+        return ShelfmarkSearchSection(
+            enabled=True,
+            available=True,
+            query=normalized_query,
+            page=1,
+            page_size=contextual_limit,
+            selected_sort=selected_sort,
+            sort_options=sort_options,
+            page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
+            total_pages=1 if results else 0,
+            visible_start=1 if results else 0,
+            visible_end=len(results),
+            has_previous=False,
+            previous_page=None,
+            next_page=None,
+            has_more=summary.has_more,
+            total_available=summary.total_available,
+            raw_total_available=summary.raw_total_available,
+            page_result_count=len(results),
+            filter_requestable=bool(filter_requestable),
+            filter_has_cover=bool(filter_has_cover),
+            filter_high_confidence=bool(filter_high_confidence),
+            filters_active=False,
+            open_search_url=build_shelfmark_search_url(
+                config_data.browser_base_url,
+                query=normalized_query,
+                page=1,
+                page_size=contextual_limit,
+                sort=selected_sort,
+            ),
+            query_label=query_label,
+            context_hint=context_hint,
+            results=results,
+            groups=group_shelfmark_results(results),
+            summary=summary,
+            message=empty_message if not results else None,
+            message_level="info",
+        )
+    except ShelfmarkIntegrationError as exc:
+        log.warning("Shelfmark contextual search unavailable for query '%s': %s", normalized_query, exc)
+        return ShelfmarkSearchSection(
+            enabled=True,
+            available=False,
+            query=normalized_query,
+            page=1,
+            page_size=contextual_limit,
+            selected_sort=selected_sort,
+            sort_options=sort_options,
+            page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
+            query_label=query_label,
+            context_hint=context_hint,
+            message=str(exc),
+            message_level="warning",
+        )
 
 
 def search_shelfmark_results(

@@ -466,25 +466,20 @@ def _base_context():
         "shelfmark_section": {
             "enabled": True,
             "available": True,
+            "variant": "search",
+            "has_page_shell": True,
+            "render_modal": True,
+            "render_scripts": True,
+            "section_title": "Shelfmark Results",
+            "section_subtitle": "Additional matches from Shelfmark.",
             "query": "Dune",
             "page": 1,
             "page_size": 12,
             "selected_sort": "popularity",
-            "selected_series_filter": "all",
-            "selected_triage_filter": "all",
             "sort_options": [
                 {"value": "popularity", "label": "Most popular"},
                 {"value": "relevance", "label": "Most relevant"},
                 {"value": "rating", "label": "Highest rated"},
-            ],
-            "series_filter_options": [
-                {"value": "all", "label": "All matches"},
-                {"value": "owned", "label": "Owned series"},
-                {"value": "next_missing", "label": "Next missing"},
-            ],
-            "triage_filter_options": [
-                {"value": "all", "label": "All shown"},
-                {"value": "strong", "label": "Strong candidates"},
             ],
             "page_size_options": [12, 24, 50, 100],
             "total_pages": 75,
@@ -512,15 +507,10 @@ def _base_context():
                 "&shelfmark_sort=popularity&return_to=%2Fsearch%2Fstored%2F%3Fquery%3DDune"
             ),
             "state_url": saved_state_url,
-            "query_label": "External lookup query",
-            "context_hint": "Duplicate awareness remains exact hardcover-id matching only.",
             "message": None,
             "message_level": "info",
             "pagination_mode": "shelfmark",
             "progressive_refinement": True,
-            "progressive_refinement_note": (
-                "Shelfmark totals are shown as-is. Visible rows refine as details load."
-            ),
             "summary": {
                 "total_results": 3,
                 "total_available": 895,
@@ -970,6 +960,9 @@ def test_search_template_renders_intentional_zero_results_state():
     context = _base_context()
     context["shelfmark_section"] = {
         **context["shelfmark_section"],
+        "has_page_shell": False,
+        "render_modal": False,
+        "render_scripts": False,
         "next_page": None,
         "total_pages": 0,
         "top_up_url": None,

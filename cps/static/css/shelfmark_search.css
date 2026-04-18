@@ -20,6 +20,10 @@
   margin: 0 auto;
 }
 
+.shelfmark-external-shell--contextual {
+  margin-top: 10px;
+}
+
 .shelfmark-section-line {
   display: flex;
   align-items: baseline;
@@ -36,6 +40,10 @@
 
 .shelfmark-section-line--external {
   margin-bottom: 10px;
+}
+
+.shelfmark-section-line--contextual {
+  align-items: center;
 }
 
 .shelfmark-section-line__lead {
@@ -77,34 +85,10 @@
   text-transform: uppercase;
 }
 
-.shelfmark-external-header__query {
-  margin-bottom: 8px;
-}
-
 .shelfmark-external-header {
   margin: 0 0 16px;
   padding-bottom: 0;
   border-bottom: 0;
-}
-
-.shelfmark-external-header__query {
-  padding-left: 0;
-}
-
-.shelfmark-external-header__query {
-  color: var(--shelfmark-shell-muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.shelfmark-external-header__query code {
-  margin-left: 6px;
-  padding: 3px 8px;
-  border-radius: 7px;
-  border: 1px solid rgba(226, 236, 242, 0.18);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--shelfmark-shell-text);
-  font-size: 12px;
 }
 
 .shelfmark-status-banner {
@@ -359,6 +343,17 @@
 
 .shelfmark-empty-state__actions {
   margin: 10px 0 0;
+}
+
+.shelfmark-contextual-page .shelfmark-result-card__description {
+  display: none;
+}
+
+.shelfmark-contextual-page__message {
+  margin: 0 0 12px;
+  color: var(--shelfmark-shell-muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .shelfmark-result-card {
@@ -701,18 +696,11 @@
 
 .shelfmark-external-shell .shelfmark-section-line__title,
 .shelfmark-external-shell .shelfmark-section-line__subtitle,
-.shelfmark-external-shell .shelfmark-section-line__meta,
-.shelfmark-external-shell .shelfmark-external-header__query {
+.shelfmark-external-shell .shelfmark-section-line__meta {
   color: var(--shelfmark-shell-muted);
 }
 
 .shelfmark-external-shell .shelfmark-section-line__title {
-  color: var(--shelfmark-shell-text);
-}
-
-.shelfmark-external-shell .shelfmark-external-header__query code {
-  border-color: var(--shelfmark-shell-border);
-  background: rgba(255, 255, 255, 0.08);
   color: var(--shelfmark-shell-text);
 }
 
