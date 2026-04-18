@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
-from flask import render_template, g, abort, request, flash, current_app
+from flask import render_template, g, abort, request, flash, current_app, url_for
 from flask_babel import gettext as _
 from flask_babel import get_locale
 import polib
@@ -67,9 +67,64 @@ def get_sidebar_config(kwargs=None):
     sidebar.append({"glyph": "glyphicon-random", "text": _('Discover'), "link": 'web.books_list', "id": "rand",
                     "visibility": constants.SIDEBAR_RANDOM, 'public': True, "page": "discover",
                     "show_text": _('Show Random Books'), "config_show": True})
-    sidebar.append({"glyph": "glyphicon-send", "text": _('Requests'), "link": 'web.requests_workspace', "id": "requests",
-                    "visibility": constants.SIDEBAR_REQUESTS, 'public': (not current_user.is_anonymous), "page": "requests",
-                    "show_text": _('Show Requests workspace'), "config_show": False})
+    sidebar.append({
+        "kind": "heading",
+        "text": _('Requests'),
+        "id": "requests-heading",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests",
+        "show_text": _('Show Requests workspace'),
+        "config_show": True,
+    })
+    sidebar.append({
+        "glyph": "glyphicon-home",
+        "text": _('Home'),
+        "link": 'web.requests_workspace',
+        "href": url_for('web.requests_workspace'),
+        "id": "requests-home",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests-home",
+        "show_text": _('Show Requests workspace'),
+        "config_show": False,
+    })
+    sidebar.append({
+        "glyph": "glyphicon-bookmark",
+        "text": _('Series'),
+        "link": 'web.requests_workspace_view',
+        "href": url_for('web.requests_workspace_view', view_name='series'),
+        "id": "requests-series",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests-series",
+        "show_text": _('Show Requests workspace'),
+        "config_show": False,
+    })
+    sidebar.append({
+        "glyph": "glyphicon-user",
+        "text": _('Authors'),
+        "link": 'web.requests_workspace_view',
+        "href": url_for('web.requests_workspace_view', view_name='authors'),
+        "id": "requests-authors",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests-authors",
+        "show_text": _('Show Requests workspace'),
+        "config_show": False,
+    })
+    sidebar.append({
+        "glyph": "glyphicon-fire",
+        "text": _('Hot'),
+        "link": 'web.requests_workspace_view',
+        "href": url_for('web.requests_workspace_view', view_name='hot'),
+        "id": "requests-hot",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests-hot",
+        "show_text": _('Show Requests workspace'),
+        "config_show": False,
+    })
     sidebar.append({"glyph": "glyphicon-inbox", "text": _('Categories'), "link": 'web.category_list', "id": "cat",
                     "visibility": constants.SIDEBAR_CATEGORY, 'public': True, "page": "category",
                     "show_text": _('Show Category Section'), "config_show": True})

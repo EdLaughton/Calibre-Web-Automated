@@ -321,6 +321,7 @@ def build_contextual_shelfmark_runtime():
         "render_modal": enabled,
         "render_scripts": enabled,
         "state_url": current_request_path(include_transient=False),
+        "preferred_release_settings": get_shelfmark_preferred_release_settings().to_template_dict(),
     }
 
 

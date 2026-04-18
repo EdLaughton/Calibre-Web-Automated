@@ -284,19 +284,24 @@
           <nav class="navigation">
             <ul class="list-unstyled" id="scnd-nav" intent in-standard-append="nav.navigation" in-mobile-after="#main-nav" in-mobile-class="nav navbar-nav">
               <li class="nav-head hidden-xs">{{_('Browse')}}</li>
+              {% set nav_active_page = nav_active_page if nav_active_page is defined and nav_active_page else page %}
               {% for element in sidebar %}
-                {% if current_user.check_visibility(element['visibility']) and element['public'] %}
-                    <li id="nav_{{element['id']}}" {% if page == element['page'] %}class="active"{% endif %} style="{% if element['id'] == 'duplicates' %}position: relative;{% endif %}">
-                      <a href="{{url_for(element['link'], data=element['page'], sort_param='stored')}}">
-                        <span class="glyphicon {{element['glyph']}}"></span> {{_(element['text'])}}
-                        {% if element['id'] == 'duplicates' %}
-                          {% set dup_count = duplicate_notification.count if duplicate_notification is defined else 0 %}
-                          <span id="duplicate-count-badge" class="duplicate-badge" style="{% if dup_count > 0 %}display: inline-block;{% else %}display: none;{% endif %}">
-                            {% if dup_count > 99 %}99+{% else %}{{ dup_count }}{% endif %}
-                          </span>
-                        {% endif %}
-                      </a>
-                    </li>
+                {% if element.get('kind') == 'heading' %}
+                  {% if current_user.check_visibility(element['visibility']) and element['public'] %}
+                    <li class="nav-head hidden-xs">{{ _(element['text']) }}</li>
+                  {% endif %}
+                {% elif current_user.check_visibility(element['visibility']) and element['public'] %}
+                  <li id="nav_{{element['id']}}" {% if nav_active_page == element['page'] %}class="active"{% endif %} style="{% if element['id'] == 'duplicates' %}position: relative;{% endif %}">
+                    <a href="{{ element.get('href') or url_for(element['link'], data=element['page'], sort_param='stored') }}">
+                      <span class="glyphicon {{element['glyph']}}"></span> {{_(element['text'])}}
+                      {% if element['id'] == 'duplicates' %}
+                        {% set dup_count = duplicate_notification.count if duplicate_notification is defined else 0 %}
+                        <span id="duplicate-count-badge" class="duplicate-badge" style="{% if dup_count > 0 %}display: inline-block;{% else %}display: none;{% endif %}">
+                          {% if dup_count > 99 %}99+{% else %}{{ dup_count }}{% endif %}
+                        </span>
+                      {% endif %}
+                    </a>
+                  </li>
                 {% endif %}
               {% endfor %}
               {% if current_user.is_authenticated or g.allow_anonymous %}
