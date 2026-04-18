@@ -1,0 +1,307 @@
+{% macro render_shelfmark_pagination(shelfmark, summary_text) -%}
+  <div
+    class="shelfmark-pagination-footer js-shelfmark-pagination-footer"
+    data-display-page="{{ shelfmark.page }}"
+    data-page-size="{{ shelfmark.page_size }}"
+    data-total-available="{{ shelfmark.raw_total_available or shelfmark.total_available or 0 }}"
+  >
+    <div class="shelfmark-pagination-footer__summary">
+      {% if summary_text %}
+        <span class="js-shelfmark-page-summary">{{ summary_text }}</span>
+      {% endif %}
+      {% if shelfmark.raw_total_available or shelfmark.total_available %}
+        <span class="js-shelfmark-total-available">{{ _('%(count)s total on Shelfmark', count=shelfmark.raw_total_available or shelfmark.total_available) }}</span>
+      {% endif %}
+      <span class="js-shelfmark-page-indicator">{{ _('Page %(page)s', page=shelfmark.page) }}</span>
+    </div>
+    <div class="shelfmark-pagination-footer__controls">
+      <form class="shelfmark-pagination-footer__page-size-form" method="get" action="{{ request.path }}">
+        {% for key, value in request.args.items() %}
+          {% if key not in ['shelfmark_page', 'shelfmark_page_size', 'shelfmark_sort', 'shelfmark_series_filter', 'shelfmark_triage_filter', 'shelfmark_filter_requestable', 'shelfmark_filter_high_confidence', 'shelfmark_filter_has_cover', 'shelfmark_detail_provider', 'shelfmark_detail_id'] %}
+            <input type="hidden" name="{{ key }}" value="{{ value }}">
+          {% endif %}
+        {% endfor %}
+        <input type="hidden" name="shelfmark_page" value="1">
+        <input type="hidden" name="shelfmark_sort" value="{{ shelfmark.selected_sort }}">
+        <input type="hidden" name="shelfmark_filter_requestable" value="{{ 1 if shelfmark.filter_requestable else 0 }}">
+        <input type="hidden" name="shelfmark_filter_has_cover" value="{{ 1 if shelfmark.filter_has_cover else 0 }}">
+        <label class="shelfmark-pagination-footer__page-size-label" for="shelfmark_page_size_footer">{{ _('Per page') }}</label>
+        <select
+          class="form-control input-sm shelfmark-pagination-footer__page-size-select"
+          id="shelfmark_page_size_footer"
+          name="shelfmark_page_size"
+          onchange="this.form.submit()"
+        >
+          {% for option in shelfmark.page_size_options %}
+            <option value="{{ option }}"{% if option == shelfmark.page_size %} selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+        <noscript>
+          <button type="submit" class="btn btn-default btn-sm shelfmark-pagination-footer__page-size-submit">{{ _('Apply') }}</button>
+        </noscript>
+      </form>
+      {% if shelfmark.previous_page_url %}
+        <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.previous_page_url }}">
+          <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
+          <span>{{ _('Previous page') }}</span>
+        </a>
+      {% else %}
+        <span class="btn btn-default btn-sm disabled shelfmark-pagination-footer__page-link" aria-disabled="true">
+          <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
+          <span>{{ _('Previous page') }}</span>
+        </span>
+      {% endif %}
+      {% if shelfmark.next_page_url %}
+        <a class="btn btn-default btn-sm shelfmark-pagination-footer__page-link" href="{{ shelfmark.next_page_url }}">
+          <span>{{ _('Next page') }}</span>
+          <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
+        </a>
+      {% else %}
+        <span class="btn btn-default btn-sm disabled shelfmark-pagination-footer__page-link" aria-disabled="true">
+          <span>{{ _('Next page') }}</span>
+          <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
+        </span>
+      {% endif %}
+    </div>
+  </div>
+{%- endmacro %}
+
+
+{% macro render_shelfmark_results_list(shelfmark, interactive_shell=False) -%}
+  {% set external_count = shelfmark.results|length if shelfmark.results is defined and shelfmark.results else 0 %}
+  {% set next_page = shelfmark.source_next_page or shelfmark.next_page or '' %}
+  {% set total_pages = shelfmark.source_total_pages or shelfmark.total_pages or 0 %}
+  <div
+    class="shelfmark-results-list js-shelfmark-results-list"
+    role="list"
+    data-display-page="{{ shelfmark.page }}"
+    data-page-size="{{ shelfmark.page_size }}"
+    data-next-page="{{ next_page }}"
+    data-total-pages="{{ total_pages }}"
+    data-top-up-url="{{ shelfmark.top_up_url or '' }}"
+    data-total-available="{{ shelfmark.raw_total_available or shelfmark.total_available or 0 }}"
+    data-filter-has-cover="{{ 1 if shelfmark.filter_has_cover else 0 }}"
+    data-filter-requestable="{{ 1 if shelfmark.filter_requestable else 0 }}"
+  >
+    {% for result in shelfmark.results %}
+      <article
+        class="{{ result.row_class_name }}"
+        role="listitem"
+        data-row-index="{{ result.row_index }}"
+        data-provider="{{ result.provider }}"
+        data-provider-id="{{ result.provider_id }}"
+        {% if result.row_status_provider %}
+          data-status-provider="{{ result.row_status_provider }}"
+          data-status-provider-id="{{ result.row_status_provider_id }}"
+          data-status-in-library="{{ result.row_status_in_library }}"
+        {% endif %}
+        {% if result.library_book_url %}
+          data-library-book-url="{{ result.library_book_url }}"
+          data-library-book-title="{{ result.library_book_title or '' }}"
+        {% endif %}
+        data-already-in-library="{{ 1 if result.already_in_library else 0 }}"
+        data-has-cover="{{ 1 if result.cover_url else 0 }}"
+        {% if interactive_shell and result.row_enrichment_url %}
+          data-row-enrich-url="{{ result.row_enrichment_url }}"
+        {% endif %}
+      >
+        {% include 'shelfmark_external_result_card_inner.html' %}
+      </article>
+    {% endfor %}
+  </div>
+{%- endmacro %}
+
+
+{% macro render_contextual_load_more_control(shelfmark) -%}
+  {% if shelfmark and shelfmark.load_more_url %}
+    <div class="shelfmark-contextual-load-more js-shelfmark-contextual-load-more-wrap">
+      <button
+        type="button"
+        class="btn btn-default btn-sm shelfmark-contextual-load-more__button js-shelfmark-contextual-load-more"
+        data-load-url="{{ shelfmark.load_more_url }}"
+      >
+        {{ _('Load more') }}
+      </button>
+      <p class="shelfmark-contextual-load-more__message js-shelfmark-contextual-load-more-message is-hidden"></p>
+    </div>
+  {% endif %}
+{%- endmacro %}
+
+
+{% macro render_shelfmark_section(shelfmark) -%}
+  {% if not shelfmark or not shelfmark.enabled %}
+    {# no-op #}
+  {% else %}
+    {% set external_count = shelfmark.results|length if shelfmark.results is defined and shelfmark.results else 0 %}
+    {% set is_search = shelfmark.variant == 'search' %}
+    {% set has_page_shell = shelfmark.has_page_shell %}
+    <div class="{{ 'shelfmark-external-shell' if is_search else 'shelfmark-external-shell shelfmark-external-shell--contextual shelfmark-search-page shelfmark-contextual-page' }}">
+      {% if is_search %}
+        <div class="shelfmark-external-header">
+          <div class="shelfmark-section-line shelfmark-section-line--external">
+            <div class="shelfmark-section-line__lead">
+              <h3 class="shelfmark-section-line__title">
+                <span class="glyphicon glyphicon-globe" aria-hidden="true"></span>
+                {{ shelfmark.section_title or _('Shelfmark Results') }}
+              </h3>
+              <p class="shelfmark-section-line__subtitle">{{ shelfmark.section_subtitle }}</p>
+            </div>
+          </div>
+          <div class="shelfmark-external-toolbar">
+            <form class="shelfmark-external-controls form-inline" method="get" action="{{ request.path }}">
+              {% for key, value in request.args.items() %}
+                {% if key not in ['shelfmark_page', 'shelfmark_page_size', 'shelfmark_sort', 'shelfmark_series_filter', 'shelfmark_triage_filter', 'shelfmark_filter_requestable', 'shelfmark_filter_high_confidence', 'shelfmark_filter_has_cover', 'shelfmark_detail_provider', 'shelfmark_detail_id'] %}
+                  <input type="hidden" name="{{ key }}" value="{{ value }}">
+                {% endif %}
+              {% endfor %}
+              <input type="hidden" name="shelfmark_page" value="1">
+              <input type="hidden" name="shelfmark_filter_requestable" value="{{ 1 if shelfmark.filter_requestable else 0 }}">
+              <div class="form-group shelfmark-external-controls__group">
+                <label class="shelfmark-external-controls__label" for="shelfmark_sort">{{ _('Sort') }}</label>
+                <select class="form-control input-sm shelfmark-external-controls__select" id="shelfmark_sort" name="shelfmark_sort">
+                  {% for option in shelfmark.sort_options %}
+                    <option value="{{ option.value }}"{% if option.value == shelfmark.selected_sort %} selected{% endif %}>{{ option.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <input type="hidden" name="shelfmark_page_size" value="{{ shelfmark.page_size }}">
+              <input type="hidden" name="shelfmark_filter_has_cover" value="0">
+              <label class="shelfmark-external-controls__checkbox-label shelfmark-external-controls__checkbox-group" for="shelfmark_filter_has_cover">
+                <input class="shelfmark-external-controls__checkbox" id="shelfmark_filter_has_cover" type="checkbox" name="shelfmark_filter_has_cover" value="1"{% if shelfmark.filter_has_cover %} checked{% endif %}>
+                <span>{{ _('Has cover') }}</span>
+              </label>
+              <div class="shelfmark-external-controls__submit-group">
+                <button type="submit" class="btn btn-default btn-sm shelfmark-external-controls__apply">{{ _('Apply') }}</button>
+                {% if shelfmark.clear_filters_url %}
+                  <a class="btn btn-default btn-sm shelfmark-external-controls__reset" href="{{ shelfmark.clear_filters_url }}">{{ _('Reset') }}</a>
+                {% endif %}
+              </div>
+            </form>
+            <div class="shelfmark-external-toolbar__actions">
+              {% if shelfmark.raw_total_available or shelfmark.total_available or external_count > 0 %}
+                <button type="button" class="btn btn-default btn-sm shelfmark-external-toolbar__bulk-toggle js-shelfmark-batch-mode" aria-pressed="false">
+                  {{ _('Bulk mode') }}
+                </button>
+              {% endif %}
+              {% if shelfmark.open_search_url %}
+                <a class="btn btn-default btn-sm shelfmark-external-toolbar__open-search" href="{{ shelfmark.open_search_url }}" target="_blank" rel="noopener noreferrer">
+                  <span class="glyphicon glyphicon-new-window" aria-hidden="true"></span>
+                  <span>{{ _('Open in Shelfmark') }}</span>
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <div class="shelfmark-section-line shelfmark-section-line--external shelfmark-section-line--contextual">
+          <div class="shelfmark-section-line__lead">
+            <h3 class="shelfmark-section-line__title">
+              <span class="glyphicon glyphicon-globe" aria-hidden="true"></span>
+              {{ shelfmark.section_title }}
+            </h3>
+            <p class="shelfmark-section-line__subtitle">{{ shelfmark.section_subtitle }}</p>
+          </div>
+          {% if shelfmark.open_search_url %}
+            <a class="btn btn-default btn-sm shelfmark-external-toolbar__open-search" href="{{ shelfmark.open_search_url }}" target="_blank" rel="noopener noreferrer">
+              <span class="glyphicon glyphicon-new-window" aria-hidden="true"></span>
+              <span>{{ _('Open in Shelfmark') }}</span>
+            </a>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if shelfmark.available and (has_page_shell if is_search else external_count > 0) %}
+        {% if is_search %}
+          <div class="shelfmark-batch-toolbar js-shelfmark-batch-toolbar is-hidden" role="group" aria-label="{{ _('Batch request actions') }}" aria-hidden="true">
+            <div class="shelfmark-batch-toolbar__summary">
+              <span class="shelfmark-batch-toolbar__count js-shelfmark-batch-count">{{ _('0 selected') }}</span>
+              <span class="shelfmark-batch-toolbar__meta js-shelfmark-batch-ready">{{ _('0 ready on this page') }}</span>
+              <span class="shelfmark-batch-toolbar__message js-shelfmark-batch-message is-hidden"></span>
+            </div>
+            <div class="shelfmark-batch-toolbar__actions">
+              <button type="button" class="btn btn-link btn-sm shelfmark-batch-toolbar__link js-shelfmark-batch-select-visible" disabled>{{ _('Select visible') }}</button>
+              <button type="button" class="btn btn-link btn-sm shelfmark-batch-toolbar__link js-shelfmark-batch-clear" disabled>{{ _('Clear') }}</button>
+              <button type="button" class="btn btn-default btn-sm shelfmark-batch-toolbar__request js-shelfmark-batch-request" disabled>{{ _('Request selected') }}</button>
+            </div>
+          </div>
+        {% endif %}
+        {% if shelfmark.results and shelfmark.results[0].shelfmark_base_url %}
+          <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ shelfmark.results[0].shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
+        {% endif %}
+        {{ render_shelfmark_results_list(shelfmark, interactive_shell=is_search) }}
+        {% if not is_search %}
+          {{ render_contextual_load_more_control(shelfmark) }}
+        {% endif %}
+        {% if is_search and has_page_shell %}
+          {{ render_shelfmark_pagination(
+            shelfmark,
+            _('%(count)s shown on this page', count=external_count) if external_count > 0 else _('No matching results')
+          ) }}
+        {% endif %}
+      {% elif shelfmark.available and shelfmark.message %}
+        {% if is_search %}
+          <div class="alert alert-info">
+            {{ shelfmark.message }}
+          </div>
+        {% endif %}
+      {% elif shelfmark.available and is_search %}
+        <div class="shelfmark-empty-state">
+          <div class="shelfmark-empty-state__icon">
+            <span class="glyphicon glyphicon-search" aria-hidden="true"></span>
+          </div>
+          <div class="shelfmark-empty-state__body">
+            <h4 class="shelfmark-empty-state__title">{{ _('No Shelfmark external results found') }}</h4>
+            <p class="shelfmark-empty-state__message">
+              {{ _('Shelfmark search completed for this query but did not return any external matches.') }}
+            </p>
+            {% if shelfmark.open_search_url %}
+              <p class="shelfmark-empty-state__actions">
+                <a class="btn btn-default btn-sm" href="{{ shelfmark.open_search_url }}" target="_blank" rel="noopener noreferrer">
+                  <span class="glyphicon glyphicon-new-window" aria-hidden="true"></span>
+                  <span>{{ _('Open search in Shelfmark') }}</span>
+                </a>
+              </p>
+            {% endif %}
+          </div>
+        </div>
+      {% elif not shelfmark.available %}
+        {% if is_search %}
+          <div class="alert alert-warning">
+            {{ shelfmark.message or _('Shelfmark external search is currently unavailable.') }}
+          </div>
+        {% else %}
+          <p class="shelfmark-contextual-page__message">
+            {{ shelfmark.message or _('Shelfmark is currently unavailable.') }}
+          </p>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endif %}
+{%- endmacro %}
+
+
+{% macro render_shelfmark_modal(shelfmark) -%}
+  {% if shelfmark and shelfmark.enabled and shelfmark.render_modal %}
+    <div class="modal fade shelfmark-detail-modal" id="shelfmarkDetailModal" tabindex="-1" role="dialog" aria-labelledby="shelfmarkDetailModalLabel" data-search-state-url="{{ shelfmark.state_url or request.path }}">
+      <div class="modal-dialog modal-lg shelfmark-detail-modal__dialog" role="document">
+        <div class="modal-content shelfmark-detail-modal__content">
+          <div class="modal-header shelfmark-detail-modal__header">
+            <button type="button" class="close shelfmark-detail-modal__close" data-dismiss="modal" aria-label="{{ _('Close') }}"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title shelfmark-detail-modal__title" id="shelfmarkDetailModalLabel">{{ _('Shelfmark Details') }}</h4>
+          </div>
+          <div class="modal-body shelfmark-detail-modal__body js-shelfmark-detail-modal-body" aria-live="polite" aria-busy="false">
+            <div class="shelfmark-detail-modal__loading js-shelfmark-detail-modal-loading is-hidden">{{ _('Loading Shelfmark details…') }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{%- endmacro %}
+
+
+{% macro render_shelfmark_scripts(shelfmark) -%}
+  {% if shelfmark and shelfmark.enabled and shelfmark.render_scripts %}
+    <script src="{{ url_for('static', filename='js/shelfmark_request_flow.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/shelfmark_external_search.js') }}"></script>
+  {% endif %}
+{%- endmacro %}

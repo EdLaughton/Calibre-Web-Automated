@@ -1,0 +1,108 @@
+{% macro render_requests_section_header(title, subtitle, see_more_url) -%}
+  <div class="shelfmark-section-line requests-workspace-section__header">
+    <div class="shelfmark-section-line__lead">
+      <h2 class="shelfmark-section-line__title">{{ title }}</h2>
+      <p class="shelfmark-section-line__subtitle">{{ subtitle }}</p>
+    </div>
+    {% if see_more_url %}
+      <a class="btn btn-default btn-sm requests-workspace-section__more" href="{{ see_more_url }}">
+        {{ _('See more') }}
+      </a>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+
+{% macro render_requests_section_shell(section) -%}
+  <section
+    class="requests-workspace-section requests-workspace-section--shell js-requests-section-shell"
+    data-section-url="{{ section.load_url }}"
+    data-section-key="{{ section.key }}"
+    data-failure-message="{{ _('Could not load this Requests section right now.') }}"
+  >
+    {{ render_requests_section_header(section.title, section.subtitle, section.see_more_url) }}
+    <div class="shelfmark-empty-state requests-workspace-section__placeholder">
+      <div class="shelfmark-empty-state__icon">
+        <span class="glyphicon glyphicon-refresh requests-workspace-section__spinner" aria-hidden="true"></span>
+      </div>
+      <div class="shelfmark-empty-state__body">
+        <p class="shelfmark-empty-state__message">{{ section.loading_message }}</p>
+      </div>
+    </div>
+  </section>
+{%- endmacro %}
+
+
+{% macro render_requests_candidate(candidate, preferred_release, compact=False) -%}
+  {% set result = candidate.result %}
+  {% set row_classes = [
+    'shelfmark-result-card',
+    'js-shelfmark-result-row',
+    'shelfmark-result-card--' ~ (result.library_state.row_class or 'info')
+  ] %}
+  {% if result.workflow_state and not result.already_in_library %}
+    {% set row_classes = row_classes + ['js-shelfmark-status-target'] %}
+  {% endif %}
+  <article
+    class="{{ row_classes|join(' ') }}"
+    data-provider="{{ result.provider }}"
+    data-provider-id="{{ result.provider_id }}"
+    data-already-in-library="{{ 1 if result.already_in_library else 0 }}"
+    data-has-cover="{{ 1 if result.cover_url else 0 }}"
+    {% if result.workflow_state and not result.already_in_library %}
+      data-status-provider="hardcover"
+      data-status-provider-id="{{ result.hardcover_id or '' }}"
+      data-status-in-library="{{ 1 if result.already_in_library else 0 }}"
+    {% endif %}
+    {% if result.library_book_url %}
+      data-library-book-url="{{ result.library_book_url }}"
+      data-library-book-title="{{ result.library_book_title or '' }}"
+    {% endif %}
+  >
+    {% include 'shelfmark_external_result_card_inner.html' %}
+  </article>
+{%- endmacro %}
+
+
+{% macro render_requests_section(section, preferred_release) -%}
+  <section class="requests-workspace-section requests-workspace-section--{{ section.layout }}">
+    {{ render_requests_section_header(section.title, section.subtitle, section.see_more_url) }}
+
+    {% if section.groups %}
+      <div class="requests-workspace-groups">
+        {% for group in section.groups %}
+          <section class="requests-workspace-group">
+            <header class="requests-workspace-group__header">
+              <div class="requests-workspace-group__lead">
+                <h3 class="requests-workspace-group__title">{{ group.title }}</h3>
+                {% if group.hint %}
+                  <p class="requests-workspace-group__hint">{{ group.hint }}</p>
+                {% endif %}
+              </div>
+            </header>
+            <div class="shelfmark-results-list shelfmark-results-list--compact requests-workspace-results">
+              {% for candidate in group.candidates %}
+                {{ render_requests_candidate(candidate, preferred_release, compact=section.compact) }}
+              {% endfor %}
+            </div>
+          </section>
+        {% endfor %}
+      </div>
+    {% elif section.candidates %}
+      <div class="shelfmark-results-list{% if section.compact %} shelfmark-results-list--compact{% endif %} requests-workspace-results">
+        {% for candidate in section.candidates %}
+          {{ render_requests_candidate(candidate, preferred_release, compact=section.compact) }}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="shelfmark-empty-state requests-workspace-empty-state">
+        <div class="shelfmark-empty-state__icon">
+          <span class="glyphicon glyphicon-inbox" aria-hidden="true"></span>
+        </div>
+        <div class="shelfmark-empty-state__body">
+          <p class="shelfmark-empty-state__message">{{ section.empty_message }}</p>
+        </div>
+      </div>
+    {% endif %}
+  </section>
+{%- endmacro %}

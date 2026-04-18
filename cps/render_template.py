@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # See CONTRIBUTORS for full list of authors.
 
-from flask import render_template, g, abort, request, flash, current_app
+from flask import render_template, g, abort, request, flash, current_app, url_for
 from flask_babel import gettext as _
 from flask_babel import get_locale
 import polib
@@ -67,6 +67,69 @@ def get_sidebar_config(kwargs=None):
     sidebar.append({"glyph": "glyphicon-random", "text": _('Discover'), "link": 'web.books_list', "id": "rand",
                     "visibility": constants.SIDEBAR_RANDOM, 'public': True, "page": "discover",
                     "show_text": _('Show Random Books'), "config_show": True})
+    sidebar.append({
+        "kind": "heading",
+        "text": _('Requests'),
+        "id": "requests-heading",
+        "section": "requests",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests",
+        "show_text": _('Show Requests workspace'),
+        "config_show": True,
+    })
+    sidebar.append({
+        "glyph": "glyphicon-bookmark",
+        "text": _('Series'),
+        "link": 'web.requests_workspace_view',
+        "href": url_for('web.requests_workspace_view', view_name='series'),
+        "id": "requests-series",
+        "section": "requests",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests-series",
+        "show_text": _('Show Requests workspace'),
+        "config_show": False,
+    })
+    sidebar.append({
+        "glyph": "glyphicon-user",
+        "text": _('Authors'),
+        "link": 'web.requests_workspace_view',
+        "href": url_for('web.requests_workspace_view', view_name='authors'),
+        "id": "requests-authors",
+        "section": "requests",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests-authors",
+        "show_text": _('Show Requests workspace'),
+        "config_show": False,
+    })
+    sidebar.append({
+        "glyph": "glyphicon-fire",
+        "text": _('Hot'),
+        "link": 'web.requests_workspace_view',
+        "href": url_for('web.requests_workspace_view', view_name='hot'),
+        "id": "requests-hot",
+        "section": "requests",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests-hot",
+        "show_text": _('Show Requests workspace'),
+        "config_show": False,
+    })
+    sidebar.append({
+        "glyph": "glyphicon-time",
+        "text": _('New'),
+        "link": 'web.requests_workspace_view',
+        "href": url_for('web.requests_workspace_view', view_name='new'),
+        "id": "requests-new",
+        "section": "requests",
+        "visibility": constants.SIDEBAR_REQUESTS,
+        'public': (not current_user.is_anonymous),
+        "page": "requests-new",
+        "show_text": _('Show Requests workspace'),
+        "config_show": False,
+    })
     sidebar.append({"glyph": "glyphicon-inbox", "text": _('Categories'), "link": 'web.category_list', "id": "cat",
                     "visibility": constants.SIDEBAR_CATEGORY, 'public': True, "page": "category",
                     "show_text": _('Show Category Section'), "config_show": True})
@@ -108,6 +171,28 @@ def get_sidebar_config(kwargs=None):
         or_(ub.Shelf.is_public == 1, ub.Shelf.user_id == current_user.id)).order_by(ub.Shelf.name).all()
 
     return sidebar, simple
+
+
+def build_sidebar_sections(sidebar):
+    browse_section = {"id": "browse", "title": _('Browse'), "entries": []}
+    requests_section = {"id": "requests", "title": _('Requests'), "entries": []}
+
+    for element in sidebar:
+        if element.get("kind") == "heading":
+            if element.get("section") == "requests":
+                requests_section["title"] = _(element["text"])
+            continue
+
+        if not current_user.check_visibility(element['visibility']) or not element['public']:
+            continue
+
+        target = requests_section if element.get("section") == "requests" else browse_section
+        target["entries"].append(element)
+
+    sections = [browse_section]
+    if requests_section["entries"]:
+        sections.append(requests_section)
+    return tuple(section for section in sections if section["entries"])
 
 # Checks if an update for CWA is available, returning True if yes
 def cwa_update_available() -> tuple[bool, str, str]:
@@ -230,6 +315,7 @@ def translations_missing_notification() -> None:
 # Returns the template for rendering and includes the instance name
 def render_title_template(*args, **kwargs):
     sidebar, simple = get_sidebar_config(kwargs)
+    sidebar_sections = build_sidebar_sections(sidebar)
     try:
         magic_shelf_routes = {
             "render": 'web.render_magic_shelf' in current_app.view_functions,
@@ -308,7 +394,7 @@ def render_title_template(*args, **kwargs):
     except Exception as e:
         log.debug("[cwa-duplicates] Failed to build duplicate notification context: %s", str(e))
     try:
-        return render_template(instance=config.config_calibre_web_title, sidebar=sidebar, simple=simple,
+        return render_template(instance=config.config_calibre_web_title, sidebar=sidebar, sidebar_sections=sidebar_sections, simple=simple,
                        accept=config.config_upload_formats.split(','),
                        magic_shelf_routes=magic_shelf_routes,
                        duplicate_notification=duplicate_notification,

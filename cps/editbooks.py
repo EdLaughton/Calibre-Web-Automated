@@ -36,6 +36,13 @@ from .file_helper import validate_mime_type
 from .cwa_functions import get_ingest_dir
 from .usermanagement import user_login_required, login_required_if_no_ano
 from .string_helper import strip_whitespaces
+from .cover_utils import apply_selected_cover_url
+from .editbook_save_utils import (
+    build_post_save_location,
+    ensure_calibre_session_ready,
+    load_custom_columns_without_autoflush,
+    recover_calibre_session,
+)
 from werkzeug.utils import secure_filename
 import uuid
 
@@ -837,11 +844,19 @@ def table_xchange_author_title():
 def do_edit_book(book_id, upload_formats=None):
     request_start = time.monotonic()
     log.debug("[edit_book] start book_id=%s user=%s upload_formats=%s", book_id, getattr(current_user, "name", "unknown"), bool(upload_formats))
+    log.info("Manual metadata apply started for book %s", book_id)
     modify_date = False
     edit_error = False
+    save_phase = "loading book"
 
     # create the function for sorting...
     calibre_db.create_functions(config)
+    ensure_calibre_session_ready(
+        calibre_db_instance=calibre_db,
+        logger=log,
+        book_id=book_id,
+        phase="request start",
+    )
 
     book = calibre_db.get_filtered_book(book_id, allow_show_archived=True)
     # Book not found
@@ -859,6 +874,7 @@ def do_edit_book(book_id, upload_formats=None):
         input_authors = [author.name for author in book.authors]
 
         # Stage 1: Collect all metadata changes and apply them to the book object in the session
+        save_phase = "staging form fields"
         if "title" in to_save:
             title_change = handle_title_on_edit(book, to_save["title"])
 
@@ -870,30 +886,49 @@ def do_edit_book(book_id, upload_formats=None):
         else:
             to_save, edit_error = upload_book_formats(upload_formats, book, book_id, book.has_cover)
 
+        save_phase = "cover upload"
         cover_upload_success = upload_cover(request, book)
         if cover_upload_success or to_save.get("format_cover"):
             book.has_cover = 1
             modify_date = True
 
-        if to_save.get("cover_url"):
-            if not current_user.role_edit():
-                edit_error = True
-                flash(_("User has no rights to upload cover"), category="error")
-            elif to_save["cover_url"].endswith('/static/generic_cover.svg'):
-                book.has_cover = 0
-            else:
-                cover_start = time.monotonic()
-                result, error = helper.save_cover_from_url(to_save["cover_url"].strip(), book.path)
-                if result:
+        selected_cover_url = to_save.get("cover_url", "")
+        if selected_cover_url and not current_user.role_edit():
+            edit_error = True
+            flash(_("User has no rights to upload cover"), category="error")
+        else:
+            cover_start = time.monotonic()
+            save_phase = "provider cover update"
+            cover_update = apply_selected_cover_url(
+                book_id=book.id,
+                book_path=book.path,
+                cover_url=selected_cover_url,
+                logger=log,
+                save_cover_from_url=helper.save_cover_from_url,
+                refresh_thumbnail_cache=helper.replace_cover_thumbnail_cache,
+            )
+            if cover_update.applied:
+                if cover_update.cleared_cover:
+                    book.has_cover = 0
+                elif cover_update.normalized_cover_url:
                     book.has_cover = 1
-                    modify_date = True
-                    # Force thumbnail regeneration after successful cover fetch
-                    helper.replace_cover_thumbnail_cache(book.id)
-                    log.debug("[edit_book] cover saved book_id=%s duration=%.3fs", book.id, time.monotonic() - cover_start)
-                else:
-                    log.warning("[edit_book] cover save failed book_id=%s duration=%.3fs error=%s", book.id, time.monotonic() - cover_start, error)
-                    edit_error = True
-                    flash(error, category="error")
+                modify_date |= cover_update.modify_date
+                if cover_update.normalized_cover_url and not cover_update.cleared_cover:
+                    log.info("Manual metadata apply wrote provider cover for book %s", book.id)
+                log.debug(
+                    "[edit_book] cover handling completed book_id=%s duration=%.3fs",
+                    book.id,
+                    time.monotonic() - cover_start,
+                )
+            elif cover_update.error:
+                log.warning(
+                    "[edit_book] cover save failed book_id=%s duration=%.3fs error=%s",
+                    book.id,
+                    time.monotonic() - cover_start,
+                    cover_update.error,
+                )
+                edit_error = True
+                flash(cover_update.error, category="error")
 
         modify_date |= edit_book_series_index(to_save.get("series_index"), book)
         modify_date |= edit_book_comments(Markup(to_save.get('comments')).unescape(), book)
@@ -918,6 +953,7 @@ def do_edit_book(book_id, upload_formats=None):
             flash(str(e), category="error")
             edit_error = True
 
+        save_phase = "custom column update"
         modify_date |= edit_all_cc_data(book_id, book, to_save)
 
         # Handle hardcover sync blacklist settings
@@ -945,29 +981,29 @@ def do_edit_book(book_id, upload_formats=None):
 
         # Stage 3: Commit all changes to the database
         if modify_date:
+            save_phase = "marking metadata dirty"
             book.last_modified = datetime.now(timezone.utc)
             kobo_sync_status.remove_synced_book(book.id, all=True)
             calibre_db.set_metadata_dirty(book.id)
 
         try:
+            save_phase = "database commit"
             calibre_db.session.merge(book)
             calibre_db.session.commit()
+            log.info("Manual metadata apply committed DB changes for book %s", book.id)
             log.debug("[edit_book] db commit ok book_id=%s duration=%.3fs", book.id, time.monotonic() - request_start)
         except InvalidRequestError as e:
             # Recover from closed/invalid transaction by recreating the session and retrying once
-            log.warning("Edit book transaction invalid, retrying commit: %s", e)
-            try:
-                calibre_db.session.rollback()
-            except Exception:
-                pass
-            try:
-                calibre_db.session.close()
-            except Exception:
-                pass
-            calibre_db.session = None
-            calibre_db.ensure_session()
+            log.warning("Manual metadata apply encountered invalid transaction during database commit for book %s; retrying: %s", book.id, e)
+            recover_calibre_session(
+                calibre_db_instance=calibre_db,
+                logger=log,
+                book_id=book.id,
+                phase="database commit retry",
+            )
             calibre_db.session.merge(book)
             calibre_db.session.commit()
+            log.info("Manual metadata apply committed DB changes for book %s after session recovery", book.id)
             log.debug("[edit_book] db commit retry ok book_id=%s duration=%.3fs", book.id, time.monotonic() - request_start)
 
         # CWA: Export of changed Metadata after commit, to avoid race conditions with folder renames
@@ -1031,21 +1067,40 @@ def do_edit_book(book_id, upload_formats=None):
         if upload_formats:
             return Response(json.dumps({"location": url_for('edit-book.show_edit_book', book_id=book_id)}), mimetype='application/json')
 
-        if "detail_view" in to_save:
-            return redirect(url_for('web.show_book', book_id=book.id))
-        else:
-            return render_edit_book(book_id)
+        save_phase = "response redirect"
+        redirect_target = build_post_save_location(
+            book_id=book.id,
+            detail_view="detail_view" in to_save,
+            url_for=url_for,
+        )
+        log.info("Manual metadata apply finished successfully for book %s", book.id)
+        return redirect(redirect_target)
 
     except (ValueError, OperationalError, IntegrityError, StaleDataError, InterfaceError, InvalidRequestError) as e:
-        log.error_or_exception("Database or Value error: {}".format(e))
-        calibre_db.session.rollback()
+        log.error_or_exception(
+            "Manual metadata apply failed for book %s during %s: %s",
+            book_id,
+            save_phase,
+            e,
+        )
+        recover_calibre_session(
+            calibre_db_instance=calibre_db,
+            logger=log,
+            book_id=book_id,
+            phase=save_phase,
+        )
         flash(_("Oops! Database Error: %(error)s.", error=e.orig if hasattr(e, "orig") else e), category="error")
-        return redirect(url_for('web.show_book', book_id=book.id))
+        return redirect(url_for('web.show_book', book_id=book_id))
     except Exception as ex:
-        log.error_or_exception(ex)
-        calibre_db.session.rollback()
+        log.error_or_exception("Manual metadata apply failed for book %s during %s: %s", book_id, save_phase, ex)
+        recover_calibre_session(
+            calibre_db_instance=calibre_db,
+            logger=log,
+            book_id=book_id,
+            phase=save_phase,
+        )
         flash(_("Error editing book: {}".format(ex)), category="error")
-        return redirect(url_for('web.show_book', book_id=book.id))
+        return redirect(url_for('web.show_book', book_id=book_id))
 
 
 def merge_metadata(book, meta, to_save):
@@ -1654,15 +1709,21 @@ def edit_cc_data_string(book, c, to_save, cc_db_value, cc_string):
 
 
 def edit_single_cc_data(book_id, book, column_id, to_save):
-    cc = (calibre_db.session.query(db.CustomColumns)
-          .filter(db.CustomColumns.datatype.notin_(db.cc_exceptions))
-          .filter(db.CustomColumns.id == column_id)
-          .all())
+    cc = load_custom_columns_without_autoflush(
+        session=calibre_db.session,
+        custom_columns_model=db.CustomColumns,
+        cc_exceptions=db.cc_exceptions,
+        column_id=column_id,
+    )
     return edit_cc_data(book_id, book, to_save, cc)
 
 
 def edit_all_cc_data(book_id, book, to_save):
-    cc = calibre_db.session.query(db.CustomColumns).filter(db.CustomColumns.datatype.notin_(db.cc_exceptions)).all()
+    cc = load_custom_columns_without_autoflush(
+        session=calibre_db.session,
+        custom_columns_model=db.CustomColumns,
+        cc_exceptions=db.cc_exceptions,
+    )
     return edit_cc_data(book_id, book, to_save, cc)
 
 

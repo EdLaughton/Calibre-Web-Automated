@@ -7,7 +7,7 @@
 import json
 from datetime import datetime
 
-from flask import Blueprint, request, redirect, url_for, flash
+from flask import Blueprint, request, redirect, render_template, url_for, flash, jsonify
 from flask import session as flask_session
 from .cw_login import current_user
 from flask_babel import format_date
@@ -20,12 +20,34 @@ from .string_helper import strip_whitespaces
 from .usermanagement import login_required_if_no_ano
 from .render_template import render_title_template
 from .pagination import Pagination
+from .shelfmark_ui import (
+    build_search_page_shelfmark_section,
+    build_shelfmark_detail_url,
+    build_shelfmark_row_response,
+    build_shelfmark_top_up_rows,
+    current_shelfmark_state_url,
+    decorate_shelfmark_result_rows,
+    requested_shelfmark_flag,
+    requested_shelfmark_page_size,
+    requested_shelfmark_sort,
+    safe_local_return_url,
+)
+from .services.shelfmark_search import (
+    DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+    DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+    DEFAULT_SHELFMARK_SERIES_FILTER,
+    ShelfmarkIntegrationError,
+    build_shelfmark_advanced_query,
+    fetch_shelfmark_detail,
+    get_shelfmark_preferred_release_settings,
+    lookup_visible_library_matches,
+    search_shelfmark_results,
+)
 
 
 search = Blueprint('search', __name__)
 
 log = logger.create()
-
 
 @search.route("/search", methods=["GET"])
 @login_required_if_no_ano
@@ -376,10 +398,22 @@ def render_adv_search_results(term, offset=None, order=None, limit=None):
     ub.store_combo_ids(results)
 
     entries = calibre_db.order_authors(results, list_return=True, combined=True)
+    shelfmark_query, _shelfmark_fields = build_shelfmark_advanced_query(term)
+    shelfmark_section = build_search_page_shelfmark_section(
+        shelfmark_query,
+        detail_url_builder=lambda book: build_shelfmark_detail_url(
+            book,
+            query=shelfmark_query or search_term,
+            return_to=current_shelfmark_state_url(),
+        ),
+        empty_message=_("Add a title, author, or publisher filter to include Shelfmark external results in advanced search."),
+    )
     return render_title_template('search.html',
                                  adv_searchterm=search_term,
                                  pagination=pagination,
                                  entries=entries,
+                                 query="",
+                                 shelfmark_section=shelfmark_section,
                                  result_count=result_count,
                                  title=_("Advanced Search"), page="advsearch",
                                  order=order[1])
@@ -417,6 +451,7 @@ def render_prepare_search_form(cc):
 
 
 def render_search_results(term, offset=None, order=None, limit=None):
+    shelfmark_section = None
     if term:
         join = db.books_series_link, db.Books.id == db.books_series_link.c.book, db.Series
         entries, result_count, pagination = calibre_db.get_search_results(term,
@@ -425,6 +460,14 @@ def render_search_results(term, offset=None, order=None, limit=None):
                                                                           order,
                                                                           limit,
                                                                           *join)
+        shelfmark_section = build_search_page_shelfmark_section(
+            term,
+            detail_url_builder=lambda book: build_shelfmark_detail_url(
+                book,
+                query=term,
+                return_to=current_shelfmark_state_url(),
+            ),
+        )
     else:
         entries = list()
         order = [None, None]
@@ -436,9 +479,229 @@ def render_search_results(term, offset=None, order=None, limit=None):
                                  query=term,
                                  adv_searchterm=term,
                                  entries=entries,
+                                 shelfmark_section=shelfmark_section,
                                  result_count=result_count,
                                  title=_("Search"),
                                  page="search",
                                  order=order[1])
 
 
+@search.route("/search/external/shelfmark/<provider>/<provider_id>", methods=["GET"])
+@login_required_if_no_ano
+def shelfmark_external_detail(provider, provider_id):
+    query = (request.args.get("query") or "").strip()
+    return_to = safe_local_return_url(request.args.get("return_to"))
+    modal_view = (request.args.get("view") or "").strip().lower() == "modal"
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
+    detail_url = url_for(
+        "search.shelfmark_external_detail",
+        provider=provider,
+        provider_id=provider_id,
+        query=query,
+        return_to=return_to,
+    )
+
+    try:
+        result = fetch_shelfmark_detail(
+            provider,
+            provider_id,
+            detail_url=detail_url,
+        ).to_template_dict()
+        if modal_view:
+            return render_template(
+                "shelfmark_external_detail_content.html",
+                result=result,
+                modal_mode=True,
+                preferred_release=preferred_release,
+                shelfmark_error=None,
+            )
+        return render_title_template(
+            "shelfmark_external_detail.html",
+            title=result.get("title") or _("Shelfmark External Result"),
+            page="search",
+            result=result,
+            search_query=query,
+            return_to=return_to,
+            modal_mode=False,
+            preferred_release=preferred_release,
+        )
+    except ShelfmarkIntegrationError as exc:
+        flash(str(exc), category="error")
+        if modal_view:
+            return render_template(
+                "shelfmark_external_detail_content.html",
+                title=_("Shelfmark External Result"),
+                result=None,
+                modal_mode=True,
+                preferred_release=preferred_release,
+                shelfmark_error=str(exc),
+            )
+        return render_title_template(
+            "shelfmark_external_detail.html",
+            title=_("Shelfmark External Result"),
+            page="search",
+            result=None,
+            search_query=query,
+            return_to=return_to,
+            shelfmark_error=str(exc),
+            modal_mode=False,
+            preferred_release=preferred_release,
+        )
+
+
+@search.route("/search/external/shelfmark/<provider>/<provider_id>/row", methods=["GET"])
+@login_required_if_no_ano
+def shelfmark_external_row(provider, provider_id):
+    query = (request.args.get("query") or "").strip()
+    return_to = safe_local_return_url(request.args.get("return_to"))
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
+    detail_url = url_for(
+        "search.shelfmark_external_detail",
+        provider=provider,
+        provider_id=provider_id,
+        query=query,
+        return_to=return_to,
+    )
+
+    try:
+        result_view = fetch_shelfmark_detail(
+            provider,
+            provider_id,
+            detail_url=detail_url,
+        )
+        payload = build_shelfmark_row_response(
+            result_view,
+            preferred_release=preferred_release,
+            requestable_only=requested_shelfmark_flag(
+                "shelfmark_filter_requestable",
+                default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+            ),
+            has_cover_only=requested_shelfmark_flag(
+                "shelfmark_filter_has_cover",
+                default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+            ),
+        )
+        return jsonify(
+            {
+                "ok": payload["ok"],
+                "matches_filters": payload["matches_filters"],
+                "row_class_name": payload["row_class_name"],
+                "row_status_provider": payload["row_status_provider"],
+                "row_status_provider_id": payload["row_status_provider_id"],
+                "row_status_in_library": payload["row_status_in_library"],
+                "row_has_cover": payload["row_has_cover"],
+                "library_book_url": payload.get("library_book_url"),
+                "library_book_title": payload.get("library_book_title"),
+                "html": render_template(
+                    "shelfmark_external_result_card_inner.html",
+                    result=payload["result"],
+                    preferred_release=payload["preferred_release"],
+                ),
+            }
+        )
+    except ShelfmarkIntegrationError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 503
+
+
+@search.route("/search/external/shelfmark/topup", methods=["GET"])
+@login_required_if_no_ano
+def shelfmark_external_topup():
+    query = (request.args.get("query") or "").strip()
+    return_to = safe_local_return_url(request.args.get("return_to"))
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
+    try:
+        source_page = int(request.args.get("shelfmark_source_page", "1"))
+    except (TypeError, ValueError):
+        source_page = 1
+    if source_page < 1:
+        source_page = 1
+
+    try:
+        section = search_shelfmark_results(
+            query,
+            detail_url_builder=lambda book: build_shelfmark_detail_url(
+                book,
+                query=query,
+                return_to=return_to,
+            ),
+            page=source_page,
+            page_size=requested_shelfmark_page_size(),
+            sort=requested_shelfmark_sort(),
+            series_filter=DEFAULT_SHELFMARK_SERIES_FILTER,
+            filter_requestable=requested_shelfmark_flag(
+                "shelfmark_filter_requestable",
+                default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+            ),
+            filter_has_cover=requested_shelfmark_flag(
+                "shelfmark_filter_has_cover",
+                default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+            ),
+        ).to_template_dict()
+        section["state_url"] = return_to
+        decorate_shelfmark_result_rows(
+            section,
+            query=query,
+            enable_progressive_enrichment=True,
+        )
+        rows = []
+        for row in build_shelfmark_top_up_rows(section, preferred_release=preferred_release):
+            rows.append(
+                {
+                    "provider": row["provider"],
+                    "provider_id": row["provider_id"],
+                    "row_class_name": row["row_class_name"],
+                    "row_status_provider": row["row_status_provider"],
+                    "row_status_provider_id": row["row_status_provider_id"],
+                    "row_status_in_library": row["row_status_in_library"],
+                    "row_has_cover": row["row_has_cover"],
+                    "library_book_url": row.get("library_book_url"),
+                    "library_book_title": row.get("library_book_title"),
+                    "row_enrichment_url": row.get("row_enrichment_url") or "",
+                    "html": render_template(
+                        "shelfmark_external_result_card_inner.html",
+                        result=row["result"],
+                        preferred_release=row["preferred_release"],
+                    ),
+                }
+            )
+        return jsonify(
+            {
+                "ok": True,
+                "page": source_page,
+                "has_more": bool(section.get("has_more")),
+                "next_page": section.get("next_page"),
+                "rows": rows,
+            }
+        )
+    except ShelfmarkIntegrationError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 503
+
+
+@search.route("/search/external/shelfmark/library-status", methods=["GET"])
+@login_required_if_no_ano
+def shelfmark_external_library_status():
+    provider_ids = []
+    seen_provider_ids = set()
+    for raw_value in request.args.getlist("provider_id"):
+        normalized = (raw_value or "").strip()
+        if not normalized or normalized in seen_provider_ids:
+            continue
+        seen_provider_ids.add(normalized)
+        provider_ids.append(normalized)
+
+    matches = lookup_visible_library_matches(provider_ids)
+    payload = {}
+    for provider_id in provider_ids:
+        library_match = matches.get(provider_id)
+        payload[provider_id] = {
+            "in_library": bool(library_match),
+            "book_id": library_match.book_id if library_match is not None else None,
+            "book_title": library_match.title if library_match is not None else None,
+            "book_url": (
+                url_for("web.show_book", book_id=library_match.book_id)
+                if library_match is not None
+                else None
+            ),
+        }
+
+    return jsonify({"ok": True, "matches": payload})

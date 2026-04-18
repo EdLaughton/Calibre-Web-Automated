@@ -1,0 +1,43 @@
+{% import 'requests_workspace_macros.html' as requests_ui with context %}
+{% import 'shelfmark_external_macros.html' as shelfmark_ui with context %}
+{% extends "layout.html" %}
+{% set shelfmark = shelfmark_runtime if shelfmark_runtime is defined and shelfmark_runtime else None %}
+{% block header %}
+<link href="{{ url_for('static', filename='css/shelfmark_search.css') }}" rel="stylesheet" media="screen">
+<link href="{{ url_for('static', filename='css/requests_workspace.css') }}" rel="stylesheet" media="screen">
+{% endblock %}
+
+{% block body %}
+<div class="shelfmark-search-page requests-workspace-page requests-workspace-page--{{ requests_workspace.active_view }}">
+  <div class="shelfmark-external-shell requests-workspace-shell">
+    <header class="shelfmark-external-header requests-workspace-header">
+      <p class="requests-workspace-header__eyebrow">{{ requests_workspace.eyebrow }}</p>
+      <h1 class="requests-workspace-header__title">{{ requests_workspace.title }}</h1>
+      <p class="requests-workspace-header__subtitle">{{ requests_workspace.subtitle }}</p>
+    </header>
+
+    {% if requests_workspace.message %}
+      <div class="alert alert-info requests-workspace-message">
+        {{ requests_workspace.message }}
+      </div>
+    {% endif %}
+
+    <div class="requests-workspace-sections">
+      {% for section in requests_workspace.sections %}
+        {{ requests_ui.render_requests_section_shell(section) }}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block modal %}
+{{ shelfmark_ui.render_shelfmark_modal(shelfmark) }}
+{% endblock %}
+
+{% block js %}
+{{ shelfmark_ui.render_shelfmark_scripts(shelfmark) }}
+{% if requests_workspace.enabled %}
+<script src="{{ url_for('static', filename='js/requests_workspace_async.js') }}"></script>
+{% endif %}
+{% endblock %}

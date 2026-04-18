@@ -1,0 +1,108 @@
+{% set preferred_release = preferred_release or {} %}
+<div class="shelfmark-result-card__media">
+  {% if result.request_payload and not result.already_in_library and (not result.workflow_state or result.workflow_state.key == 'available') %}
+    <label class="shelfmark-result-card__select shelfmark-batch-select js-shelfmark-batch-select is-hidden">
+      <input type="checkbox" class="js-shelfmark-batch-toggle" disabled aria-label="{{ _('Select %(title)s for batch request', title=result.title) }}">
+      <span class="sr-only">{{ _('Select %(title)s for batch request', title=result.title) }}</span>
+    </label>
+  {% endif %}
+  <div class="shelfmark-result-card__cover">
+    {% if result.cover_url %}
+      <img src="{{ result.cover_url }}" alt="{{ result.title }}" loading="lazy" class="shelfmark-result-card__cover-image">
+    {% else %}
+      <div class="shelfmark-result-card__cover-fallback" aria-hidden="true">
+        <span class="glyphicon glyphicon-book shelfmark-result-card__cover-fallback-icon"></span>
+        <span class="shelfmark-result-card__cover-fallback-label">{{ _('No cover') }}</span>
+      </div>
+    {% endif %}
+  </div>
+  <div class="shelfmark-result-card__body">
+    <div class="shelfmark-result-card__header">
+      <div>
+        <h4 class="media-heading shelfmark-result-card__title">
+          {% if result.detail_url %}
+            <a href="{{ result.detail_url }}">{{ result.title }}</a>
+          {% else %}
+            {{ result.title }}
+          {% endif %}
+        </h4>
+        {% if result.subtitle %}
+          <p class="text-muted shelfmark-result-card__subtitle">{{ result.subtitle }}</p>
+        {% endif %}
+        {% if result.workflow_state and not result.already_in_library %}
+          <span
+            class="shelfmark-result-card__workflow-state shelfmark-status-chip {{ result.workflow_state.chip_class }} js-shelfmark-status-chip{% if result.workflow_state.key == 'available' %} is-hidden{% endif %}"
+            data-status-key="{{ result.workflow_state.key }}"
+            aria-hidden="true"
+          >
+            {{ result.workflow_state.label }}
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    {% if result.authors %}
+      <p class="shelfmark-result-card__authors">{{ result.authors|join(', ') }}</p>
+    {% endif %}
+    {% if result.facts %}
+      <p class="shelfmark-result-card__facts" aria-label="{{ _('Shelfmark facts') }}">
+        {% for fact in result.facts %}
+          <span class="shelfmark-result-card__fact">{{ fact }}</span>
+        {% endfor %}
+      </p>
+    {% endif %}
+    {% if result.recommendation_reason_label %}
+      <p class="shelfmark-result-card__recommendation">
+        <span class="shelfmark-result-card__recommendation-label">{{ result.recommendation_reason_label }}</span>
+        {% if result.recommendation_reason_detail %}
+          <span class="shelfmark-result-card__recommendation-detail">{{ result.recommendation_reason_detail }}</span>
+        {% endif %}
+      </p>
+    {% endif %}
+    {% if result.secondary_series_note %}
+      <p class="shelfmark-result-card__series-note text-muted">{{ result.secondary_series_note }}</p>
+    {% endif %}
+    {% if result.description %}
+      <p class="shelfmark-result-card__description">
+        {{ result.description[:220] }}{% if result.description|length > 220 %}...{% endif %}
+      </p>
+    {% endif %}
+    <div class="btn-toolbar shelfmark-result-card__actions" role="toolbar">
+      {% if result.action.mode == 'view_library' and result.library_book_url %}
+        <a class="btn btn-sm {{ result.action.button_class }} shelfmark-result-card__primary-action" href="{{ result.library_book_url }}">
+          <span class="{{ result.action.icon_class }}" aria-hidden="true"></span>
+          <span>{{ result.action.label }}</span>
+        </a>
+      {% else %}
+        <a
+          class="btn btn-sm {{ result.action.button_class }} shelfmark-result-card__primary-action js-shelfmark-action"
+          href="{{ result.shelfmark_open_url }}"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-base-url="{{ result.shelfmark_base_url }}"
+          data-open-url="{{ result.shelfmark_open_url }}"
+          data-request-payload='{{ result.request_payload|tojson if result.request_payload else "" }}'
+          data-mode="{{ result.action.mode }}"
+          data-preferred-release-enabled="{{ 1 if preferred_release.enabled else 0 }}"
+          data-preferred-release-provider="{{ preferred_release.provider or '' }}"
+          data-preferred-release-content-type="{{ preferred_release.content_type or 'ebook' }}"
+          data-preferred-release-ranking="{{ preferred_release.ranking or 'seeders_desc' }}"
+        >
+          <span class="{{ result.action.icon_class }} js-shelfmark-action-icon" aria-hidden="true"></span>
+          <span class="js-shelfmark-action-label">{{ result.action.label }}</span>
+        </a>
+      {% endif %}
+      {% if result.detail_url %}
+        <a
+          class="btn btn-link btn-sm shelfmark-result-card__secondary-action js-shelfmark-detail-link"
+          href="{{ result.detail_url }}"
+          data-detail-title="{{ result.title }}"
+          data-detail-provider="{{ result.provider }}"
+          data-detail-provider-id="{{ result.provider_id }}"
+        >
+          <span>{{ _('Details') }}</span>
+        </a>
+      {% endif %}
+    </div>
+    <p class="help-block js-shelfmark-action-hint shelfmark-result-card__action-hint{% if not result.action.hint %} is-hidden{% endif %}">{{ result.action.hint or '' }}</p>
+  </div>
+</div>

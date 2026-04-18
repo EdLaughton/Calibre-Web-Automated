@@ -114,6 +114,15 @@ class _Settings(_Base):
     config_use_goodreads = Column(Boolean, default=False)
     config_goodreads_api_key = Column(String)
     config_hardcover_token = Column(String)
+    config_shelfmark_search = Column(Boolean, default=False)
+    config_shelfmark_url = Column(String, default="")
+    config_shelfmark_browser_url = Column(String, default="")
+    config_shelfmark_username = Column(String, default="")
+    config_shelfmark_password_e = Column(String)
+    config_shelfmark_preferred_release_enabled = Column(Boolean, default=False)
+    config_shelfmark_preferred_release_provider = Column(String, default="")
+    config_shelfmark_preferred_release_content_type = Column(String, default="ebook")
+    config_shelfmark_preferred_release_ranking = Column(String, default="seeders_desc")
     
     config_register_email = Column(Boolean, default=False)
     config_login_type = Column(Integer, default=0)
@@ -438,7 +447,10 @@ class ConfigSQL(object):
         self.save()
 
     def get_book_path(self):
-        return self.config_calibre_split_dir if self.config_calibre_split else self.config_calibre_dir
+        split_library = bool(getattr(self, "config_calibre_split", False))
+        if split_library:
+            return getattr(self, "config_calibre_split_dir", None) or getattr(self, "config_calibre_dir", None)
+        return getattr(self, "config_calibre_dir", None)
 
     def store_calibre_uuid(self, calibre_db, Library_table):
         from . import app

@@ -1,0 +1,7 @@
+{% import 'shelfmark_external_macros.html' as shelfmark_ui with context %}
+<div class="shelfmark-contextual-append js-shelfmark-contextual-append-response">
+  {% if shelfmark_section and shelfmark_section.results %}
+    {{ shelfmark_ui.render_shelfmark_results_list(shelfmark_section, interactive_shell=False) }}
+  {% endif %}
+  {{ shelfmark_ui.render_contextual_load_more_control(shelfmark_section) }}
+</div>

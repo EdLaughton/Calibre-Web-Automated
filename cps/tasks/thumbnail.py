@@ -67,6 +67,11 @@ class TaskGenerateCoverThumbnails(CalibreTask):
 
     def run(self, worker_thread):
         try:
+            if not ub.ensure_thumbnail_table(self.app_db_session):
+                self.log.info('Thumbnail table unavailable; skipping cover thumbnail generation task.')
+                self.self_cleanup = True
+                self._handleSuccess()
+                return
             if use_IM and self.stat != STAT_CANCELLED and self.stat != STAT_ENDED:
                 self.message = 'Scanning Books'
                 books_with_covers = self.get_books_with_covers(self.book_id)
@@ -120,6 +125,8 @@ class TaskGenerateCoverThumbnails(CalibreTask):
         return books_cover
 
     def get_book_cover_thumbnails(self, book_id):
+        if not ub.ensure_thumbnail_table(self.app_db_session):
+            return []
         return self.app_db_session \
             .query(ub.Thumbnail) \
             .filter(ub.Thumbnail.type == constants.THUMBNAIL_TYPE_COVER) \
@@ -318,6 +325,12 @@ class TaskGenerateSeriesThumbnails(CalibreTask):
         ]
 
     def run(self, worker_thread):
+        if not ub.ensure_thumbnail_table(self.app_db_session):
+            self.log.info('Thumbnail table unavailable; skipping series thumbnail generation task.')
+            self.self_cleanup = True
+            self._handleSuccess()
+            self.app_db_session.remove()
+            return
         if self.calibre_db.session and use_IM and self.stat != STAT_CANCELLED and self.stat != STAT_ENDED:
             self.message = 'Scanning Series'
             all_series = self.get_series_with_four_plus_books()
@@ -388,6 +401,8 @@ class TaskGenerateSeriesThumbnails(CalibreTask):
             .all()
 
     def get_series_thumbnails(self, series_id):
+        if not ub.ensure_thumbnail_table(self.app_db_session):
+            return []
         return (self.app_db_session
             .query(ub.Thumbnail)
             .filter(ub.Thumbnail.type == constants.THUMBNAIL_TYPE_SERIES)
@@ -529,6 +544,12 @@ class TaskClearCoverThumbnailCache(CalibreTask):
         self.cache = fs.FileSystem()
 
     def run(self, worker_thread):
+        if not ub.ensure_thumbnail_table(self.app_db_session):
+            self.log.info('Thumbnail table unavailable; skipping cover thumbnail cache clear task.')
+            self.self_cleanup = True
+            self._handleSuccess()
+            self.app_db_session.remove()
+            return
         if self.app_db_session:
             if self.book_id == 0:  # delete superfluous thumbnails
                 calibre_db = db.CalibreDB(expire_on_commit=False, init=True)
@@ -548,6 +569,8 @@ class TaskClearCoverThumbnailCache(CalibreTask):
         self.app_db_session.remove()
 
     def get_thumbnails_for_book(self, book_id):
+        if not ub.ensure_thumbnail_table(self.app_db_session):
+            return []
         return self.app_db_session \
             .query(ub.Thumbnail) \
             .filter(ub.Thumbnail.type == constants.THUMBNAIL_TYPE_COVER) \
@@ -568,6 +591,8 @@ class TaskClearCoverThumbnailCache(CalibreTask):
             self._handleError('Error deleting book thumbnail: ' + str(ex))
 
     def delete_all_thumbnails(self):
+        if not ub.ensure_thumbnail_table(self.app_db_session):
+            return
         try:
             self.app_db_session.query(ub.Thumbnail).filter(ub.Thumbnail.type == constants.THUMBNAIL_TYPE_COVER).delete()
             self.app_db_session.commit()

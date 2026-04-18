@@ -301,7 +301,7 @@
       {% endif %}
       <label for="auto_metadata_fetch_enabled" style="padding-left: 10px;">{{_('Enable Automatic Metadata Fetching for New Books')}}</label><br>
       <p class="cwa-settings-tooltip">
-        {{_('When active, CWA will automatically attempt to fetch and apply metadata (title, author, description, cover, etc.) for newly ingested books using the configured metadata provider hierarchy. This helps improve the quality of book information, especially for books with poor or missing metadata.')}}
+        {{_('When active, newly ingested books first try an exact Hardcover lookup from any attached Hardcover identifiers. Imports carrying exact Shelfmark/CWA sidecar provenance use that path first; books without exact Hardcover IDs fall back to the configured metadata provider hierarchy.')}}
       </p>
 
       {% if cwa_settings['auto_metadata_smart_application'] %}
@@ -395,7 +395,7 @@
         
         <div class="cwa-settings-tip">
           <small style="color: var(--color-info-text);">
-            💡 <strong>{{_('Tip')}}:</strong> {{_('These field selections apply to both Smart and Direct replacement modes. Smart mode will additionally apply quality criteria to selected fields, while Direct mode will replace all selected fields with provider data.')}}
+            💡 <strong>{{_('Tip')}}:</strong> {{_('These field selections apply to both exact Hardcover lookups and fallback provider searches. Smart mode still applies quality checks to the selected fields, while Direct mode replaces the selected fields with provider data.')}}
           </small>
         </div>
       </div>
