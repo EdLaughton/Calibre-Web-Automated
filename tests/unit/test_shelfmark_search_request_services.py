@@ -31,11 +31,11 @@ def shelfmark_service_app(monkeypatch):
     def show_book(book_id):
         return f"book:{book_id}"
 
-    @shelfmark.route("/shelfmark")
+    @shelfmark.route("/request")
     def search_page():
         return "search"
 
-    @shelfmark.route("/shelfmark/detail/<provider>/<provider_id>")
+    @shelfmark.route("/request/detail/<provider>/<provider_id>")
     def book_detail(provider, provider_id):
         return f"{provider}:{provider_id}"
 
@@ -148,7 +148,7 @@ def test_search_shelfmark_uses_one_external_search_and_marks_existing_book(
     monkeypatch.setattr(search_module, "ShelfmarkClient", _FakeShelfmarkClient)
     monkeypatch.setattr(search_module, "load_queue_rows_for_items", lambda _items: {})
 
-    with shelfmark_service_app.test_request_context("/shelfmark?query=dune"):
+    with shelfmark_service_app.test_request_context("/request?query=dune"):
         result = search_module.search_shelfmark(shelfmark_service_config, "dune")
 
     assert call_counts == {"search": 1, "detail": 0, "request": 0}
@@ -354,7 +354,7 @@ def test_details_view_cache_refreshes_dynamic_queue_state(
         lambda _items: queue_states.pop(0),
     )
 
-    with shelfmark_service_app.test_request_context("/shelfmark/detail/hardcover/123"):
+    with shelfmark_service_app.test_request_context("/request/detail/hardcover/123"):
         first_view = details_module.get_shelfmark_detail_view(
             shelfmark_service_config,
             "hardcover",
@@ -399,7 +399,7 @@ def test_details_view_gracefully_handles_missing_hardcover_enrichment(
     monkeypatch.setattr(details_module, "find_library_matches", lambda _results: {})
     monkeypatch.setattr(details_module, "load_queue_rows_for_items", lambda _items: {})
 
-    with shelfmark_service_app.test_request_context("/shelfmark/detail/google/abc"):
+    with shelfmark_service_app.test_request_context("/request/detail/google/abc"):
         view = details_module.get_shelfmark_detail_view(
             shelfmark_service_config,
             "google",

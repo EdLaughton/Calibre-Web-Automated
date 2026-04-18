@@ -142,7 +142,7 @@ def shelfmark_ui_app(monkeypatch):
             "{% extends 'layout.html' %}{% block body %}<div>body</div>{% endblock %}",
             instance="CWA",
             title="Layout Test",
-            page="layout",
+            page="index",
             bodyClass="",
             cwa_settings={},
             searchterm="",
@@ -192,8 +192,8 @@ def test_top_bar_entry_renders_and_links_correctly(shelfmark_ui_client):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert 'id="shelfmark_request"' in html
-    assert 'href="/shelfmark"' in html
+    assert 'id="request_book"' in html
+    assert 'href="/request"' in html
     assert "Request Book" in html
 
 
@@ -215,7 +215,7 @@ def test_search_page_renders_results(shelfmark_ui_client, monkeypatch):
                     "series_name": "Dune",
                     "series_position": 1,
                     "facts": ["1965", "Hardcover"],
-                    "detail_url": "/shelfmark/detail/hardcover/123?query=dune",
+                    "detail_url": "/request/detail/hardcover/123?query=dune",
                     "action": {
                         "mode": "open_existing",
                         "label": "Open existing CWA book",
@@ -233,7 +233,7 @@ def test_search_page_renders_results(shelfmark_ui_client, monkeypatch):
     )
 
     response = shelfmark_ui_client.get(
-        "/shelfmark?query=dune",
+        "/request?query=dune",
         headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
@@ -243,6 +243,33 @@ def test_search_page_renders_results(shelfmark_ui_client, monkeypatch):
     assert "Dune" in html
     assert "Frank Herbert" in html
     assert "Open existing CWA book" in html
+
+
+def test_legacy_shelfmark_routes_redirect_to_request_namespace(shelfmark_ui_client):
+    page_response = shelfmark_ui_client.get("/shelfmark?query=dune", follow_redirects=False)
+    detail_response = shelfmark_ui_client.get(
+        "/shelfmark/detail/hardcover/123?query=dune",
+        follow_redirects=False,
+    )
+    post_response = shelfmark_ui_client.post(
+        "/shelfmark/request",
+        data={"request_payload": "{}", "return_to": "/request"},
+        follow_redirects=False,
+    )
+    status_response = shelfmark_ui_client.post(
+        "/shelfmark/status",
+        json={"items": []},
+        follow_redirects=False,
+    )
+
+    assert page_response.status_code == 302
+    assert page_response.headers["Location"].endswith("/request?query=dune")
+    assert detail_response.status_code == 302
+    assert detail_response.headers["Location"].endswith("/request/detail/hardcover/123?query=dune")
+    assert post_response.status_code == 307
+    assert post_response.headers["Location"].endswith("/request/queue")
+    assert status_response.status_code == 307
+    assert status_response.headers["Location"].endswith("/request/status")
 
 
 def test_details_overlay_renders_with_hardcover_enrichment(shelfmark_ui_client, monkeypatch):
@@ -291,7 +318,7 @@ def test_details_overlay_renders_with_hardcover_enrichment(shelfmark_ui_client, 
     )
 
     response = shelfmark_ui_client.get(
-        "/shelfmark/detail/hardcover/123?query=dune",
+        "/request/detail/hardcover/123?query=dune",
         headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
@@ -340,7 +367,7 @@ def test_details_overlay_degrades_cleanly_without_hardcover(shelfmark_ui_client,
     )
 
     response = shelfmark_ui_client.get(
-        "/shelfmark/detail/google/abc?query=left+hand",
+        "/request/detail/google/abc?query=left+hand",
         headers={"X-Requested-With": "XMLHttpRequest"},
     )
 
@@ -386,10 +413,10 @@ def test_request_post_creates_persisted_queue_row(shelfmark_ui_client, temp_cwa_
     }
 
     response = shelfmark_ui_client.post(
-        "/shelfmark/request",
+        "/request/queue",
         data={
             "request_payload": json.dumps(payload),
-            "return_to": "/shelfmark?query=dune",
+            "return_to": "/request?query=dune",
         },
     )
 

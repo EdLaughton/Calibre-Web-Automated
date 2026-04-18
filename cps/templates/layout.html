@@ -124,7 +124,7 @@
           <ul class="nav navbar-nav ">
             <li><a href="{{url_for('search.advanced_search')}}" id="advanced_search"><span class="glyphicon glyphicon-search" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Advanced Search')}}</span></a></li>
             {% if config.config_shelfmark_search and config.config_shelfmark_url %}
-            <li><a href="{{url_for('shelfmark_search.search_page')}}" id="shelfmark_request"><span class="glyphicon glyphicon-send" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Request Book')}}</span></a></li>
+            <li><a href="{{url_for('shelfmark_search.search_page')}}" id="request_book"><span class="glyphicon glyphicon-send" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Request Book')}}</span></a></li>
             {% endif %}
           </ul>
           {% endif %}

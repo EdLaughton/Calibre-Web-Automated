@@ -56,7 +56,15 @@ def _is_xhr_request() -> bool:
     return request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
 
-@shelfmark_search.route("/shelfmark", methods=["GET"])
+def _redirect_query_args() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in request.args.items()
+        if isinstance(key, str) and isinstance(value, str)
+    }
+
+
+@shelfmark_search.route("/request", methods=["GET"])
 @login_required_if_no_ano
 def search_page():
     if not _feature_enabled():
@@ -81,7 +89,7 @@ def search_page():
     return render_title_template(
         "shelfmark_search.html",
         title=_("Request Book"),
-        page="shelfmark",
+        page="request",
         query=query,
         shelfmark_results=results_payload["results"],
         shelfmark_error=error_message,
@@ -91,7 +99,7 @@ def search_page():
     )
 
 
-@shelfmark_search.route("/shelfmark/request", methods=["POST"])
+@shelfmark_search.route("/request/queue", methods=["POST"])
 @login_required_if_no_ano
 def submit_request():
     if not _feature_enabled():
@@ -127,7 +135,7 @@ def submit_request():
     return redirect(return_to)
 
 
-@shelfmark_search.route("/shelfmark/detail/<provider>/<path:provider_id>", methods=["GET"])
+@shelfmark_search.route("/request/detail/<provider>/<path:provider_id>", methods=["GET"])
 @login_required_if_no_ano
 def book_detail(provider: str, provider_id: str):
     if not _feature_enabled():
@@ -159,7 +167,7 @@ def book_detail(provider: str, provider_id: str):
     )
 
 
-@shelfmark_search.route("/shelfmark/status", methods=["POST"])
+@shelfmark_search.route("/request/status", methods=["POST"])
 @login_required_if_no_ano
 def queue_status():
     if not _feature_enabled():
@@ -192,3 +200,43 @@ def queue_status():
         )
 
     return jsonify({"items": statuses})
+
+
+@shelfmark_search.route("/shelfmark", methods=["GET"])
+@login_required_if_no_ano
+def legacy_search_page_redirect():
+    if not _feature_enabled():
+        abort(404)
+    return redirect(url_for("shelfmark_search.search_page", **_redirect_query_args()), code=302)
+
+
+@shelfmark_search.route("/shelfmark/detail/<provider>/<path:provider_id>", methods=["GET"])
+@login_required_if_no_ano
+def legacy_book_detail_redirect(provider: str, provider_id: str):
+    if not _feature_enabled():
+        abort(404)
+    return redirect(
+        url_for(
+            "shelfmark_search.book_detail",
+            provider=provider,
+            provider_id=provider_id,
+            **_redirect_query_args(),
+        ),
+        code=302,
+    )
+
+
+@shelfmark_search.route("/shelfmark/request", methods=["POST"])
+@login_required_if_no_ano
+def legacy_submit_request_redirect():
+    if not _feature_enabled():
+        abort(404)
+    return redirect(url_for("shelfmark_search.submit_request"), code=307)
+
+
+@shelfmark_search.route("/shelfmark/status", methods=["POST"])
+@login_required_if_no_ano
+def legacy_queue_status_redirect():
+    if not _feature_enabled():
+        abort(404)
+    return redirect(url_for("shelfmark_search.queue_status"), code=307)
