@@ -416,6 +416,10 @@ def _create_real_layout_app(sidebar_sections):
     def advanced_search():
         return "advanced"
 
+    @search.route("/search/autocomplete")
+    def autocomplete():
+        return "autocomplete"
+
     @shelf.route("/shelf/create")
     def create_shelf():
         return "create-shelf"
