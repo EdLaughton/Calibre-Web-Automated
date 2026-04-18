@@ -783,8 +783,8 @@ def author_shelfmark_section(author_id):
         offset=offset,
     )
     if request.args.get("append") == "1":
-        return _render_contextual_shelfmark_append(section)
-    return _render_contextual_shelfmark_partial(section)
+        return render_contextual_shelfmark_append(section)
+    return render_contextual_shelfmark_partial(section)
 
 
 @web.route("/series/<int:series_id>/shelfmark")
@@ -807,8 +807,8 @@ def series_shelfmark_section(series_id):
         offset=offset,
     )
     if request.args.get("append") == "1":
-        return _render_contextual_shelfmark_append(section)
-    return _render_contextual_shelfmark_partial(section)
+        return render_contextual_shelfmark_append(section)
+    return render_contextual_shelfmark_partial(section)
 
 
 def render_ratings_books(page, book_id, order):

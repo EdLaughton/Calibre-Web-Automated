@@ -94,3 +94,8 @@ def test_find_author_profile_accepts_dict_cached_image(hardcover_module, monkeyp
     assert profile is not None
     assert profile.image_url == "https://assets.hardcover.app/author/jemisin.jpg"
     assert profile.safe_about is None
+
+
+def test_author_by_id_query_treats_cached_image_as_jsonb_scalar(hardcover_module):
+    assert "cached_image" in hardcover_module.AUTHOR_BY_ID_QUERY
+    assert "cached_image {" not in hardcover_module.AUTHOR_BY_ID_QUERY
