@@ -148,6 +148,7 @@ def test_build_author_contextual_section_page_uses_popularity_and_builds_load_mo
     assert shelfmark_ui_module._calls["kwargs"]["context_type"] == "author"
     assert shelfmark_ui_module._calls["kwargs"]["context_value"] == "Terry Pratchett"
     assert section["section_subtitle"] == "Missing most popular requestable books by this author from Shelfmark"
+    assert shelfmark_ui_module._calls["kwargs"]["limit"] == 9
     assert [result["title"] for result in section["results"]] == [f"Book {index}" for index in range(1, 9)]
     assert section["load_more_url"] == "/web/author_shelfmark_section?append=1&author_id=7&offset=8&return_to=/author/stored/7"
 
@@ -160,10 +161,71 @@ def test_build_series_contextual_section_page_slices_follow_on_batch_without_dup
         offset=8,
     )
 
-    assert shelfmark_ui_module._calls["kwargs"]["limit"] == 16
+    assert shelfmark_ui_module._calls["kwargs"]["limit"] == 17
     assert [result["title"] for result in section["results"]] == [f"Book {index}" for index in range(9, 13)]
     assert [result["row_index"] for result in section["results"]] == [8, 9, 10, 11]
     assert section["load_more_url"] is None
+
+
+def test_build_contextual_section_drops_self_looping_load_more_when_no_follow_on_batch(
+    shelfmark_ui_module,
+    monkeypatch,
+):
+    class FakeSparseResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def to_template_dict(self):
+            return dict(self._payload)
+
+    sparse_results = [
+        {
+            "provider": "hardcover",
+            "provider_id": str(index),
+            "title": f"Book {index}",
+            "cover_url": f"https://covers.example.com/{index}.jpg",
+            "already_in_library": False,
+            "request_payload": {"book_data": {"provider": "hardcover", "provider_id": str(index)}},
+            "action": {"mode": "request"},
+            "workflow_state": {"key": "available"},
+            "library_state": {"row_class": "info"},
+        }
+        for index in range(1, 25)
+    ]
+
+    def fake_sparse_contextual_search(query, **kwargs):
+        return FakeSparseResponse(
+            {
+                "enabled": True,
+                "available": True,
+                "results": sparse_results,
+                "has_more": True,
+                "page": 1,
+                "page_size": kwargs["limit"],
+                "page_result_count": len(sparse_results),
+                "filter_requestable": True,
+                "filter_has_cover": True,
+                "preferred_release_settings": {},
+                "open_search_url": "https://library.example.com/shelfmark",
+            }
+        )
+
+    monkeypatch.setattr(
+        shelfmark_ui_module,
+        "search_shelfmark_contextual_results",
+        fake_sparse_contextual_search,
+    )
+
+    section = shelfmark_ui_module.build_author_contextual_shelfmark_section_page(
+        "Craig Alanson",
+        author_id=373,
+        state_url="/author/stored/373",
+        offset=24,
+    )
+
+    assert section["results"] == []
+    assert section["load_more_url"] is None
+    assert section["has_more_contextual"] is False
 
 
 def test_render_contextual_partial_uses_template_renderer(shelfmark_ui_module):

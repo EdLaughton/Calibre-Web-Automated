@@ -103,12 +103,13 @@ body.author:not(.authorlist) .author-page__title {
 
 body.author:not(.authorlist) .author-page__profile {
     display: grid;
-    grid-template-columns: minmax(112px, 132px) minmax(0, 1fr);
-    gap: 0 24px;
+    grid-template-columns: minmax(112px, 140px) minmax(0, 1fr);
+    gap: 0 clamp(20px, 2.6vw, 34px);
     align-items: start;
     margin: 0;
     padding: 0;
     border: 0;
+    width: 100%;
 }
 
 body.author:not(.authorlist) .author-bio--text-only {
@@ -121,12 +122,13 @@ body.author:not(.authorlist) .author-bio .author-photo {
 }
 
 body.author:not(.authorlist) .author-bio__content {
+    width: 100%;
     max-width: none;
 }
 
 body.author:not(.authorlist) .author-bio__copy,
 body.author:not(.authorlist) .author-bio__meta {
-    max-width: min(76ch, 100%);
+    max-width: min(96ch, 100%);
 }
 
 body.author:not(.authorlist) .author-bio__toggle {
@@ -195,7 +197,7 @@ body.author:not(.authorlist) .author-shelfmark-section .shelfmark-contextual-loa
 
     body.author:not(.authorlist) .author-bio__copy,
     body.author:not(.authorlist) .author-bio__meta {
-        max-width: min(68ch, 100%);
+        max-width: min(84ch, 100%);
     }
 }
 

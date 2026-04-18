@@ -392,6 +392,7 @@ def build_contextual_shelfmark_section_page(
     contextual_limit = max(1, int(limit or DEFAULT_CONTEXTUAL_ASYNC_BATCH_SIZE))
     requested_offset = max(0, int(offset or 0))
     requested_total = requested_offset + contextual_limit
+    probe_total = requested_total + 1
     preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
     return_to = safe_local_return_url(state_url) or current_request_path(include_transient=False)
     section = search_shelfmark_contextual_results(
@@ -403,7 +404,7 @@ def build_contextual_shelfmark_section_page(
         ),
         context_type=context_type,
         context_value=context_value,
-        limit=requested_total,
+        limit=probe_total,
         sort=sort,
         filter_requestable=True,
         filter_has_cover=True,
@@ -417,6 +418,7 @@ def build_contextual_shelfmark_section_page(
     section["section_subtitle"] = section_subtitle
     section["state_url"] = return_to
     section["preferred_release_settings"] = preferred_release
+    available_results = list(section.get("results") or [])
     section = _slice_contextual_section_results(
         section,
         query=query,
@@ -424,7 +426,7 @@ def build_contextual_shelfmark_section_page(
         limit=contextual_limit,
     )
     remaining_results = requested_offset + len(section.get("results") or [])
-    has_more = bool(section.get("has_more"))
+    has_more = len(available_results) > remaining_results
     section["has_more_contextual"] = has_more
     section["next_offset"] = remaining_results if has_more else None
     section["load_more_url"] = (
