@@ -264,6 +264,24 @@ def _base_context():
                 "url": "https://hardcover.app/series/middle-earth",
             },
         ],
+        "series_memberships": [
+            {
+                "key": "the lord of the rings",
+                "name": "The Lord of the Rings",
+                "position": 2.0,
+                "featured": True,
+                "display": "The Lord of the Rings (2)",
+                "url": "https://hardcover.app/series/the-lord-of-the-rings",
+            },
+            {
+                "key": "middle-earth",
+                "name": "Middle-earth",
+                "position": 5.0,
+                "featured": False,
+                "display": "Middle-earth (5)",
+                "url": "https://hardcover.app/series/middle-earth",
+            },
+        ],
         "facts": ["4.3 ★", "5,900 ratings", "9,893 readers", "2025", "304 pages", "The Lord of the Rings (2)"],
         "detail_stats": [
             {"label": "Reviews", "value": "74"},
@@ -278,6 +296,19 @@ def _base_context():
         "lists_count": 128,
         "series_count": 3,
         "series_context": {
+            "membership": {
+                "key": "the lord of the rings",
+                "name": "The Lord of the Rings",
+                "position": 2.0,
+                "featured": True,
+                "display": "The Lord of the Rings (2)",
+                "url": "https://hardcover.app/series/the-lord-of-the-rings",
+            },
+            "series_name": "The Lord of the Rings",
+            "series_position": 2.0,
+            "series_display": "The Lord of the Rings (2)",
+            "series_url": "https://hardcover.app/series/the-lord-of-the-rings",
+            "featured": True,
             "matched": True,
             "owned_series_name": "The Lord of the Rings",
             "owned_book_count": 1,
@@ -289,6 +320,59 @@ def _base_context():
             "facts": ["1 book owned in this series", "Owned through 1"],
             "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
         },
+        "series_contexts": [
+            {
+                "membership": {
+                    "key": "the lord of the rings",
+                    "name": "The Lord of the Rings",
+                    "position": 2.0,
+                    "featured": True,
+                    "display": "The Lord of the Rings (2)",
+                    "url": "https://hardcover.app/series/the-lord-of-the-rings",
+                },
+                "series_name": "The Lord of the Rings",
+                "series_position": 2.0,
+                "series_display": "The Lord of the Rings (2)",
+                "series_url": "https://hardcover.app/series/the-lord-of-the-rings",
+                "featured": True,
+                "matched": True,
+                "owned_series_name": "The Lord of the Rings",
+                "owned_book_count": 1,
+                "owned_max_position": 1.0,
+                "owned_contiguous_position": 1,
+                "is_continuation": True,
+                "is_next_missing": True,
+                "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
+                "facts": ["1 book owned in this series", "Owned through 1"],
+                "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
+            }
+        ],
+        "best_series_context": {
+            "membership": {
+                "key": "the lord of the rings",
+                "name": "The Lord of the Rings",
+                "position": 2.0,
+                "featured": True,
+                "display": "The Lord of the Rings (2)",
+                "url": "https://hardcover.app/series/the-lord-of-the-rings",
+            },
+            "series_name": "The Lord of the Rings",
+            "series_position": 2.0,
+            "series_display": "The Lord of the Rings (2)",
+            "series_url": "https://hardcover.app/series/the-lord-of-the-rings",
+            "featured": True,
+            "matched": True,
+            "owned_series_name": "The Lord of the Rings",
+            "owned_book_count": 1,
+            "owned_max_position": 1.0,
+            "owned_contiguous_position": 1,
+            "is_continuation": True,
+            "is_next_missing": True,
+            "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
+            "facts": ["1 book owned in this series", "Owned through 1"],
+            "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
+        },
+        "secondary_series_note": "Also in Middle-earth",
         "workflow_state": {
             "key": "available",
             "label": "Available to request",
@@ -637,6 +721,8 @@ def test_search_template_renders_local_and_external_sections_with_duplicate_stat
     assert 'rel="noopener noreferrer"' in html
     assert "js-shelfmark-action-icon" in html
     assert "js-shelfmark-action-label" in html
+    assert "Also in Middle-earth" in html
+    assert "Middle-earth (5)" not in html
     assert html.count("js-shelfmark-batch-row") == 1
     assert html.count("js-shelfmark-batch-toggle") == 1
     assert 'aria-label="Select External Candidate for batch request"' in html
@@ -842,9 +928,10 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
     assert "9,893 readers" in html
     assert "<i>Shelfmark</i>" in html
     assert "Strong candidate" not in html
-    assert "Next missing" not in html
+    assert "Next missing" in html
     assert "1 book owned in this series" in html
     assert "Owned through 1" in html
+    assert "Library series context" in html
     assert "Well rated" in html
     assert "Popular" in html
     assert "Reviews" in html
@@ -892,7 +979,7 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "The Lord of the Rings (2)" in html
     assert "Middle-earth (5)" in html
     assert "Strong candidate" not in html
-    assert "Next missing" not in html
+    assert "Next missing" in html
     assert "Library series" in html
     assert "Available to request" in html
     assert html.count("Hardcover ID") == 1

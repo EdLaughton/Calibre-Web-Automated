@@ -799,6 +799,7 @@
 .shelfmark-result-card__subtitle,
 .shelfmark-result-card__authors,
 .shelfmark-result-card__facts,
+.shelfmark-result-card__series-note,
 .shelfmark-result-card__description,
 .shelfmark-result-card__action-hint {
   color: var(--shelfmark-shell-muted);
@@ -838,6 +839,12 @@
   content: "\00b7";
   margin: 0 8px;
   color: rgba(215, 226, 234, 0.46);
+}
+
+.shelfmark-result-card__series-note {
+  margin: -4px 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .shelfmark-result-card__badges .label-default,
@@ -1350,6 +1357,25 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 0;
+}
+
+.shelfmark-detail-meta-list__context-list {
+  display: grid;
+  gap: 8px;
+}
+
+.shelfmark-detail-meta-list__context-entry {
+  display: grid;
+  gap: 2px;
+}
+
+.shelfmark-detail-meta-list__context-name {
+  color: var(--shelfmark-shell-text);
+  font-weight: 600;
+}
+
+.shelfmark-detail-meta-list__context-detail {
+  color: var(--shelfmark-shell-muted);
 }
 
 .shelfmark-detail-meta-list__separator {
