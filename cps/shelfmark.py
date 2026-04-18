@@ -22,7 +22,14 @@ from .services.shelfmark_client import (
 )
 from .services.shelfmark_details import get_shelfmark_detail_view
 from .services.shelfmark_queue import load_visible_queue_status, submit_shelfmark_request
-from .services.shelfmark_search import search_shelfmark
+from .services.shelfmark_search import (
+    DEFAULT_REQUEST_FILTER_HAS_COVER,
+    DEFAULT_REQUEST_FILTER_HIDE_OWNED,
+    DEFAULT_REQUEST_SEARCH_SORT,
+    get_request_search_sort_options,
+    normalize_request_search_sort,
+    search_shelfmark,
+)
 from .usermanagement import login_required_if_no_ano
 
 shelfmark_search = Blueprint("shelfmark_search", __name__)
@@ -64,13 +71,53 @@ def _redirect_query_args() -> dict[str, str]:
     }
 
 
+def _checkbox_query_arg(name: str, *, default: bool) -> bool:
+    values = [str(value).strip().lower() for value in request.args.getlist(name)]
+    if not values:
+        return default
+    value = values[-1]
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _page_query_arg(name: str, *, default: int) -> int:
+    try:
+        value = int(str(request.args.get(name, default)).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(1, value)
+
+
+def _search_page_args() -> dict[str, str | int]:
+    query = (request.args.get("query") or "").strip()
+    page = _page_query_arg("page", default=1)
+    sort = normalize_request_search_sort(request.args.get("sort"))
+    has_cover = _checkbox_query_arg("has_cover", default=DEFAULT_REQUEST_FILTER_HAS_COVER)
+    hide_owned = _checkbox_query_arg("hide_owned", default=DEFAULT_REQUEST_FILTER_HIDE_OWNED)
+    return {
+        "query": query,
+        "page": page,
+        "sort": sort,
+        "has_cover": int(has_cover),
+        "hide_owned": int(hide_owned),
+    }
+
+
 @shelfmark_search.route("/request", methods=["GET"])
 @login_required_if_no_ano
 def search_page():
     if not _feature_enabled():
         abort(404)
 
-    query = (request.args.get("query") or "").strip()
+    page_args = _search_page_args()
+    query = str(page_args["query"])
+    current_page = int(page_args["page"])
+    selected_sort = str(page_args["sort"])
+    filter_has_cover = bool(page_args["has_cover"])
+    filter_hide_owned = bool(page_args["hide_owned"])
     error_message = ""
     results_payload = {
         "query": query,
@@ -78,10 +125,33 @@ def search_page():
         "error": "",
         "total_found": 0,
         "searched": False,
+        "visible_count": 0,
+        "page_result_count": 0,
+        "selected_sort": selected_sort,
+        "filter_has_cover": filter_has_cover,
+        "filter_hide_owned": filter_hide_owned,
+        "filtered_non_books": 0,
+        "filtered_owned": 0,
+        "filtered_coverless": 0,
+        "page": current_page,
+        "total_pages": 0,
+        "visible_start": 0,
+        "visible_end": 0,
+        "has_previous": False,
+        "previous_page": None,
+        "has_next": False,
+        "next_page": None,
     }
     if query:
         try:
-            results_payload = search_shelfmark(get_shelfmark_client_config(), query)
+            results_payload = search_shelfmark(
+                get_shelfmark_client_config(),
+                query,
+                page=current_page,
+                sort=selected_sort,
+                has_cover_only=filter_has_cover,
+                hide_owned=filter_hide_owned,
+            )
         except ShelfmarkClientError as exc:
             error_message = str(exc)
             results_payload["searched"] = True
@@ -94,7 +164,24 @@ def search_page():
         shelfmark_results=results_payload["results"],
         shelfmark_error=error_message,
         shelfmark_total_found=results_payload["total_found"],
+        shelfmark_visible_count=results_payload["visible_count"],
+        shelfmark_page_result_count=results_payload["page_result_count"],
         shelfmark_searched=results_payload["searched"],
+        shelfmark_sort_options=get_request_search_sort_options(),
+        shelfmark_selected_sort=results_payload["selected_sort"],
+        shelfmark_filter_has_cover=results_payload["filter_has_cover"],
+        shelfmark_filter_hide_owned=results_payload["filter_hide_owned"],
+        shelfmark_filtered_non_books=results_payload["filtered_non_books"],
+        shelfmark_filtered_owned=results_payload["filtered_owned"],
+        shelfmark_filtered_coverless=results_payload["filtered_coverless"],
+        shelfmark_page=results_payload["page"],
+        shelfmark_total_pages=results_payload["total_pages"],
+        shelfmark_visible_start=results_payload["visible_start"],
+        shelfmark_visible_end=results_payload["visible_end"],
+        shelfmark_has_previous=results_payload["has_previous"],
+        shelfmark_previous_page=results_payload["previous_page"],
+        shelfmark_has_next=results_payload["has_next"],
+        shelfmark_next_page=results_payload["next_page"],
         is_xhr=_is_xhr_request(),
     )
 
@@ -140,6 +227,7 @@ def submit_request():
 def book_detail(provider: str, provider_id: str):
     if not _feature_enabled():
         abort(404)
+    return_to = url_for("shelfmark_search.search_page", **_search_page_args())
 
     try:
         detail = get_shelfmark_detail_view(
@@ -151,18 +239,22 @@ def book_detail(provider: str, provider_id: str):
         return render_title_template(
             "shelfmark_search_detail.html",
             title=_("Book Details"),
+            page="request",
             detail_error=str(exc),
             detail_view=None,
             query=(request.args.get("query") or "").strip(),
+            return_to=return_to,
             is_xhr=_is_xhr_request(),
         )
 
     return render_title_template(
         "shelfmark_search_detail.html",
         title=_("Book Details"),
+        page="request",
         detail_error="",
         detail_view=detail,
         query=(request.args.get("query") or "").strip(),
+        return_to=return_to,
         is_xhr=_is_xhr_request(),
     )
 

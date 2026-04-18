@@ -16,6 +16,7 @@ from cps import config
 from cps.shelfmark import shelfmark_search as shelfmark_blueprint
 import cps.shelfmark as shelfmark_module
 from cps.services.shelfmark_client import ShelfmarkClientConfig
+import cps.services.shelfmark_search as search_service_module
 
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "cps" / "templates"
@@ -134,7 +135,7 @@ def shelfmark_ui_app(monkeypatch):
     @app.route("/layout-test")
     def layout_test():
         g.google_site_verification = ""
-        g.current_theme = 0
+        g.current_theme = 1
         g.allow_anonymous = True
         g.allow_registration = False
         g.allow_upload = False
@@ -163,6 +164,7 @@ def shelfmark_ui_app(monkeypatch):
     monkeypatch.setattr(config, "config_allow_reverse_proxy_header_login", False, raising=False)
     monkeypatch.setattr(shelfmark_module, "current_user", _DummyCurrentUser())
     monkeypatch.setattr(shelfmark_module, "_", lambda value, **kwargs: value % kwargs if kwargs else value)
+    monkeypatch.setattr(search_service_module, "_", lambda value, **kwargs: value % kwargs if kwargs else value)
     monkeypatch.setattr(
         shelfmark_module,
         "get_shelfmark_client_config",
@@ -195,13 +197,17 @@ def test_top_bar_entry_renders_and_links_correctly(shelfmark_ui_client):
     assert 'id="request_book"' in html
     assert 'href="/request"' in html
     assert "Request Book" in html
+    assert "cwa-navbar-primary" in html
+    assert "cwa-navbar-search" in html
+    assert "cwa-navbar-collapse" in html
 
 
-def test_search_page_renders_results(shelfmark_ui_client, monkeypatch):
-    monkeypatch.setattr(
-        shelfmark_module,
-        "search_shelfmark",
-        lambda *_args, **_kwargs: {
+def test_request_page_uses_default_sort_filters_and_renders_richer_results(shelfmark_ui_client, monkeypatch):
+    captured_kwargs = {}
+
+    def _fake_search(*_args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return {
             "query": "dune",
             "results": [
                 {
@@ -211,11 +217,25 @@ def test_search_page_renders_results(shelfmark_ui_client, monkeypatch):
                     "title": "Dune",
                     "subtitle": "",
                     "authors": ["Frank Herbert"],
-                    "cover_url": "",
+                    "cover_url": "https://covers.example.com/dune.jpg",
+                    "description": "A mythic science-fiction novel about power, prophecy, and survival on Arrakis.",
                     "series_name": "Dune",
                     "series_position": 1,
-                    "facts": ["1965", "Hardcover"],
-                    "detail_url": "/request/detail/hardcover/123?query=dune",
+                    "series_count": 6,
+                    "series_memberships": (
+                        {"display": "Dune #1", "detail": "6 books", "url": ""},
+                    ),
+                    "series_note": "Dune #1 · 6 books",
+                    "secondary_series_note": "Great Schools of Dune #1 · 3 books",
+                    "facts": ["1965", "Hardcover", "4.4 rating"],
+                    "detail_stats": (
+                        {"label": "Ratings", "value": "12,304"},
+                        {"label": "Readers", "value": "48,110"},
+                        {"label": "Pages", "value": "412"},
+                    ),
+                    "detail_url": "/request/detail/hardcover/123?query=dune&page=1&sort=popularity&has_cover=1&hide_owned=1",
+                    "row_class": "",
+                    "status_badges": [{"label": "In library", "class": "label label-success"}],
                     "action": {
                         "mode": "open_existing",
                         "label": "Open existing CWA book",
@@ -223,13 +243,35 @@ def test_search_page_renders_results(shelfmark_ui_client, monkeypatch):
                         "href": "/book/42",
                         "disabled": False,
                         "hint": "",
+                        "icon_class": "glyphicon glyphicon-book",
                     },
                 }
             ],
             "error": "",
-            "total_found": 1,
+            "total_found": 9,
+            "visible_count": 5,
+            "page_result_count": 1,
             "searched": True,
-        },
+            "selected_sort": "popularity",
+            "filter_has_cover": True,
+            "filter_hide_owned": True,
+            "filtered_non_books": 2,
+            "filtered_owned": 3,
+            "filtered_coverless": 1,
+            "page": 1,
+            "total_pages": 3,
+            "visible_start": 1,
+            "visible_end": 1,
+            "has_previous": False,
+            "previous_page": None,
+            "has_next": True,
+            "next_page": 2,
+        }
+
+    monkeypatch.setattr(
+        shelfmark_module,
+        "search_shelfmark",
+        _fake_search,
     )
 
     response = shelfmark_ui_client.get(
@@ -239,10 +281,67 @@ def test_search_page_renders_results(shelfmark_ui_client, monkeypatch):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
+    assert captured_kwargs == {
+        "page": 1,
+        "sort": "popularity",
+        "has_cover_only": True,
+        "hide_owned": True,
+    }
     assert "Request Book" in html
+    assert 'option value="popularity" selected' in html
+    assert 'id="has_cover"' in html and 'checked' in html
+    assert 'id="hide_owned"' in html and 'checked' in html
     assert "Dune" in html
     assert "Frank Herbert" in html
+    assert "A mythic science-fiction novel about power, prophecy, and survival on Arrakis." in html
+    assert "Dune #1" in html
+    assert "Great Schools of Dune #1" in html
+    assert "Ratings" in html
+    assert "48,110" in html
+    assert "Showing 1-1 of 5 requestable books from 9 Shelfmark matches" in html
+    assert "Page 1 of 3" in html
+    assert "2 non-book results suppressed" in html
     assert "Open existing CWA book" in html
+    assert "Previous page" in html
+    assert "Next page" in html
+    assert 'href="/request/detail/hardcover/123?query=dune&amp;page=1&amp;sort=popularity&amp;has_cover=1&amp;hide_owned=1"' in html
+
+
+def test_request_page_full_render_uses_styled_modal_wrapper(shelfmark_ui_client, monkeypatch):
+    monkeypatch.setattr(
+        shelfmark_module,
+        "search_shelfmark",
+        lambda *_args, **_kwargs: {
+            "query": "dune",
+            "results": [],
+            "error": "",
+            "total_found": 0,
+            "visible_count": 0,
+            "page_result_count": 0,
+            "searched": True,
+            "selected_sort": "popularity",
+            "filter_has_cover": True,
+            "filter_hide_owned": True,
+            "filtered_non_books": 0,
+            "filtered_owned": 0,
+            "filtered_coverless": 0,
+            "page": 1,
+            "total_pages": 0,
+            "visible_start": 0,
+            "visible_end": 0,
+            "has_previous": False,
+            "previous_page": None,
+            "has_next": False,
+            "next_page": None,
+        },
+    )
+
+    response = shelfmark_ui_client.get("/request?query=dune")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "shelfmark-detail-modal__content" in html
+    assert "shelfmark-detail-modal__loading" in html
 
 
 def test_legacy_shelfmark_routes_redirect_to_request_namespace(shelfmark_ui_client):
@@ -282,7 +381,7 @@ def test_details_overlay_renders_with_hardcover_enrichment(shelfmark_ui_client, 
             "title": "Dune",
             "subtitle": "The novel",
             "authors": ["Frank Herbert"],
-            "description": "Classic science fiction.",
+            "description": "Expanded metadata.",
             "cover_url": "",
             "publisher": "Chilton",
             "publish_year": "1965",
@@ -290,10 +389,23 @@ def test_details_overlay_renders_with_hardcover_enrichment(shelfmark_ui_client, 
             "series_name": "Dune",
             "series_position": 1,
             "series_count": 6,
-            "genres": ("Science Fiction",),
+            "series_memberships": (
+                {"display": "Dune #1", "detail": "6 books", "url": "https://series.example.com/dune"},
+                {"display": "Great Schools of Dune #1", "detail": "3 books", "url": ""},
+            ),
+            "facts": ["1965", "Dune #1", "Hardcover"],
+            "detail_stats": (
+                {"label": "Rating", "value": "4.4"},
+                {"label": "Ratings", "value": "12,304"},
+                {"label": "Readers", "value": "48,110"},
+            ),
             "isbn_10": "",
             "isbn_13": "9780441172719",
             "source_url": "https://shelfmark.example.com/books/123",
+            "provider_display_name": "Hardcover",
+            "status_badges": [{"label": "Queued", "class": "label label-default"}],
+            "display_tags": ("Science Fiction", "Epic", "Classic"),
+            "description_source": "Shelfmark and Hardcover",
             "action": {
                 "mode": "request",
                 "label": "Request in Shelfmark",
@@ -301,6 +413,7 @@ def test_details_overlay_renders_with_hardcover_enrichment(shelfmark_ui_client, 
                 "href": "",
                 "disabled": False,
                 "hint": "",
+                "icon_class": "glyphicon glyphicon-send",
                 "payload_json": json.dumps({"book_data": {"provider": "hardcover", "provider_id": "123"}}),
             },
             "library_match": None,
@@ -325,7 +438,14 @@ def test_details_overlay_renders_with_hardcover_enrichment(shelfmark_ui_client, 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Dune" in html
-    assert "Hardcover enrichment" in html
+    assert "shelfmark-detail-layout" in html
+    assert "Book details" in html
+    assert "Book highlights" in html
+    assert "Metadata source" in html
+    assert "Shelfmark and Hardcover" in html
+    assert "Science Fiction" in html
+    assert "Series size" in html
+    assert "Great Schools of Dune #1" in html
     assert "Expanded metadata." in html
 
 
@@ -347,10 +467,16 @@ def test_details_overlay_degrades_cleanly_without_hardcover(shelfmark_ui_client,
             "series_name": "",
             "series_position": None,
             "series_count": None,
-            "genres": (),
+            "series_memberships": (),
+            "facts": ["1969", "Google"],
+            "detail_stats": (),
             "isbn_10": "",
             "isbn_13": "",
             "source_url": "",
+            "provider_display_name": "Google",
+            "status_badges": [],
+            "display_tags": (),
+            "description_source": "Shelfmark",
             "action": {
                 "mode": "request",
                 "label": "Request in Shelfmark",
@@ -358,6 +484,7 @@ def test_details_overlay_degrades_cleanly_without_hardcover(shelfmark_ui_client,
                 "href": "",
                 "disabled": False,
                 "hint": "",
+                "icon_class": "glyphicon glyphicon-send",
                 "payload_json": json.dumps({"book_data": {"provider": "google", "provider_id": "abc"}}),
             },
             "library_match": None,
@@ -375,7 +502,8 @@ def test_details_overlay_degrades_cleanly_without_hardcover(shelfmark_ui_client,
     html = response.get_data(as_text=True)
     assert "The Left Hand of Darkness" in html
     assert "Shelfmark-only details still render." in html
-    assert "Hardcover enrichment" not in html
+    assert "Shelfmark and Hardcover" not in html
+    assert "Metadata source" in html
 
 
 def test_request_post_creates_persisted_queue_row(shelfmark_ui_client, temp_cwa_db, monkeypatch):

@@ -4,85 +4,267 @@
 {% endblock %}
 {% block body %}
 <div class="discover shelfmark-search-page">
-  <div class="shelfmark-search-page__header">
-    <h2 class="shelfmark-search-page__title">{{ _('Request Book') }}</h2>
-    <p class="help-block shelfmark-search-page__intro">{{ _('Search Shelfmark for a specific book, inspect the details if needed, and queue it for import into this library.') }}</p>
-  </div>
-
-  <form class="form-inline shelfmark-search-form" method="get" action="{{ url_for('shelfmark_search.search_page') }}">
-    <div class="form-group shelfmark-search-form__query">
-      <label class="sr-only" for="query">{{ _('Search Shelfmark') }}</label>
-      <input type="text" class="form-control input-lg" id="query" name="query" value="{{ query }}" placeholder="{{ _('Title, author, or ISBN') }}" autocomplete="off">
+  <div class="shelfmark-external-shell">
+    <div class="shelfmark-section-line shelfmark-external-header">
+      <div class="shelfmark-section-line__lead">
+        <h2 class="shelfmark-section-line__title">{{ _('Request Book') }}</h2>
+        <p class="shelfmark-section-line__subtitle">{{ _('Search Shelfmark for a specific book, inspect the details if needed, and queue it for import into this library.') }}</p>
+      </div>
+      {% if shelfmark_searched %}
+        <p class="shelfmark-section-line__meta">{{ _('%(count)s Shelfmark matches', count=shelfmark_total_found) }}</p>
+      {% endif %}
     </div>
-    <button type="submit" class="btn btn-primary btn-lg">{{ _('Search') }}</button>
-  </form>
 
-  {% if shelfmark_error %}
-    <div class="alert alert-danger shelfmark-search-page__message">{{ shelfmark_error }}</div>
-  {% elif shelfmark_searched and not shelfmark_results %}
-    <div class="alert alert-info shelfmark-search-page__message">{{ _('No Shelfmark matches were found for that search.') }}</div>
-  {% endif %}
+    <form class="shelfmark-request-form" method="get" action="{{ url_for('shelfmark_search.search_page') }}">
+      <div class="shelfmark-request-form__search">
+        <label class="sr-only" for="query">{{ _('Search Shelfmark') }}</label>
+        <input type="text" class="form-control input-lg shelfmark-request-form__query" id="query" name="query" value="{{ query }}" placeholder="{{ _('Title, author, or ISBN') }}" autocomplete="off">
+        <button type="submit" class="btn btn-primary btn-lg shelfmark-request-form__submit">{{ _('Search') }}</button>
+      </div>
 
-  {% if shelfmark_results %}
-    <p class="help-block shelfmark-search-page__count">{{ _('%(count)s Shelfmark matches', count=shelfmark_total_found) }}</p>
-    <div class="shelfmark-search-results" data-result-count="{{ shelfmark_results|length }}">
-      {% for result in shelfmark_results %}
-        <article class="media shelfmark-search-result" data-provider="{{ result.provider }}" data-provider-id="{{ result.provider_id }}">
-          <div class="media-left shelfmark-search-result__media">
-            {% if result.cover_url %}
-              <img class="media-object shelfmark-search-result__cover" src="{{ result.cover_url }}" alt="{{ result.title }}">
-            {% else %}
-              <div class="shelfmark-search-result__cover shelfmark-search-result__cover--empty">
-                <span class="glyphicon glyphicon-book" aria-hidden="true"></span>
-              </div>
-            {% endif %}
+      <div class="shelfmark-external-toolbar">
+        <div class="shelfmark-external-controls">
+          <div class="shelfmark-external-controls__group">
+            <label class="shelfmark-external-controls__label" for="request_sort">{{ _('Sort') }}</label>
+            <select class="form-control shelfmark-external-controls__select" id="request_sort" name="sort">
+              {% for option in shelfmark_sort_options %}
+                <option value="{{ option.value }}"{% if option.value == shelfmark_selected_sort %} selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
           </div>
-          <div class="media-body shelfmark-search-result__body">
-            <h4 class="media-heading shelfmark-search-result__title">{{ result.title }}</h4>
-            {% if result.subtitle %}
-              <p class="text-muted shelfmark-search-result__subtitle">{{ result.subtitle }}</p>
+
+          <div class="shelfmark-external-controls__group shelfmark-external-controls__checkbox-group">
+            <input type="hidden" name="has_cover" value="0">
+            <label class="shelfmark-external-controls__checkbox-label" for="has_cover">
+              <input type="checkbox" class="shelfmark-external-controls__checkbox" id="has_cover" name="has_cover" value="1"{% if shelfmark_filter_has_cover %} checked{% endif %}>
+              <span>{{ _('Has cover') }}</span>
+            </label>
+          </div>
+
+          <div class="shelfmark-external-controls__group shelfmark-external-controls__checkbox-group">
+            <input type="hidden" name="hide_owned" value="0">
+            <label class="shelfmark-external-controls__checkbox-label" for="hide_owned">
+              <input type="checkbox" class="shelfmark-external-controls__checkbox" id="hide_owned" name="hide_owned" value="1"{% if shelfmark_filter_hide_owned %} checked{% endif %}>
+              <span>{{ _('Hide owned books') }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="shelfmark-external-toolbar__actions">
+          <button type="submit" class="btn btn-default shelfmark-external-controls__apply">{{ _('Apply') }}</button>
+          <a class="btn btn-default shelfmark-external-controls__reset" href="{{ url_for('shelfmark_search.search_page', query=query) }}">{{ _('Reset') }}</a>
+        </div>
+      </div>
+    </form>
+
+    {% if shelfmark_error %}
+      <div class="alert alert-danger shelfmark-search-page__message">{{ shelfmark_error }}</div>
+    {% elif shelfmark_searched and not shelfmark_results %}
+      <div class="shelfmark-empty-state">
+        <div class="shelfmark-empty-state__icon">
+          <span class="glyphicon glyphicon-book" aria-hidden="true"></span>
+        </div>
+        <div class="shelfmark-empty-state__body">
+          {% if shelfmark_total_found %}
+            <h3 class="shelfmark-empty-state__title">{{ _('No requestable books matched the current filters') }}</h3>
+            <p class="shelfmark-empty-state__message">{{ _('Try turning off cover filtering or showing already-owned books to widen the search.') }}</p>
+          {% else %}
+            <h3 class="shelfmark-empty-state__title">{{ _('No Shelfmark matches were found') }}</h3>
+            <p class="shelfmark-empty-state__message">{{ _('Search by title, author, or ISBN for the specific book you want to request.') }}</p>
+          {% endif %}
+          {% if query %}
+            <p class="shelfmark-empty-state__query">{{ _('Search query') }} <code>{{ query }}</code></p>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if shelfmark_results %}
+      <div class="shelfmark-request-summary">
+        <p class="shelfmark-request-summary__count">
+          {% if shelfmark_visible_start and shelfmark_visible_end %}
+            {{ _('Showing %(start)s-%(end)s of %(visible)s requestable books from %(total)s Shelfmark matches', start=shelfmark_visible_start, end=shelfmark_visible_end, visible=shelfmark_visible_count, total=shelfmark_total_found) }}
+          {% else %}
+            {{ _('Showing %(visible)s requestable books from %(total)s Shelfmark matches', visible=shelfmark_visible_count, total=shelfmark_total_found) }}
+          {% endif %}
+        </p>
+        {% if shelfmark_total_pages %}
+          <p class="shelfmark-request-summary__filters">{{ _('Page %(page)s of %(total)s', page=shelfmark_page, total=shelfmark_total_pages) }}</p>
+        {% endif %}
+        {% if shelfmark_filtered_non_books or shelfmark_filtered_owned or shelfmark_filtered_coverless %}
+          <p class="shelfmark-request-summary__filters">
+            {% if shelfmark_filtered_non_books %}
+              <span>{{ _('%(count)s non-book results suppressed', count=shelfmark_filtered_non_books) }}</span>
             {% endif %}
-            {% if result.authors %}
-              <p class="shelfmark-search-result__authors">{{ result.authors|join(', ') }}</p>
+            {% if shelfmark_filtered_owned %}
+              <span>{{ _('%(count)s owned books hidden', count=shelfmark_filtered_owned) }}</span>
             {% endif %}
-            {% if result.series_name %}
-              <p class="text-muted shelfmark-search-result__series">
-                {{ result.series_name }}{% if result.series_position %} #{{ result.series_position }}{% endif %}
-              </p>
+            {% if shelfmark_filtered_coverless %}
+              <span>{{ _('%(count)s coverless books hidden', count=shelfmark_filtered_coverless) }}</span>
             {% endif %}
-            {% if result.facts %}
-              <p class="text-muted shelfmark-search-result__facts">{{ result.facts|join(' · ') }}</p>
-            {% endif %}
-            {% if result.action.hint %}
-              <p class="help-block shelfmark-search-result__hint">{{ result.action.hint }}</p>
-            {% endif %}
-            <div class="btn-toolbar shelfmark-search-result__actions" role="toolbar">
-              {% if result.action.mode == 'request' %}
-                <form method="post" action="{{ url_for('shelfmark_search.submit_request') }}" class="shelfmark-search-result__request-form">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <input type="hidden" name="request_payload" value="{{ result.action.payload_json }}">
-                  <input type="hidden" name="return_to" value="{{ result.action.return_to }}">
-                  <button type="submit" class="btn {{ result.action.button_class }} shelfmark-search-result__primary" data-primary-action="request">{{ result.action.label }}</button>
-                </form>
-              {% elif result.action.href %}
-                <a class="btn {{ result.action.button_class }} shelfmark-search-result__primary" href="{{ result.action.href }}" data-primary-action="link">{{ result.action.label }}</a>
-              {% else %}
-                <button type="button" class="btn {{ result.action.button_class }} shelfmark-search-result__primary" data-primary-action="status" disabled>{{ result.action.label }}</button>
+          </p>
+        {% endif %}
+      </div>
+
+      <div class="shelfmark-results-list" data-result-count="{{ shelfmark_results|length }}">
+        {% for result in shelfmark_results %}
+          <article class="shelfmark-result-card {{ result.row_class }} js-shelfmark-request-result" data-provider="{{ result.provider }}" data-provider-id="{{ result.provider_id }}">
+            <div class="shelfmark-result-card__media">
+              <div class="shelfmark-result-card__cover">
+                {% if result.cover_url %}
+                  <img class="shelfmark-result-card__cover-image" src="{{ result.cover_url }}" alt="{{ result.title }}">
+                {% else %}
+                  <div class="shelfmark-result-card__cover-fallback" aria-hidden="true">
+                    <span class="glyphicon glyphicon-book shelfmark-result-card__cover-fallback-icon"></span>
+                    <span class="shelfmark-result-card__cover-fallback-label">{{ _('No cover') }}</span>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="shelfmark-result-card__body">
+              <div class="shelfmark-result-card__header">
+                <div>
+                  <h4 class="media-heading shelfmark-result-card__title">
+                    <a
+                      class="js-shelfmark-detail-link"
+                      href="{{ result.detail_url }}"
+                      data-toggle="modal"
+                      data-target="#bookDetailsModal"
+                      data-remote="false"
+                      data-detail-title="{{ result.title }}"
+                    >{{ result.title }}</a>
+                  </h4>
+                  {% if result.subtitle %}
+                    <p class="text-muted shelfmark-result-card__subtitle">{{ result.subtitle }}</p>
+                  {% endif %}
+                </div>
+                {% if result.status_badges %}
+                  <div class="shelfmark-result-card__badges">
+                    {% for badge in result.status_badges %}
+                      <span class="{{ badge.class }}">{{ badge.label }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+
+              {% if result.authors %}
+                <p class="shelfmark-result-card__authors">{{ result.authors|join(', ') }}</p>
               {% endif %}
 
-              <a
-                class="btn btn-link"
-                href="{{ result.detail_url }}"
-                data-toggle="modal"
-                data-target="#bookDetailsModal"
-                data-remote="false"
-              >{{ _('Details') }}</a>
+              {% if result.facts %}
+                <p class="shelfmark-result-card__facts" aria-label="{{ _('Book facts') }}">
+                  {% for fact in result.facts %}
+                    <span class="shelfmark-result-card__fact">{{ fact }}</span>
+                  {% endfor %}
+                </p>
+              {% endif %}
+
+              {% if result.detail_stats %}
+                <dl class="shelfmark-result-card__stats" aria-label="{{ _('Book highlights') }}">
+                  {% for stat in result.detail_stats %}
+                    <div class="shelfmark-result-card__stats-item">
+                      <dt class="shelfmark-result-card__stats-label">{{ stat.label }}</dt>
+                      <dd class="shelfmark-result-card__stats-value">{{ stat.value }}</dd>
+                    </div>
+                  {% endfor %}
+                </dl>
+              {% endif %}
+
+              {% if result.series_note %}
+                <p class="shelfmark-result-card__series-note text-muted">{{ result.series_note }}</p>
+              {% endif %}
+
+              {% if result.secondary_series_note %}
+                <p class="shelfmark-result-card__series-note text-muted">{{ result.secondary_series_note }}</p>
+              {% endif %}
+
+              {% if result.description %}
+                <p class="shelfmark-result-card__description">{{ result.description }}</p>
+              {% endif %}
+
+              <div class="btn-toolbar shelfmark-result-card__actions" role="toolbar">
+                {% if result.action.mode == 'request' %}
+                  <form method="post" action="{{ url_for('shelfmark_search.submit_request') }}" class="shelfmark-result-card__request-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="request_payload" value="{{ result.action.payload_json }}">
+                    <input type="hidden" name="return_to" value="{{ result.action.return_to }}">
+                    <button type="submit" class="btn btn-sm {{ result.action.button_class }} shelfmark-result-card__primary-action js-shelfmark-primary-action" data-primary-action="request">
+                      <span class="{{ result.action.icon_class }}" aria-hidden="true"></span>
+                      <span class="js-shelfmark-primary-action-label">{{ result.action.label }}</span>
+                    </button>
+                  </form>
+                {% elif result.action.href %}
+                  <a class="btn btn-sm {{ result.action.button_class }} shelfmark-result-card__primary-action js-shelfmark-primary-action" href="{{ result.action.href }}" data-primary-action="link">
+                    <span class="{{ result.action.icon_class }}" aria-hidden="true"></span>
+                    <span class="js-shelfmark-primary-action-label">{{ result.action.label }}</span>
+                  </a>
+                {% else %}
+                  <button type="button" class="btn btn-sm {{ result.action.button_class }} shelfmark-result-card__primary-action js-shelfmark-primary-action" data-primary-action="status" disabled>
+                    <span class="{{ result.action.icon_class }}" aria-hidden="true"></span>
+                    <span class="js-shelfmark-primary-action-label">{{ result.action.label }}</span>
+                  </button>
+                {% endif %}
+
+                <a
+                  class="btn btn-link btn-sm shelfmark-result-card__secondary-action js-shelfmark-detail-link"
+                  href="{{ result.detail_url }}"
+                  data-toggle="modal"
+                  data-target="#bookDetailsModal"
+                  data-remote="false"
+                  data-detail-title="{{ result.title }}"
+                >{{ _('Details') }}</a>
+              </div>
+
+              <p class="help-block js-shelfmark-action-hint shelfmark-result-card__action-hint{% if not result.action.hint %} is-hidden{% endif %}">{{ result.action.hint or '' }}</p>
             </div>
+          </article>
+        {% endfor %}
+      </div>
+
+      {% if shelfmark_total_pages > 1 %}
+        <div class="shelfmark-pagination-footer" aria-label="{{ _('Request results pagination') }}">
+          <div class="shelfmark-pagination-footer__summary">
+            <span>{{ _('Page %(page)s of %(total)s', page=shelfmark_page, total=shelfmark_total_pages) }}</span>
+            <span>{{ _('Showing %(count)s books on this page', count=shelfmark_page_result_count) }}</span>
           </div>
-        </article>
-      {% endfor %}
-    </div>
-  {% endif %}
+          <div class="shelfmark-pagination-footer__controls">
+            {% if shelfmark_has_previous %}
+              <a
+                class="btn btn-default shelfmark-pagination-footer__page-link"
+                href="{{ url_for('shelfmark_search.search_page', query=query, page=shelfmark_previous_page, sort=shelfmark_selected_sort, has_cover=1 if shelfmark_filter_has_cover else 0, hide_owned=1 if shelfmark_filter_hide_owned else 0) }}"
+              >
+                <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
+                <span>{{ _('Previous page') }}</span>
+              </a>
+            {% else %}
+              <span class="btn btn-default shelfmark-pagination-footer__page-link disabled" aria-disabled="true">
+                <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
+                <span>{{ _('Previous page') }}</span>
+              </span>
+            {% endif %}
+
+            <span class="shelfmark-pagination-footer__page-indicator">{{ _('Page %(page)s of %(total)s', page=shelfmark_page, total=shelfmark_total_pages) }}</span>
+
+            {% if shelfmark_has_next %}
+              <a
+                class="btn btn-default shelfmark-pagination-footer__page-link"
+                href="{{ url_for('shelfmark_search.search_page', query=query, page=shelfmark_next_page, sort=shelfmark_selected_sort, has_cover=1 if shelfmark_filter_has_cover else 0, hide_owned=1 if shelfmark_filter_hide_owned else 0) }}"
+              >
+                <span>{{ _('Next page') }}</span>
+                <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
+              </a>
+            {% else %}
+              <span class="btn btn-default shelfmark-pagination-footer__page-link disabled" aria-disabled="true">
+                <span>{{ _('Next page') }}</span>
+                <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
+              </span>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
 </div>
 {% endblock %}
 {% block js %}
@@ -90,7 +272,21 @@
   {% if shelfmark_results %}
     <script>
       (function() {
-        var results = Array.prototype.slice.call(document.querySelectorAll(".shelfmark-search-result[data-provider][data-provider-id]"));
+        var detailModal = $("#bookDetailsModal");
+        var defaultDetailTitle = detailModal.length ? detailModal.find(".modal-title").text() : "";
+        if (detailModal.length) {
+          detailModal
+            .on("show.bs.modal.shelfmarkRequest", function(event) {
+              var trigger = $(event.relatedTarget);
+              var title = trigger.data("detailTitle") || defaultDetailTitle || "{{ _('Book Details') }}";
+              detailModal.find(".modal-title").text(title);
+            })
+            .on("hidden.bs.modal.shelfmarkRequest", function() {
+              detailModal.find(".modal-title").text(defaultDetailTitle || "{{ _('Book Details') }}");
+            });
+        }
+
+        var results = Array.prototype.slice.call(document.querySelectorAll(".js-shelfmark-request-result[data-provider][data-provider-id]"));
         if (!results.length) {
           return;
         }
@@ -110,16 +306,16 @@
         var pollTimer = null;
 
         function ensureHint(article) {
-          var existing = article.querySelector(".shelfmark-search-result__hint");
+          var existing = article.querySelector(".js-shelfmark-action-hint");
           if (existing) {
             return existing;
           }
-          var body = article.querySelector(".shelfmark-search-result__body");
-          var actions = article.querySelector(".shelfmark-search-result__actions");
+          var body = article.querySelector(".shelfmark-result-card__body");
+          var actions = article.querySelector(".shelfmark-result-card__actions");
           var hint = document.createElement("p");
-          hint.className = "help-block shelfmark-search-result__hint";
+          hint.className = "help-block js-shelfmark-action-hint shelfmark-result-card__action-hint";
           if (actions && actions.parentNode === body) {
-            body.insertBefore(hint, actions);
+            body.insertBefore(hint, actions.nextSibling);
           } else if (body) {
             body.appendChild(hint);
           }
@@ -127,25 +323,29 @@
         }
 
         function updatePrimaryAction(article, summary) {
-          var primary = article.querySelector(".shelfmark-search-result__primary");
+          var primary = article.querySelector(".js-shelfmark-primary-action");
           if (!primary) {
             return;
           }
 
+          var labelNode = primary.querySelector(".js-shelfmark-primary-action-label");
           var href = summary.href || "";
           if (summary.status === "imported" && href) {
             if (primary.tagName !== "A") {
               var link = document.createElement("a");
-              link.className = "btn btn-success shelfmark-search-result__primary";
+              link.className = "btn btn-sm btn-success shelfmark-result-card__primary-action js-shelfmark-primary-action";
               link.setAttribute("data-primary-action", "link");
               link.href = href;
-              link.textContent = summary.label || "{{ _('Imported') }}";
+              link.innerHTML = '<span class="glyphicon glyphicon-book" aria-hidden="true"></span><span class="js-shelfmark-primary-action-label"></span>';
               primary.parentNode.replaceChild(link, primary);
               primary = link;
+              labelNode = primary.querySelector(".js-shelfmark-primary-action-label");
             } else {
-              primary.className = "btn btn-success shelfmark-search-result__primary";
+              primary.className = "btn btn-sm btn-success shelfmark-result-card__primary-action js-shelfmark-primary-action";
               primary.href = href;
-              primary.textContent = summary.label || "{{ _('Imported') }}";
+            }
+            if (labelNode) {
+              labelNode.textContent = summary.label || "{{ _('Imported') }}";
             }
             return;
           }
@@ -157,33 +357,38 @@
           if (primary.tagName === "A") {
             var button = document.createElement("button");
             button.type = "button";
-            button.className = "btn btn-default shelfmark-search-result__primary";
+            button.className = "btn btn-sm btn-default shelfmark-result-card__primary-action js-shelfmark-primary-action";
             button.setAttribute("data-primary-action", "status");
             button.disabled = true;
-            button.textContent = summary.label || "{{ _('Queued') }}";
+            button.innerHTML = '<span class="glyphicon glyphicon-time" aria-hidden="true"></span><span class="js-shelfmark-primary-action-label"></span>';
             primary.parentNode.replaceChild(button, primary);
             primary = button;
+            labelNode = primary.querySelector(".js-shelfmark-primary-action-label");
           } else {
-            primary.className = "btn btn-default shelfmark-search-result__primary";
+            primary.className = "btn btn-sm btn-default shelfmark-result-card__primary-action js-shelfmark-primary-action";
             primary.disabled = true;
-            primary.textContent = summary.label || "{{ _('Queued') }}";
+            labelNode = primary.querySelector(".js-shelfmark-primary-action-label");
+          }
+
+          if (labelNode) {
+            labelNode.textContent = summary.label || "{{ _('Queued') }}";
           }
         }
 
         function updateHint(article, summary) {
           var detail = summary.detail || "";
-          var hint = article.querySelector(".shelfmark-search-result__hint");
+          var hint = article.querySelector(".js-shelfmark-action-hint");
           if (!detail) {
             if (hint) {
               hint.textContent = "";
-              hint.style.display = "none";
+              hint.classList.add("is-hidden");
             }
             return;
           }
 
           hint = ensureHint(article);
           hint.textContent = detail;
-          hint.style.display = "";
+          hint.classList.remove("is-hidden");
         }
 
         function pollStatuses() {

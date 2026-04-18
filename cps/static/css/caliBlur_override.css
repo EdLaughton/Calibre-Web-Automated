@@ -205,6 +205,75 @@ a#advanced_search > span.hidden-sm {
     margin-left: 4px;
 }
 
+@media (min-width: 768px) {
+    body.blur > div.navbar.navbar-default.navbar-static-top > div.container-fluid {
+        display: flex;
+        align-items: center;
+    }
+
+    body.blur > div.navbar.navbar-default.navbar-static-top > div.container-fluid > form.cwa-navbar-search {
+        flex: 0 0 auto;
+        width: 320px;
+        margin: 10px 18px 10px 12px;
+        position: relative;
+    }
+
+    body.blur > div.navbar.navbar-default.navbar-static-top > div.container-fluid > form.cwa-navbar-search:before {
+        left: 16px;
+    }
+
+    body.blur #query,
+    body.blur > div.navbar.navbar-default.navbar-static-top > div.container-fluid > form.cwa-navbar-search > .form-group > input {
+        width: 320px !important;
+    }
+
+    body.blur > div.navbar.navbar-default.navbar-static-top > div.container-fluid > form.cwa-navbar-search > div > span.input-group-btn {
+        left: 280px;
+    }
+
+    body.blur > div.navbar.navbar-default.navbar-static-top > div.container-fluid > div.cwa-navbar-collapse {
+        display: flex !important;
+        align-items: center;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: visible;
+    }
+
+    body.blur .cwa-navbar-primary {
+        display: flex;
+        align-items: center;
+        flex: 0 0 auto;
+        flex-wrap: nowrap;
+        margin: 0 12px 0 0;
+    }
+
+    body.blur .cwa-navbar-primary > li {
+        float: none;
+        flex: 0 0 auto;
+    }
+
+    body.blur #main-nav {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex: 1 1 auto;
+        margin-left: auto;
+    }
+
+    body.blur #main-nav > li {
+        float: none;
+    }
+
+    body.blur .cwa-navbar-primary > li > a,
+    body.blur #request_book {
+        display: flex !important;
+        align-items: center;
+        white-space: nowrap;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+}
+
 .btn-primary[disabled] {
     background-color: var(--color-secondary);
 }

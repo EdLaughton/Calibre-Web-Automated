@@ -109,7 +109,7 @@
             <div class="plexBack"><a href="{{url_for('web.index')}}"></a></div>
         {% endif %}
         {% if current_user.is_authenticated or g.allow_anonymous %}
-          <form class="navbar-form navbar-left" role="search" action="{{url_for('search.simple_search')}}" method="GET">
+          <form class="navbar-form navbar-left cwa-navbar-search" role="search" action="{{url_for('search.simple_search')}}" method="GET">
             <div class="form-group input-group input-group-sm">
               <label for="query" class="sr-only">{{_('Search')}}</label>
               <input type="text" class="form-control" id="query" name="query" placeholder="{{_('Search Library')}}" value="{{searchterm}}">
@@ -119,12 +119,12 @@
             </div>
           </form>
         {% endif %}
-        <div class="navbar-collapse collapse">
+        <div class="navbar-collapse collapse cwa-navbar-collapse">
           {% if current_user.is_authenticated or g.allow_anonymous %}
-          <ul class="nav navbar-nav ">
-            <li><a href="{{url_for('search.advanced_search')}}" id="advanced_search"><span class="glyphicon glyphicon-search" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Advanced Search')}}</span></a></li>
+          <ul class="nav navbar-nav cwa-navbar-primary">
+            <li class="cwa-navbar-primary__item"><a href="{{url_for('search.advanced_search')}}" id="advanced_search"><span class="glyphicon glyphicon-search" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Advanced Search')}}</span></a></li>
             {% if config.config_shelfmark_search and config.config_shelfmark_url %}
-            <li><a href="{{url_for('shelfmark_search.search_page')}}" id="request_book"><span class="glyphicon glyphicon-send" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Request Book')}}</span></a></li>
+            <li class="cwa-navbar-primary__item"><a href="{{url_for('shelfmark_search.search_page')}}" id="request_book"><span class="glyphicon glyphicon-send" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Request Book')}}</span></a></li>
             {% endif %}
           </ul>
           {% endif %}
@@ -352,17 +352,19 @@
       </div>
     </div>
   </div>
-    <div class="modal fade" id="bookDetailsModal" tabindex="-1" role="dialog" aria-labelledby="bookDetailsModalLabel">
-      <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
-            <h4 class="modal-title" id="bookDetailsModalLabel">{{_('Book Details')}}</h4>
+    <div class="modal fade{% if page == 'request' %} shelfmark-detail-modal{% endif %}" id="bookDetailsModal" tabindex="-1" role="dialog" aria-labelledby="bookDetailsModalLabel">
+      <div class="modal-dialog modal-lg{% if page == 'request' %} shelfmark-detail-modal__dialog{% endif %}" role="document">
+        <div class="modal-content{% if page == 'request' %} shelfmark-detail-modal__content{% endif %}">
+          <div class="modal-header{% if page == 'request' %} shelfmark-detail-modal__header{% endif %}">
+            <button type="button" class="close{% if page == 'request' %} shelfmark-detail-modal__close{% endif %}" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title{% if page == 'request' %} shelfmark-detail-modal__title{% endif %}" id="bookDetailsModalLabel">{{_('Book Details')}}</h4>
           </div>
-          <div class="modal-body">...</div>
+          <div class="modal-body{% if page == 'request' %} shelfmark-detail-modal__body{% endif %}">{% if page == 'request' %}<div class="shelfmark-detail-modal__loading">{{_('Loading details')}}</div>{% else %}...{% endif %}</div>
+          {% if page != 'request' %}
           <div class="modal-footer">
             <button type="button" id="details_close" class="btn btn-default" data-dismiss="modal">{{_('Close')}}</button>
           </div>
+          {% endif %}
         </div>
       </div>
     </div>
