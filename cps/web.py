@@ -14,7 +14,7 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, render_template
 from flask import request, redirect, send_from_directory, send_file, make_response, flash, abort, url_for, Response, g
 from flask import session as flask_session
 from flask_babel import gettext as _
@@ -52,7 +52,11 @@ from .tasks_status import render_task_status
 from .usermanagement import user_login_required
 from .string_helper import strip_whitespaces
 from .author_profile import build_author_profile
-from .services.requests_workspace import build_requests_workspace
+from .services.requests_workspace import (
+    build_requests_section,
+    build_requests_workspace,
+    normalize_requests_view,
+)
 from .shelfmark_ui import (
     build_author_contextual_shelfmark_section_page,
     build_contextual_shelfmark_loader,
@@ -741,8 +745,9 @@ def requests_workspace_view(view_name):
 
 
 def _render_requests_workspace(view_name):
+    normalized_view = normalize_requests_view(view_name)
     requests_workspace_view_model = build_requests_workspace(
-        view_name,
+        normalized_view,
         state_url=current_request_path(include_transient=False),
     ).to_template_dict()
     shelfmark_runtime = build_contextual_shelfmark_runtime()
@@ -750,8 +755,35 @@ def _render_requests_workspace(view_name):
         "requests.html",
         title=_("Requests"),
         page="requests",
+        nav_active_page=f"requests-{normalized_view}",
         requests_workspace=requests_workspace_view_model,
         shelfmark_runtime=shelfmark_runtime,
+    )
+
+
+@web.route("/requests/sections/<view_name>/<section_key>")
+@login_required_if_no_ano
+def requests_workspace_section(view_name, section_key):
+    normalized_view = normalize_requests_view(view_name)
+    state_url = request.args.get("return_to") or current_request_path(include_transient=False)
+    try:
+        section = build_requests_section(
+            normalized_view,
+            section_key,
+            state_url=state_url,
+            cache_scope=getattr(current_user, "id", None),
+        ).to_template_dict()
+    except KeyError:
+        abort(404)
+    except Exception as exc:  # pragma: no cover - defensive route guard
+        log.warning("Requests section build failed for %s/%s: %s", normalized_view, section_key, exc)
+        return "", 503
+
+    shelfmark_runtime = build_contextual_shelfmark_runtime()
+    return render_template(
+        "requests_workspace_section.html",
+        section=section,
+        preferred_release_settings=shelfmark_runtime.get("preferred_release_settings", {}),
     )
 
 

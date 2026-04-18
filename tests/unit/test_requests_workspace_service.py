@@ -337,19 +337,23 @@ def test_dedupe_candidates_keeps_highest_priority_first(requests_module):
 def test_build_requests_workspace_home_uses_expected_sections(requests_module, monkeypatch):
     monkeypatch.setattr(
         requests_module,
-        "_build_home_sections",
-        lambda state_url=None: (
-            requests_module.RequestsSection(
+        "_build_section_shells",
+        lambda active_view, state_url=None: (
+            requests_module.RequestsSectionShell(
                 key="home-next",
                 title="Continue series",
                 subtitle="Continue series subtitle",
                 empty_message="none",
+                load_url="/requests/sections/home/home-next",
+                loading_message="Loading recommendations…",
             ),
-            requests_module.RequestsSection(
-                key="home-discover",
+            requests_module.RequestsSectionShell(
+                key="home-hot",
                 title="Trending / popular now",
-                subtitle="Discover subtitle",
+                subtitle="Hot subtitle",
                 empty_message="none",
+                load_url="/requests/sections/home/home-hot",
+                loading_message="Loading recommendations…",
             ),
         ),
     )
@@ -361,4 +365,61 @@ def test_build_requests_workspace_home_uses_expected_sections(requests_module, m
         "Continue series",
         "Trending / popular now",
     ]
-    assert [tab["key"] for tab in workspace["tabs"]] == ["home", "series", "authors", "discover"]
+    assert [section["load_url"] for section in workspace["sections"]] == [
+        "/requests/sections/home/home-next",
+        "/requests/sections/home/home-hot",
+    ]
+    assert [tab["key"] for tab in workspace["tabs"]] == ["home", "series", "authors", "hot"]
+
+
+def test_build_requests_workspace_normalizes_discover_to_hot(requests_module):
+    workspace = requests_module.build_requests_workspace("discover", state_url="/requests/discover").to_template_dict()
+
+    assert workspace["active_view"] == "hot"
+
+
+def test_build_requests_section_home_next_uses_series_sections(requests_module, monkeypatch):
+    next_section = requests_module.RequestsSection(
+        key="series-next",
+        title="Next in series",
+        subtitle="Likely next books after the series you already own.",
+        empty_message="none",
+        layout="grouped",
+        compact=True,
+        groups=(
+            requests_module.RequestsGroup(
+                key="discworld",
+                title="Discworld",
+                hint="12 books in your library",
+                candidates=(
+                    requests_module.RequestsCandidate(
+                        key="discworld:12",
+                        result=_make_result(requests_module, hardcover_id="12", title="Witches Abroad"),
+                        reason_label="Next in series",
+                        sort_key=(0, 0),
+                    ),
+                ),
+            ),
+        ),
+    )
+    missing_section = requests_module.RequestsSection(
+        key="series-missing",
+        title="Missing volumes",
+        subtitle="Gap fills inside series you already started.",
+        empty_message="none",
+        layout="grouped",
+        compact=True,
+        groups=tuple(),
+    )
+
+    monkeypatch.setattr(
+        requests_module,
+        "_cached_series_sections",
+        lambda state_url=None, cache_scope=None: (next_section, missing_section),
+    )
+
+    section = requests_module.build_requests_section("home", "home-next", state_url="/requests", cache_scope=1)
+
+    assert section.key == "home-next"
+    assert section.see_more_url == "/web/requests_workspace_view?view_name=series"
+    assert [candidate.result.title for candidate in section.candidates] == ["Witches Abroad"]

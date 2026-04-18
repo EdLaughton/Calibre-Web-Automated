@@ -1,3 +1,34 @@
+{% macro render_requests_section_header(title, subtitle, see_more_url) -%}
+  <div class="requests-workspace-section__header">
+    <div class="requests-workspace-section__lead">
+      <h2 class="requests-workspace-section__title">{{ title }}</h2>
+      <p class="requests-workspace-section__subtitle">{{ subtitle }}</p>
+    </div>
+    {% if see_more_url %}
+      <a class="btn btn-default btn-sm requests-workspace-section__more" href="{{ see_more_url }}">
+        {{ _('See more') }}
+      </a>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+
+{% macro render_requests_section_shell(section) -%}
+  <section
+    class="requests-workspace-section requests-workspace-section--shell js-requests-section-shell"
+    data-section-url="{{ section.load_url }}"
+    data-section-key="{{ section.key }}"
+    data-failure-message="{{ _('Could not load this Requests section right now.') }}"
+  >
+    {{ render_requests_section_header(section.title, section.subtitle, section.see_more_url) }}
+    <div class="requests-workspace-section__placeholder">
+      <span class="glyphicon glyphicon-refresh requests-workspace-section__spinner" aria-hidden="true"></span>
+      <span>{{ section.loading_message }}</span>
+    </div>
+  </section>
+{%- endmacro %}
+
+
 {% macro render_requests_candidate(candidate, preferred_release, compact=False) -%}
   {% set result = candidate.result %}
   {% set row_classes = [
@@ -36,17 +67,7 @@
 
 {% macro render_requests_section(section, preferred_release) -%}
   <section class="requests-workspace-section requests-workspace-section--{{ section.layout }}">
-    <div class="requests-workspace-section__header">
-      <div class="requests-workspace-section__lead">
-        <h2 class="requests-workspace-section__title">{{ section.title }}</h2>
-        <p class="requests-workspace-section__subtitle">{{ section.subtitle }}</p>
-      </div>
-      {% if section.see_more_url %}
-        <a class="btn btn-default btn-sm requests-workspace-section__more" href="{{ section.see_more_url }}">
-          {{ _('See more') }}
-        </a>
-      {% endif %}
-    </div>
+    {{ render_requests_section_header(section.title, section.subtitle, section.see_more_url) }}
 
     {% if section.groups %}
       <div class="requests-workspace-groups">
