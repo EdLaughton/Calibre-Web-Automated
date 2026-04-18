@@ -15,6 +15,7 @@ import shutil
 import sqlite3
 import fcntl
 import threading
+from collections.abc import Sequence
 from pathlib import Path
 
 from cwa_db import CWA_DB
@@ -268,6 +269,32 @@ except Exception as e:
     if '_CPS_AVAILABLE' not in locals():
         _CPS_AVAILABLE = False
 
+try:
+    from cps.utils.shelfmark_import_provenance import (
+        build_calibredb_identifier_args,
+        extract_import_manifest_identifiers,
+        finalize_import_manifest,
+        load_import_manifest,
+        summarize_import_manifest_identifiers,
+    )
+except Exception as e:
+    print(f"[ingest-processor] WARN: Shelfmark provenance helpers unavailable: {e}", flush=True)
+
+    def build_calibredb_identifier_args(identifiers):
+        return []
+
+    def extract_import_manifest_identifiers(manifest):
+        return []
+
+    def finalize_import_manifest(manifest_path, success):
+        return None
+
+    def load_import_manifest(manifest_path):
+        return None
+
+    def summarize_import_manifest_identifiers(identifiers):
+        return "no stable identifiers"
+
 def gdrive_sync_if_enabled():
     """Sync Calibre library to Google Drive if enabled in app config."""
     if _GDRIVE_AVAILABLE and getattr(_cps_config, "config_use_google_drive", False):
@@ -341,6 +368,32 @@ def get_internal_api_url(path):
 def get_internal_api_headers():
     """Provide headers that satisfy localhost-only internal endpoint checks."""
     return {"X-Forwarded-For": "127.0.0.1"}
+
+
+def load_cwa_import_manifest(manifest_path: str):
+    manifest = load_import_manifest(manifest_path)
+    if manifest is None and Path(manifest_path).exists():
+        print(f"[ingest-processor] Error loading manifest file {os.path.basename(manifest_path)}", flush=True)
+    return manifest
+
+
+def finalize_cwa_import_manifest(manifest_path: str, success: bool) -> None:
+    failed_manifest_path = finalize_import_manifest(manifest_path, success)
+    if not success and failed_manifest_path:
+        print(f"[ingest-processor] Preserved failed manifest: {os.path.basename(failed_manifest_path)}", flush=True)
+
+
+def build_text_add_command(staged_path: str, library_dir: str, automerge: str, identifiers: Sequence[str] | None = None) -> list[str]:
+    command = [
+        "calibredb",
+        "add",
+        str(staged_path),
+        "--automerge",
+        automerge,
+        f"--library-path={library_dir}",
+    ]
+    command.extend(build_calibredb_identifier_args(identifiers))
+    return command
 
 class NewBookProcessor:
     def __init__(self, filepath: str):
@@ -428,6 +481,9 @@ class NewBookProcessor:
         # Track the last added Calibre book id(s) from calibredb output
         self.last_added_book_id: int | None = None
         self.last_added_book_ids: list[int] = []
+        self.last_import_succeeded = False
+        self.pending_import_identifiers: list[str] = []
+        self.pending_manifest_path = filepath + ".cwa.json"
         self._title_sort_regex = self._get_title_sort_regex()
 
     @staticmethod
@@ -701,6 +757,7 @@ class NewBookProcessor:
 
 
     def add_book_to_library(self, book_path:str, text: bool=True, format: str="text" ) -> None:
+        self.last_import_succeeded = False
         # If kindle-epub-fixer is on, run it first and import the *fixed* file.
         if self.target_format == "epub" and self.is_kindle_epub_fixer:
             fixed_epub_path = Path(self.tmp_conversion_dir) / os.path.basename(book_path)
@@ -747,9 +804,13 @@ class NewBookProcessor:
 
         try:
             if text:
-                result = subprocess.run([
-                    "calibredb", "add", str(staged_path), "--automerge", self.cwa_settings['auto_ingest_automerge'], f"--library-path={self.library_dir}"
-                ], env=self.calibre_env, check=True, capture_output=True, text=True)
+                add_command = build_text_add_command(
+                    str(staged_path),
+                    self.library_dir,
+                    self.cwa_settings['auto_ingest_automerge'],
+                    self.pending_import_identifiers,
+                )
+                result = subprocess.run(add_command, env=self.calibre_env, check=True, capture_output=True, text=True)
                 added_ids = self._parse_added_book_ids((result.stdout or '') + '\n' + (result.stderr or ''))
                 if added_ids:
                     self.last_added_book_ids = added_ids
@@ -804,6 +865,7 @@ class NewBookProcessor:
                 else:
                     self._fallback_last_added_book_id()
             print(f"[ingest-processor] Added {staged_path.stem} to Calibre database", flush=True)
+            self.last_import_succeeded = True
 
             if self.cwa_settings['auto_backup_imports']:
                 self.backup(str(staged_path), backup_type="imported")
@@ -1312,8 +1374,7 @@ def main(filepath=None):
         manifest_path = filepath + ".cwa.json"
         try:
             if Path(manifest_path).exists():
-                with open(manifest_path, 'r', encoding='utf-8') as mf:
-                    manifest = json.load(mf)
+                manifest = load_cwa_import_manifest(manifest_path) or {}
                 action = manifest.get("action")
                 if action == "add_format":
                     success = False
@@ -1335,19 +1396,19 @@ def main(filepath=None):
                         nbp.backup(filepath, backup_type="failed")
                     
                     # Cleanup manifest: delete on success, preserve on failure for debugging
-                    try:
-                        if success:
-                            os.remove(manifest_path)
-                        else:
-                            failed_manifest_path = manifest_path.replace(".cwa.json", ".cwa.failed.json")
-                            os.rename(manifest_path, failed_manifest_path)
-                            print(f"[ingest-processor] Preserved failed manifest: {os.path.basename(failed_manifest_path)}", flush=True)
-                    except Exception as e:
-                        print(f"[ingest-processor] WARN: Failed to handle manifest cleanup: {e}", flush=True)
+                    finalize_cwa_import_manifest(manifest_path, success)
                     
                     nbp.set_library_permissions()
                     nbp.delete_current_file()
                     return
+                identifiers = extract_import_manifest_identifiers(manifest)
+                if identifiers:
+                    nbp.pending_import_identifiers = identifiers
+                    print(
+                        f"[ingest-processor] Using sidecar provenance for {os.path.basename(filepath)}: "
+                        f"{summarize_import_manifest_identifiers(identifiers)}",
+                        flush=True,
+                    )
         except Exception as e:
             print(f"[ingest-processor] Error processing manifest file: {e}", flush=True)
             # Continue with normal processing if manifest handling fails
@@ -1431,6 +1492,11 @@ def main(filepath=None):
                     nbp.delete_current_file()
             except Exception as e:
                 print(f"[ingest-processor] Error deleting current file during cleanup: {e}", flush=True)
+
+            try:
+                finalize_cwa_import_manifest(nbp.pending_manifest_path, nbp.last_import_succeeded)
+            except Exception as e:
+                print(f"[ingest-processor] Error finalizing manifest during cleanup: {e}", flush=True)
 
             try:
                 # Cleanup the temp conversion folder, which now contains the staging dir

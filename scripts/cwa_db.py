@@ -18,8 +18,13 @@ class CWA_DB:
     def __init__(self, verbose=False):
         self.verbose = verbose
 
-        self.db_file = "cwa.db"
-        self.db_path = "/config/"
+        configured_db_path = os.getenv("CWA_DB_PATH", "/config")
+        if configured_db_path.lower().endswith(".db"):
+            self.db_path = os.path.dirname(configured_db_path) or "."
+            self.db_file = os.path.basename(configured_db_path)
+        else:
+            self.db_path = configured_db_path or "/config"
+            self.db_file = "cwa.db"
         self.con, self.cur = self.connect_to_db() # type: ignore
 
         # Support both Docker and CI environments for schema path
@@ -32,6 +37,7 @@ class CWA_DB:
         self.ensure_settings_schema_match()
         self.match_stat_table_columns_with_schema()
         self.ensure_scheduled_jobs_schema()
+        self.ensure_shelfmark_queue_schema()
         self.set_default_settings()
         self.cwa_settings = self.get_cwa_settings()
 
@@ -41,7 +47,8 @@ class CWA_DB:
         con = None
         cur = None
         try:
-            con = sqlite3.connect(self.db_path + self.db_file, timeout=30)
+            os.makedirs(self.db_path, exist_ok=True)
+            con = sqlite3.connect(os.path.join(self.db_path, self.db_file), timeout=30)
         except sqlError as e:
             print(f"[cwa-db]: The following error occurred while trying to connect to the CWA Enforcement DB: {e}")
             sys.exit(0)
@@ -700,6 +707,238 @@ class CWA_DB:
         except Exception:
             # If table doesn't exist yet, it will be created from schema
             pass
+
+    def ensure_shelfmark_queue_schema(self) -> None:
+        """Best-effort migration for older cwa_shelfmark_queue tables."""
+        required_columns = {
+            'status_detail': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN status_detail TEXT DEFAULT ''",
+            'request_payload_json': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN request_payload_json TEXT DEFAULT ''",
+            'release_data_json': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN release_data_json TEXT DEFAULT ''",
+            'response_json': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN response_json TEXT DEFAULT ''",
+            'identifiers_json': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN identifiers_json TEXT DEFAULT ''",
+            'external_request_id': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN external_request_id INTEGER",
+            'external_task_id': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN external_task_id TEXT DEFAULT ''",
+            'external_source': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN external_source TEXT DEFAULT ''",
+            'external_source_id': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN external_source_id TEXT DEFAULT ''",
+            'initiated_by_user_id': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN initiated_by_user_id INTEGER",
+            'initiated_by_username': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN initiated_by_username TEXT DEFAULT ''",
+            'imported_book_id': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN imported_book_id INTEGER",
+            'last_polled_at_utc': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN last_polled_at_utc TEXT DEFAULT ''",
+            'last_error': "ALTER TABLE cwa_shelfmark_queue ADD COLUMN last_error TEXT DEFAULT ''",
+        }
+        try:
+            cols = [r[1] for r in self.cur.execute("PRAGMA table_info('cwa_shelfmark_queue')").fetchall()]
+            if not cols:
+                return
+            for column_name, sql in required_columns.items():
+                if column_name not in cols:
+                    self.cur.execute(sql)
+            self.con.commit()
+        except Exception:
+            pass
+
+    def _rows_to_dicts(self, rows):
+        cols = [d[0] for d in self.cur.description]
+        return [dict(zip(cols, row)) for row in rows]
+
+    def shelfmark_queue_add(self, **values) -> int | None:
+        try:
+            timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            self.cur.execute(
+                """
+                INSERT INTO cwa_shelfmark_queue(
+                    provider, provider_id, title, author, content_type, request_kind, status, status_detail,
+                    request_payload_json, release_data_json, response_json, identifiers_json,
+                    external_request_id, external_task_id, external_source, external_source_id,
+                    initiated_by_user_id, initiated_by_username, imported_book_id,
+                    created_at_utc, updated_at_utc, last_polled_at_utc, last_error
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    values.get('provider', ''),
+                    values.get('provider_id', ''),
+                    values.get('title', ''),
+                    values.get('author', ''),
+                    values.get('content_type', 'ebook'),
+                    values.get('request_kind', 'book'),
+                    values.get('status', 'queued'),
+                    values.get('status_detail', ''),
+                    values.get('request_payload_json', ''),
+                    values.get('release_data_json', ''),
+                    values.get('response_json', ''),
+                    values.get('identifiers_json', ''),
+                    values.get('external_request_id'),
+                    values.get('external_task_id', ''),
+                    values.get('external_source', ''),
+                    values.get('external_source_id', ''),
+                    values.get('initiated_by_user_id'),
+                    values.get('initiated_by_username', ''),
+                    values.get('imported_book_id'),
+                    values.get('created_at_utc', timestamp),
+                    values.get('updated_at_utc', timestamp),
+                    values.get('last_polled_at_utc', ''),
+                    values.get('last_error', ''),
+                ),
+            )
+            self.con.commit()
+            return self.cur.lastrowid
+        except Exception as e:
+            print(f"[cwa-db] ERROR adding shelfmark queue row: {e}")
+            return None
+
+    def shelfmark_queue_get_by_id(self, row_id: int):
+        try:
+            rows = self.cur.execute(
+                "SELECT * FROM cwa_shelfmark_queue WHERE id = ? LIMIT 1",
+                (int(row_id),),
+            ).fetchall()
+            return self._rows_to_dicts(rows)[0] if rows else None
+        except Exception as e:
+            print(f"[cwa-db] ERROR fetching shelfmark queue row by id: {e}")
+            return None
+
+    def shelfmark_queue_find_active(self, provider: str, provider_id: str):
+        try:
+            rows = self.cur.execute(
+                """
+                SELECT * FROM cwa_shelfmark_queue
+                WHERE provider = ? AND provider_id = ? AND status IN (
+                    'submitting', 'requested', 'queued', 'resolving', 'locating', 'downloading', 'complete', 'importing'
+                )
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (str(provider).strip().lower(), str(provider_id).strip()),
+            ).fetchall()
+            return self._rows_to_dicts(rows)[0] if rows else None
+        except Exception as e:
+            print(f"[cwa-db] ERROR finding active shelfmark queue row: {e}")
+            return None
+
+    def shelfmark_queue_patch(self, row_id: int, values: dict) -> bool:
+        if not values:
+            return False
+        try:
+            next_values = dict(values)
+            next_values['updated_at_utc'] = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            assignments = ", ".join(f"{column}=?" for column in next_values.keys())
+            params = list(next_values.values()) + [int(row_id)]
+            self.cur.execute(
+                f"UPDATE cwa_shelfmark_queue SET {assignments} WHERE id = ?",
+                params,
+            )
+            self.con.commit()
+            return self.cur.rowcount > 0
+        except Exception as e:
+            print(f"[cwa-db] ERROR patching shelfmark queue row: {e}")
+            return False
+
+    def shelfmark_queue_update_status(
+        self,
+        row_id: int,
+        *,
+        status: str,
+        status_detail: str = '',
+        last_error: str = '',
+        response_json: str | None = None,
+    ) -> bool:
+        values = {
+            'status': status,
+            'status_detail': status_detail,
+            'last_error': last_error,
+        }
+        if response_json is not None:
+            values['response_json'] = response_json
+        return self.shelfmark_queue_patch(row_id, values)
+
+    def shelfmark_queue_update_submission(
+        self,
+        row_id: int,
+        *,
+        status: str,
+        status_detail: str = '',
+        response_json: str = '',
+        external_request_id=None,
+        external_task_id: str = '',
+        external_source: str = '',
+        external_source_id: str = '',
+        release_data_json: str = '',
+        last_error: str = '',
+        identifiers_json: str = '',
+    ) -> bool:
+        return self.shelfmark_queue_patch(
+            row_id,
+            {
+                'status': status,
+                'status_detail': status_detail,
+                'response_json': response_json,
+                'external_request_id': external_request_id,
+                'external_task_id': external_task_id,
+                'external_source': external_source,
+                'external_source_id': external_source_id,
+                'release_data_json': release_data_json,
+                'last_error': last_error,
+                'identifiers_json': identifiers_json,
+            },
+        )
+
+    def shelfmark_queue_mark_imported(self, row_id: int, imported_book_id: int) -> bool:
+        return self.shelfmark_queue_patch(
+            row_id,
+            {
+                'status': 'imported',
+                'status_detail': '',
+                'imported_book_id': int(imported_book_id),
+                'last_error': '',
+            },
+        )
+
+    def shelfmark_queue_list_active(self):
+        try:
+            rows = self.cur.execute(
+                """
+                SELECT * FROM cwa_shelfmark_queue
+                WHERE status IN ('submitting', 'requested', 'queued', 'resolving', 'locating', 'downloading', 'complete', 'importing')
+                ORDER BY id ASC
+                """
+            ).fetchall()
+            return self._rows_to_dicts(rows)
+        except Exception as e:
+            print(f"[cwa-db] ERROR listing active shelfmark queue rows: {e}")
+            return []
+
+    def shelfmark_queue_get_latest_for_items(self, items):
+        if not items:
+            return []
+        try:
+            normalized_items = [
+                (str(provider).strip().lower(), str(provider_id).strip())
+                for provider, provider_id in items
+                if str(provider).strip() and str(provider_id).strip()
+            ]
+            if not normalized_items:
+                return []
+            where_clause = " OR ".join("(provider = ? AND provider_id = ?)" for _ in normalized_items)
+            params = [value for item in normalized_items for value in item]
+            rows = self.cur.execute(
+                f"""
+                SELECT queue_rows.*
+                FROM cwa_shelfmark_queue AS queue_rows
+                JOIN (
+                    SELECT provider, provider_id, MAX(id) AS max_id
+                    FROM cwa_shelfmark_queue
+                    WHERE {where_clause}
+                    GROUP BY provider, provider_id
+                ) AS latest_rows
+                  ON latest_rows.max_id = queue_rows.id
+                ORDER BY queue_rows.id DESC
+                """,
+                params,
+            ).fetchall()
+            return self._rows_to_dicts(rows)
+        except Exception as e:
+            print(f"[cwa-db] ERROR fetching shelfmark queue rows for items: {e}")
+            return []
 
     def scheduled_add_autosend(self, book_id: int, user_id: int, run_at_utc_iso: str, username: str, title: str) -> int | None:
         """Insert a scheduled auto-send job and return its row id."""

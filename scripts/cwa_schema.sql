@@ -119,6 +119,37 @@ CREATE TABLE IF NOT EXISTS cwa_scheduled_jobs(
     last_error TEXT DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS cwa_shelfmark_queue(
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    content_type TEXT DEFAULT 'ebook' NOT NULL,
+    request_kind TEXT DEFAULT 'request' NOT NULL,
+    status TEXT DEFAULT 'queued' NOT NULL,
+    status_detail TEXT DEFAULT '' NOT NULL,
+    request_payload_json TEXT DEFAULT '' NOT NULL,
+    release_data_json TEXT DEFAULT '' NOT NULL,
+    response_json TEXT DEFAULT '' NOT NULL,
+    identifiers_json TEXT DEFAULT '' NOT NULL,
+    external_request_id INTEGER,
+    external_task_id TEXT DEFAULT '',
+    external_source TEXT DEFAULT '',
+    external_source_id TEXT DEFAULT '',
+    initiated_by_user_id INTEGER,
+    initiated_by_username TEXT DEFAULT '',
+    imported_book_id INTEGER,
+    created_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL,
+    last_polled_at_utc TEXT DEFAULT '',
+    last_error TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_cwa_shelfmark_queue_provider ON cwa_shelfmark_queue(provider, provider_id);
+CREATE INDEX IF NOT EXISTS idx_cwa_shelfmark_queue_status ON cwa_shelfmark_queue(status);
+CREATE INDEX IF NOT EXISTS idx_cwa_shelfmark_queue_request_id ON cwa_shelfmark_queue(external_request_id);
+CREATE INDEX IF NOT EXISTS idx_cwa_shelfmark_queue_task_id ON cwa_shelfmark_queue(external_task_id);
+
 CREATE TABLE IF NOT EXISTS cwa_user_activity (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,

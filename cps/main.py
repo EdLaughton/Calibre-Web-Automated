@@ -27,6 +27,7 @@ def main():
     from .editbooks import editbook
     from .about import about
     from .search import search
+    from .shelfmark import shelfmark_search
     from .search_metadata import meta
     from .shelf import shelf
     from .tasks_status import tasks
@@ -69,6 +70,7 @@ def main():
 
     # Stock CW
     app.register_blueprint(search)
+    app.register_blueprint(shelfmark_search)
     app.register_blueprint(tasks)
     app.register_blueprint(web)
     app.register_blueprint(opds)

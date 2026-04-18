@@ -1,0 +1,144 @@
+.shelfmark-search-page__header {
+    margin-bottom: 20px;
+}
+
+.shelfmark-search-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.shelfmark-search-form__query {
+    flex: 1 1 420px;
+}
+
+.shelfmark-search-form__query .form-control {
+    width: 100%;
+}
+
+.shelfmark-search-page__message,
+.shelfmark-search-page__count {
+    margin-bottom: 18px;
+}
+
+.shelfmark-search-results {
+    display: grid;
+    gap: 16px;
+}
+
+.shelfmark-search-result {
+    display: flex;
+    gap: 18px;
+    padding: 16px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.16);
+}
+
+.shelfmark-search-result__media {
+    margin-right: 0;
+}
+
+.shelfmark-search-result__cover,
+.shelfmark-detail__cover {
+    width: 96px;
+    height: 140px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.shelfmark-search-result__cover--empty,
+.shelfmark-detail__cover--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 26px;
+}
+
+.shelfmark-search-result__body {
+    flex: 1 1 auto;
+}
+
+.shelfmark-search-result__title,
+.shelfmark-detail__title {
+    margin-top: 0;
+    margin-bottom: 6px;
+}
+
+.shelfmark-search-result__subtitle,
+.shelfmark-detail__subtitle {
+    margin-bottom: 6px;
+}
+
+.shelfmark-search-result__authors,
+.shelfmark-detail__authors {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.shelfmark-search-result__series,
+.shelfmark-search-result__facts,
+.shelfmark-search-result__hint {
+    margin-bottom: 6px;
+}
+
+.shelfmark-search-result__actions,
+.shelfmark-detail__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.shelfmark-search-result__request-form,
+.shelfmark-detail__request-form {
+    display: inline-flex;
+}
+
+.shelfmark-detail__layout {
+    display: flex;
+    gap: 20px;
+}
+
+.shelfmark-detail__body {
+    flex: 1 1 auto;
+}
+
+.shelfmark-detail__meta {
+    margin-top: 18px;
+    margin-bottom: 18px;
+}
+
+.shelfmark-detail__meta dt {
+    width: 110px;
+}
+
+.shelfmark-detail__meta dd {
+    margin-left: 130px;
+}
+
+.shelfmark-detail__section {
+    margin-top: 18px;
+}
+
+@media (max-width: 767px) {
+    .shelfmark-search-result,
+    .shelfmark-detail__layout {
+        flex-direction: column;
+    }
+
+    .shelfmark-search-result__cover,
+    .shelfmark-detail__cover {
+        width: 120px;
+        height: 176px;
+    }
+
+    .shelfmark-detail__meta dt,
+    .shelfmark-detail__meta dd {
+        width: auto;
+        margin-left: 0;
+    }
+}

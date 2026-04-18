@@ -16,6 +16,7 @@ from .tasks.thumbnail_migration import check_and_migrate_thumbnails
 from .services.worker import WorkerThread
 from .tasks.metadata_backup import TaskBackupMetadata
 from .tasks.auto_hardcover_id import TaskAutoHardcoverID
+from .tasks.shelfmark_queue import TaskShelfmarkQueueSync
 
 def get_scheduled_tasks(reconnect=True):
     tasks = list()
@@ -71,6 +72,7 @@ def register_scheduled_tasks(reconnect=True):
 
         _schedule_hardcover_auto_fetch(scheduler, timezone_info)
         _schedule_archived_book_cleanup(scheduler, timezone_info)
+        _schedule_shelfmark_queue_sync(scheduler, timezone_info)
 
         # Kick-off tasks, if they should currently be running
         if should_task_be_running(start, duration):
@@ -191,6 +193,14 @@ def register_startup_tasks():
             scheduler.schedule_tasks_immediately(tasks=get_scheduled_tasks(False))
         else:
             scheduler.schedule_tasks_immediately(tasks=[[lambda: TaskClean(), 'delete temp', True]])
+
+        if config.config_shelfmark_search and config.config_shelfmark_url:
+            scheduler.schedule_task_immediately(
+                lambda: TaskShelfmarkQueueSync(),
+                user='System',
+                name='startup shelfmark queue sync',
+                hidden=True,
+            )
 
 
 def should_task_be_running(start, duration):
@@ -314,6 +324,23 @@ def _schedule_hardcover_auto_fetch(scheduler, timezone_info):
             scheduler.schedule_task(task_lambda, user='System', trigger=trigger, name=name, hidden=False)
     except Exception:
         # Scheduling is best-effort; never block startup
+        pass
+
+
+def _schedule_shelfmark_queue_sync(scheduler, timezone_info):
+    """Schedule Shelfmark queue reconciliation when the feature is enabled."""
+    try:
+        if not config.config_shelfmark_search or not config.config_shelfmark_url:
+            return
+
+        scheduler.schedule_task(
+            lambda: TaskShelfmarkQueueSync(),
+            user='System',
+            trigger=IntervalTrigger(minutes=1, timezone=timezone_info),
+            name='shelfmark queue sync',
+            hidden=True,
+        )
+    except Exception:
         pass
 
 

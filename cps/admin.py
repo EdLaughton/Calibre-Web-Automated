@@ -2353,6 +2353,15 @@ def _configuration_update_helper():
         _config_checkbox(to_save, "config_hardcover_annotations_sync")
         _config_string(to_save, "config_hardcover_token")
 
+        # Shelfmark search/request configuration
+        _config_checkbox(to_save, "config_shelfmark_search")
+        _config_string(to_save, "config_shelfmark_url")
+        _config_string(to_save, "config_shelfmark_username")
+        if to_save.get("config_shelfmark_password_e", ""):
+            _config_string(to_save, "config_shelfmark_password_e")
+        if to_save.get("config_shelfmark_search") and not to_save.get("config_shelfmark_url"):
+            return _configuration_result(_('Shelfmark Base URL is required when Shelfmark search is enabled'))
+
         _config_int(to_save, "config_updatechannel")
 
         # Reverse proxy login configuration

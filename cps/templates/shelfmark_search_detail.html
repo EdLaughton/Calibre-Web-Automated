@@ -1,0 +1,122 @@
+<div class="shelfmark-detail">
+  {% if detail_error %}
+    <div class="alert alert-danger">{{ detail_error }}</div>
+  {% elif detail_view %}
+    <div class="shelfmark-detail__layout">
+      <div class="shelfmark-detail__cover-wrap">
+        {% if detail_view.cover_url %}
+          <img class="shelfmark-detail__cover" src="{{ detail_view.cover_url }}" alt="{{ detail_view.title }}">
+        {% else %}
+          <div class="shelfmark-detail__cover shelfmark-detail__cover--empty">
+            <span class="glyphicon glyphicon-book" aria-hidden="true"></span>
+          </div>
+        {% endif %}
+      </div>
+      <div class="shelfmark-detail__body">
+        <h3 class="shelfmark-detail__title">{{ detail_view.title }}</h3>
+        {% if detail_view.subtitle %}
+          <p class="text-muted shelfmark-detail__subtitle">{{ detail_view.subtitle }}</p>
+        {% endif %}
+        {% if detail_view.authors %}
+          <p class="shelfmark-detail__authors">{{ detail_view.authors|join(', ') }}</p>
+        {% endif %}
+
+        {% if detail_view.action.hint %}
+          <p class="help-block shelfmark-detail__hint">{{ detail_view.action.hint }}</p>
+        {% endif %}
+
+        <div class="btn-toolbar shelfmark-detail__actions" role="toolbar">
+          {% if detail_view.action.mode == 'request' %}
+            <form method="post" action="{{ url_for('shelfmark_search.submit_request') }}" class="shelfmark-detail__request-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="request_payload" value="{{ detail_view.action.payload_json }}">
+              <input type="hidden" name="return_to" value="{{ url_for('shelfmark_search.search_page', query=query) }}">
+              <button type="submit" class="btn {{ detail_view.action.button_class }}">{{ detail_view.action.label }}</button>
+            </form>
+          {% elif detail_view.action.href %}
+            <a class="btn {{ detail_view.action.button_class }}" href="{{ detail_view.action.href }}">{{ detail_view.action.label }}</a>
+          {% else %}
+            <button type="button" class="btn {{ detail_view.action.button_class }}" disabled>{{ detail_view.action.label }}</button>
+          {% endif %}
+        </div>
+
+        <dl class="dl-horizontal shelfmark-detail__meta">
+          {% if detail_view.series_name %}
+            <dt>{{ _('Series') }}</dt>
+            <dd>{{ detail_view.series_name }}{% if detail_view.series_position %} #{{ detail_view.series_position }}{% endif %}</dd>
+          {% endif %}
+          {% if detail_view.publish_year %}
+            <dt>{{ _('Published') }}</dt>
+            <dd>{{ detail_view.publish_year }}</dd>
+          {% endif %}
+          {% if detail_view.publisher %}
+            <dt>{{ _('Publisher') }}</dt>
+            <dd>{{ detail_view.publisher }}</dd>
+          {% endif %}
+          {% if detail_view.language %}
+            <dt>{{ _('Language') }}</dt>
+            <dd>{{ detail_view.language }}</dd>
+          {% endif %}
+          {% if detail_view.isbn_13 %}
+            <dt>{{ _('ISBN-13') }}</dt>
+            <dd>{{ detail_view.isbn_13 }}</dd>
+          {% elif detail_view.isbn_10 %}
+            <dt>{{ _('ISBN-10') }}</dt>
+            <dd>{{ detail_view.isbn_10 }}</dd>
+          {% endif %}
+          <dt>{{ _('Provider') }}</dt>
+          <dd>{{ detail_view.provider }}</dd>
+          {% if detail_view.source_url %}
+            <dt>{{ _('Source') }}</dt>
+            <dd><a href="{{ detail_view.source_url }}" target="_blank" rel="noopener noreferrer">{{ detail_view.source_url }}</a></dd>
+          {% endif %}
+          {% if detail_view.library_match %}
+            <dt>{{ _('In library') }}</dt>
+            <dd>{{ detail_view.library_match.title }}</dd>
+          {% endif %}
+        </dl>
+
+        {% if detail_view.description %}
+          <div class="shelfmark-detail__section">
+            <h4>{{ _('Shelfmark details') }}</h4>
+            <p>{{ detail_view.description }}</p>
+          </div>
+        {% endif %}
+
+        {% if detail_view.hardcover_overlay %}
+          <div class="shelfmark-detail__section">
+            <h4>{{ _('Hardcover enrichment') }}</h4>
+            <dl class="dl-horizontal shelfmark-detail__meta">
+              {% if detail_view.hardcover_overlay.series %}
+                <dt>{{ _('Series') }}</dt>
+                <dd>{{ detail_view.hardcover_overlay.series }}{% if detail_view.hardcover_overlay.series_index %} #{{ detail_view.hardcover_overlay.series_index }}{% endif %}</dd>
+              {% endif %}
+              {% if detail_view.hardcover_overlay.published_date %}
+                <dt>{{ _('Release date') }}</dt>
+                <dd>{{ detail_view.hardcover_overlay.published_date }}</dd>
+              {% endif %}
+              {% if detail_view.hardcover_overlay.publisher %}
+                <dt>{{ _('Publisher') }}</dt>
+                <dd>{{ detail_view.hardcover_overlay.publisher }}</dd>
+              {% endif %}
+              {% if detail_view.hardcover_overlay.language %}
+                <dt>{{ _('Language') }}</dt>
+                <dd>{{ detail_view.hardcover_overlay.language }}</dd>
+              {% endif %}
+              {% if detail_view.hardcover_overlay.tags %}
+                <dt>{{ _('Tags') }}</dt>
+                <dd>{{ detail_view.hardcover_overlay.tags|join(', ') }}</dd>
+              {% endif %}
+            </dl>
+            {% if detail_view.hardcover_overlay.description %}
+              <p>{{ detail_view.hardcover_overlay.description }}</p>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-info">{{ _('No Shelfmark detail is available for this book.') }}</div>
+  {% endif %}
+</div>
+

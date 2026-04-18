@@ -1,0 +1,247 @@
+{% extends is_xhr|yesno("fragment.html", "layout.html") %}
+{% block header %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shelfmark_search.css') }}">
+{% endblock %}
+{% block body %}
+<div class="discover shelfmark-search-page">
+  <div class="shelfmark-search-page__header">
+    <h2 class="shelfmark-search-page__title">{{ _('Request Book') }}</h2>
+    <p class="help-block shelfmark-search-page__intro">{{ _('Search Shelfmark for a specific book, inspect the details if needed, and queue it for import into this library.') }}</p>
+  </div>
+
+  <form class="form-inline shelfmark-search-form" method="get" action="{{ url_for('shelfmark_search.search_page') }}">
+    <div class="form-group shelfmark-search-form__query">
+      <label class="sr-only" for="query">{{ _('Search Shelfmark') }}</label>
+      <input type="text" class="form-control input-lg" id="query" name="query" value="{{ query }}" placeholder="{{ _('Title, author, or ISBN') }}" autocomplete="off">
+    </div>
+    <button type="submit" class="btn btn-primary btn-lg">{{ _('Search') }}</button>
+  </form>
+
+  {% if shelfmark_error %}
+    <div class="alert alert-danger shelfmark-search-page__message">{{ shelfmark_error }}</div>
+  {% elif shelfmark_searched and not shelfmark_results %}
+    <div class="alert alert-info shelfmark-search-page__message">{{ _('No Shelfmark matches were found for that search.') }}</div>
+  {% endif %}
+
+  {% if shelfmark_results %}
+    <p class="help-block shelfmark-search-page__count">{{ _('%(count)s Shelfmark matches', count=shelfmark_total_found) }}</p>
+    <div class="shelfmark-search-results" data-result-count="{{ shelfmark_results|length }}">
+      {% for result in shelfmark_results %}
+        <article class="media shelfmark-search-result" data-provider="{{ result.provider }}" data-provider-id="{{ result.provider_id }}">
+          <div class="media-left shelfmark-search-result__media">
+            {% if result.cover_url %}
+              <img class="media-object shelfmark-search-result__cover" src="{{ result.cover_url }}" alt="{{ result.title }}">
+            {% else %}
+              <div class="shelfmark-search-result__cover shelfmark-search-result__cover--empty">
+                <span class="glyphicon glyphicon-book" aria-hidden="true"></span>
+              </div>
+            {% endif %}
+          </div>
+          <div class="media-body shelfmark-search-result__body">
+            <h4 class="media-heading shelfmark-search-result__title">{{ result.title }}</h4>
+            {% if result.subtitle %}
+              <p class="text-muted shelfmark-search-result__subtitle">{{ result.subtitle }}</p>
+            {% endif %}
+            {% if result.authors %}
+              <p class="shelfmark-search-result__authors">{{ result.authors|join(', ') }}</p>
+            {% endif %}
+            {% if result.series_name %}
+              <p class="text-muted shelfmark-search-result__series">
+                {{ result.series_name }}{% if result.series_position %} #{{ result.series_position }}{% endif %}
+              </p>
+            {% endif %}
+            {% if result.facts %}
+              <p class="text-muted shelfmark-search-result__facts">{{ result.facts|join(' · ') }}</p>
+            {% endif %}
+            {% if result.action.hint %}
+              <p class="help-block shelfmark-search-result__hint">{{ result.action.hint }}</p>
+            {% endif %}
+            <div class="btn-toolbar shelfmark-search-result__actions" role="toolbar">
+              {% if result.action.mode == 'request' %}
+                <form method="post" action="{{ url_for('shelfmark_search.submit_request') }}" class="shelfmark-search-result__request-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="request_payload" value="{{ result.action.payload_json }}">
+                  <input type="hidden" name="return_to" value="{{ result.action.return_to }}">
+                  <button type="submit" class="btn {{ result.action.button_class }} shelfmark-search-result__primary" data-primary-action="request">{{ result.action.label }}</button>
+                </form>
+              {% elif result.action.href %}
+                <a class="btn {{ result.action.button_class }} shelfmark-search-result__primary" href="{{ result.action.href }}" data-primary-action="link">{{ result.action.label }}</a>
+              {% else %}
+                <button type="button" class="btn {{ result.action.button_class }} shelfmark-search-result__primary" data-primary-action="status" disabled>{{ result.action.label }}</button>
+              {% endif %}
+
+              <a
+                class="btn btn-link"
+                href="{{ result.detail_url }}"
+                data-toggle="modal"
+                data-target="#bookDetailsModal"
+                data-remote="false"
+              >{{ _('Details') }}</a>
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block js %}
+  {{ super() }}
+  {% if shelfmark_results %}
+    <script>
+      (function() {
+        var results = Array.prototype.slice.call(document.querySelectorAll(".shelfmark-search-result[data-provider][data-provider-id]"));
+        if (!results.length) {
+          return;
+        }
+
+        var activeStatuses = {
+          submitting: true,
+          requested: true,
+          queued: true,
+          resolving: true,
+          locating: true,
+          downloading: true,
+          complete: true,
+          importing: true
+        };
+
+        var statusUrl = "{{ url_for('shelfmark_search.queue_status') }}";
+        var pollTimer = null;
+
+        function ensureHint(article) {
+          var existing = article.querySelector(".shelfmark-search-result__hint");
+          if (existing) {
+            return existing;
+          }
+          var body = article.querySelector(".shelfmark-search-result__body");
+          var actions = article.querySelector(".shelfmark-search-result__actions");
+          var hint = document.createElement("p");
+          hint.className = "help-block shelfmark-search-result__hint";
+          if (actions && actions.parentNode === body) {
+            body.insertBefore(hint, actions);
+          } else if (body) {
+            body.appendChild(hint);
+          }
+          return hint;
+        }
+
+        function updatePrimaryAction(article, summary) {
+          var primary = article.querySelector(".shelfmark-search-result__primary");
+          if (!primary) {
+            return;
+          }
+
+          var href = summary.href || "";
+          if (summary.status === "imported" && href) {
+            if (primary.tagName !== "A") {
+              var link = document.createElement("a");
+              link.className = "btn btn-success shelfmark-search-result__primary";
+              link.setAttribute("data-primary-action", "link");
+              link.href = href;
+              link.textContent = summary.label || "{{ _('Imported') }}";
+              primary.parentNode.replaceChild(link, primary);
+              primary = link;
+            } else {
+              primary.className = "btn btn-success shelfmark-search-result__primary";
+              primary.href = href;
+              primary.textContent = summary.label || "{{ _('Imported') }}";
+            }
+            return;
+          }
+
+          if (summary.status === "failed" || summary.status === "cancelled" || summary.status === "rejected") {
+            return;
+          }
+
+          if (primary.tagName === "A") {
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "btn btn-default shelfmark-search-result__primary";
+            button.setAttribute("data-primary-action", "status");
+            button.disabled = true;
+            button.textContent = summary.label || "{{ _('Queued') }}";
+            primary.parentNode.replaceChild(button, primary);
+            primary = button;
+          } else {
+            primary.className = "btn btn-default shelfmark-search-result__primary";
+            primary.disabled = true;
+            primary.textContent = summary.label || "{{ _('Queued') }}";
+          }
+        }
+
+        function updateHint(article, summary) {
+          var detail = summary.detail || "";
+          var hint = article.querySelector(".shelfmark-search-result__hint");
+          if (!detail) {
+            if (hint) {
+              hint.textContent = "";
+              hint.style.display = "none";
+            }
+            return;
+          }
+
+          hint = ensureHint(article);
+          hint.textContent = detail;
+          hint.style.display = "";
+        }
+
+        function pollStatuses() {
+          var items = results.map(function(article) {
+            return {
+              provider: article.getAttribute("data-provider"),
+              provider_id: article.getAttribute("data-provider-id")
+            };
+          });
+
+          fetch(statusUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({items: items})
+          })
+            .then(function(response) {
+              if (!response.ok) {
+                throw new Error("status request failed");
+              }
+              return response.json();
+            })
+            .then(function(payload) {
+              var itemsByKey = payload.items || {};
+              var keepPolling = false;
+
+              results.forEach(function(article) {
+                var key = article.getAttribute("data-provider") + ":" + article.getAttribute("data-provider-id");
+                var summary = itemsByKey[key];
+                if (!summary) {
+                  return;
+                }
+
+                updatePrimaryAction(article, summary);
+                updateHint(article, summary);
+                if (activeStatuses[summary.status]) {
+                  keepPolling = true;
+                }
+              });
+
+              if (!keepPolling && pollTimer) {
+                window.clearInterval(pollTimer);
+                pollTimer = null;
+              }
+            })
+            .catch(function() {
+              if (pollTimer) {
+                window.clearInterval(pollTimer);
+                pollTimer = null;
+              }
+            });
+        }
+
+        pollStatuses();
+        pollTimer = window.setInterval(pollStatuses, 15000);
+      })();
+    </script>
+  {% endif %}
+{% endblock %}
