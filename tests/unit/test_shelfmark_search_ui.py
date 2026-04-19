@@ -767,10 +767,59 @@ def _base_context():
 
 def _request_page_context():
     context = _base_context()
+    request_filters = {
+        "requestable": True,
+        "has_cover": True,
+        "english_only": True,
+        "hide_owned": True,
+        "hide_partial": True,
+        "hide_compilations": True,
+        "prefer_primary": True,
+        "hide_audiobook_only": True,
+        "suppress_non_book": True,
+        "next_missing_only": False,
+        "well_rated_only": False,
+        "popular_only": False,
+        "new_releases_only": False,
+        "standalone_only": False,
+        "first_in_series_only": False,
+    }
+    filter_options = [
+        {"key": "requestable", "label": "Requestable only", "default": True, "checked": True},
+        {"key": "has_cover", "label": "Has cover", "default": True, "checked": True},
+        {"key": "english_only", "label": "English only", "default": True, "checked": True},
+        {"key": "hide_owned", "label": "Hide owned books", "default": True, "checked": True},
+        {"key": "hide_partial", "label": "Hide partial books", "default": True, "checked": True},
+        {"key": "hide_compilations", "label": "Hide compilations / omnibuses / bind-ups", "default": True, "checked": True},
+        {"key": "prefer_primary", "label": "Prefer primary editions", "default": True, "checked": True},
+        {"key": "hide_audiobook_only", "label": "Hide audiobook-only", "default": True, "checked": True},
+        {"key": "suppress_non_book", "label": "Suppress non-book results", "default": True, "checked": True},
+        {"key": "next_missing_only", "label": "Next missing only", "default": False, "checked": False},
+        {"key": "well_rated_only", "label": "Well rated only", "default": False, "checked": False},
+        {"key": "popular_only", "label": "Popular only", "default": False, "checked": False},
+        {"key": "new_releases_only", "label": "New releases only", "default": False, "checked": False},
+        {"key": "standalone_only", "label": "Standalone only", "default": False, "checked": False},
+        {"key": "first_in_series_only", "label": "First in series only", "default": False, "checked": False},
+    ]
+    request_state_url = (
+        "/request?query=Dune&page=2&sort=popularity"
+        "&requestable=1&has_cover=1&english_only=1&hide_owned=1&hide_partial=1"
+        "&hide_compilations=1&prefer_primary=1&hide_audiobook_only=1&suppress_non_book=1"
+        "&next_missing_only=0&well_rated_only=0&popular_only=0&new_releases_only=0"
+        "&standalone_only=0&first_in_series_only=0"
+    )
     requestable = dict(context["shelfmark_section"]["results"][1])
     requestable["detail_url"] = (
-        "/request/detail/hardcover/222?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"
+        "/request/detail/hardcover/222?query=Dune&page=2&sort=popularity"
+        "&requestable=1&has_cover=1&english_only=1&hide_owned=1&hide_partial=1"
+        "&hide_compilations=1&prefer_primary=1&hide_audiobook_only=1&suppress_non_book=1"
+        "&next_missing_only=0&well_rated_only=0&popular_only=0&new_releases_only=0"
+        "&standalone_only=0&first_in_series_only=0"
         "&return_to=%2Frequest%3Fquery%3DDune%26page%3D2%26sort%3Dpopularity%26requestable%3D1%26has_cover%3D1"
+        "%26english_only%3D1%26hide_owned%3D1%26hide_partial%3D1%26hide_compilations%3D1"
+        "%26prefer_primary%3D1%26hide_audiobook_only%3D1%26suppress_non_book%3D1"
+        "%26next_missing_only%3D0%26well_rated_only%3D0%26popular_only%3D0"
+        "%26new_releases_only%3D0%26standalone_only%3D0%26first_in_series_only%3D0"
     )
     requestable["row_enrichment_url"] = None
     requestable["needs_progressive_enrichment"] = False
@@ -782,8 +831,16 @@ def _request_page_context():
 
     unavailable = dict(context["shelfmark_section"]["results"][2])
     unavailable["detail_url"] = (
-        "/request/detail/other/333?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"
+        "/request/detail/other/333?query=Dune&page=2&sort=popularity"
+        "&requestable=1&has_cover=1&english_only=1&hide_owned=1&hide_partial=1"
+        "&hide_compilations=1&prefer_primary=1&hide_audiobook_only=1&suppress_non_book=1"
+        "&next_missing_only=0&well_rated_only=0&popular_only=0&new_releases_only=0"
+        "&standalone_only=0&first_in_series_only=0"
         "&return_to=%2Frequest%3Fquery%3DDune%26page%3D2%26sort%3Dpopularity%26requestable%3D1%26has_cover%3D1"
+        "%26english_only%3D1%26hide_owned%3D1%26hide_partial%3D1%26hide_compilations%3D1"
+        "%26prefer_primary%3D1%26hide_audiobook_only%3D1%26suppress_non_book%3D1"
+        "%26next_missing_only%3D0%26well_rated_only%3D0%26popular_only%3D0"
+        "%26new_releases_only%3D0%26standalone_only%3D0%26first_in_series_only%3D0"
     )
     unavailable["row_enrichment_url"] = None
 
@@ -823,21 +880,53 @@ def _request_page_context():
             "filtered_non_books": 4,
             "filtered_owned": 19,
             "filtered_coverless": 11,
+            "filtered_audiobook_only": 7,
+            "filtered_partial": 3,
+            "filtered_compilations": 2,
+            "filtered_non_english": 5,
+            "filtered_unrequestable": 12,
+            "filtered_non_primary": 4,
             "filter_requestable": True,
             "filter_has_cover": True,
+            "filter_english_only": True,
+            "filter_hide_owned": True,
+            "filter_hide_partial": True,
+            "filter_hide_compilations": True,
+            "filter_prefer_primary": True,
+            "filter_hide_audiobook_only": True,
+            "filter_suppress_non_book": True,
+            "filter_next_missing_only": False,
+            "filter_well_rated_only": False,
+            "filter_popular_only": False,
+            "filter_new_releases_only": False,
+            "filter_standalone_only": False,
+            "filter_first_in_series_only": False,
             "filter_high_confidence": False,
             "filters_active": False,
+            "request_filter_state": request_filters,
+            "request_filter_options": filter_options,
+            "suppression_counts": [
+                {"key": "non_book", "count": 4, "label": "4 non-book results suppressed"},
+                {"key": "owned", "count": 19, "label": "19 owned books hidden"},
+                {"key": "coverless", "count": 11, "label": "11 coverless books hidden"},
+                {"key": "audiobook_only", "count": 7, "label": "7 audiobook-only results hidden"},
+                {"key": "partial", "count": 3, "label": "3 partial books hidden"},
+                {"key": "compilation", "count": 2, "label": "2 omnibus or compilation results hidden"},
+                {"key": "non_english", "count": 5, "label": "5 non-English results hidden"},
+                {"key": "unrequestable", "count": 12, "label": "12 unrequestable books hidden"},
+                {"key": "non_primary", "count": 4, "label": "4 non-primary editions hidden"},
+            ],
             "open_search_url": "https://library.example.com/shelfmark/?content_type=ebook&sort=popularity&limit=12&page=1&query=Dune",
-            "previous_page_url": "/request?query=Dune&page=1&sort=popularity&requestable=1&has_cover=1",
-            "next_page_url": "/request?query=Dune&page=3&sort=popularity&requestable=1&has_cover=1",
+            "previous_page_url": request_state_url.replace("page=2", "page=1"),
+            "next_page_url": request_state_url.replace("page=2", "page=3"),
             "clear_filters_url": "/request?query=Dune",
-            "state_url": "/request?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1",
+            "state_url": request_state_url,
             "page_links": [
-                {"page": 1, "current": False, "url": "/request?query=Dune&page=1&sort=popularity&requestable=1&has_cover=1"},
-                {"page": 2, "current": True, "url": "/request?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"},
-                {"page": 3, "current": False, "url": "/request?query=Dune&page=3&sort=popularity&requestable=1&has_cover=1"},
+                {"page": 1, "current": False, "url": request_state_url.replace("page=2", "page=1")},
+                {"page": 2, "current": True, "url": request_state_url},
+                {"page": 3, "current": False, "url": request_state_url.replace("page=2", "page=3")},
                 {"ellipsis": True},
-                {"page": 5, "current": False, "url": "/request?query=Dune&page=5&sort=popularity&requestable=1&has_cover=1"},
+                {"page": 5, "current": False, "url": request_state_url.replace("page=2", "page=5")},
             ],
             "preferred_release_settings": {
                 "enabled": False,
@@ -1391,7 +1480,11 @@ def test_search_template_omits_transient_modal_state_from_search_forms():
 
 def test_request_template_renders_summary_and_pagination_for_requestable_results():
     app = _create_app()
-    with app.test_request_context("/request?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"):
+    with app.test_request_context(
+        "/request?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"
+        "&english_only=1&hide_owned=1&hide_partial=1&hide_compilations=1"
+        "&prefer_primary=1&hide_audiobook_only=1&suppress_non_book=1"
+    ):
         html = render_template("request.html", **_request_page_context())
 
     assert '<h2 class="shelfmark-request-page__band-title">Request Book</h2>' in html
@@ -1402,12 +1495,25 @@ def test_request_template_renders_summary_and_pagination_for_requestable_results
     assert "4 non-book results suppressed" in html
     assert "19 owned books hidden" in html
     assert "11 coverless books hidden" in html
-    assert 'id="requestable"' in html
-    assert 'id="has_cover"' in html
-    assert 'name="requestable"' in html and "checked" in html
-    assert 'name="has_cover"' in html and "checked" in html
-    assert 'href="/request?query=Dune&amp;page=1&amp;sort=popularity&amp;requestable=1&amp;has_cover=1"' in html
-    assert 'href="/request?query=Dune&amp;page=3&amp;sort=popularity&amp;requestable=1&amp;has_cover=1"' in html
+    assert "7 audiobook-only results hidden" in html
+    assert "3 partial books hidden" in html
+    assert "2 omnibus or compilation results hidden" in html
+    assert "5 non-English results hidden" in html
+    assert "12 unrequestable books hidden" in html
+    assert 'class="shelfmark-filter-dropdown__summary"' in html
+    assert "Quality filters" in html
+    assert "Focus filters" in html
+    assert 'name="requestable"' in html and 'id="request_filter_requestable"' in html
+    assert 'name="has_cover"' in html and 'id="request_filter_has_cover"' in html
+    assert 'name="english_only"' in html
+    assert 'name="hide_owned"' in html
+    assert 'name="hide_partial"' in html
+    assert 'name="hide_compilations"' in html
+    assert 'name="prefer_primary"' in html
+    assert 'name="hide_audiobook_only"' in html
+    assert 'name="suppress_non_book"' in html
+    assert 'href="/request?query=Dune&amp;page=1&amp;sort=popularity&amp;requestable=1&amp;has_cover=1&amp;english_only=1' in html
+    assert 'href="/request?query=Dune&amp;page=3&amp;sort=popularity&amp;requestable=1&amp;has_cover=1&amp;english_only=1' in html
     assert 'data-total-available="224"' in html
     assert 'data-filter-requestable="1"' in html
     assert 'data-filter-has-cover="1"' in html
@@ -1420,14 +1526,14 @@ def test_request_template_renders_summary_and_pagination_for_requestable_results
     assert "Well rated" in html
     assert "Popular" in html
     assert 'class="shelfmark-pagination-footer__page-number is-current" aria-current="page">2<' in html
-    assert 'href="/request?query=Dune&amp;page=5&amp;sort=popularity&amp;requestable=1&amp;has_cover=1"' in html
+    assert 'href="/request?query=Dune&amp;page=5&amp;sort=popularity&amp;requestable=1&amp;has_cover=1&amp;english_only=1' in html
     assert "Middle-earth (5)" not in html
     assert "No cover" in html
     assert 'id="shelfmarkDetailModal"' in html
-    assert 'data-search-state-url="/request?query=Dune&amp;page=2&amp;sort=popularity&amp;requestable=1&amp;has_cover=1"' in html
+    assert 'data-search-state-url="/request?query=Dune&amp;page=2&amp;sort=popularity&amp;requestable=1&amp;has_cover=1&amp;english_only=1' in html
 
 
-def test_request_detail_modal_separates_series_metadata_from_library_context():
+def test_request_detail_modal_keeps_series_metadata_and_moves_context_to_hero_copy():
     app = _create_app()
     context = _base_context()
     result = context["shelfmark_section"]["results"][1]
@@ -1452,11 +1558,12 @@ def test_request_detail_modal_separates_series_metadata_from_library_context():
         )
 
     assert "Library series context" not in html
-    assert "Library context" in html
+    assert "Library context" not in html
     assert ">Series</dt>" in html
     assert "The Lord of the Rings (2)" in html
     assert "1 book owned in this series" in html
     assert "Next missing · 1 book owned in this series · Owned through 1" in html
+    assert 'class="shelfmark-detail-hero__context-note"' in html
 
 
 def test_request_template_renders_empty_state_for_filtered_request_results():

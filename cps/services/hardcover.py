@@ -73,6 +73,10 @@ BOOK_BY_ID_QUERY = """
             users_count
             editions_count
             lists_count
+            default_cover_edition_id
+            default_ebook_edition_id
+            default_physical_edition_id
+            default_audio_edition_id
             cached_image
             cached_contributors
             contributions {
@@ -89,8 +93,20 @@ BOOK_BY_ID_QUERY = """
                 pages
                 edition_format
                 physical_format
+                reading_format {
+                    format
+                }
+                language {
+                    code3
+                }
                 audio_seconds
                 cached_image
+                contributions {
+                    contribution
+                    author {
+                        name
+                    }
+                }
             }
             featured_book_series {
                 featured
@@ -118,8 +134,20 @@ BOOK_BY_ID_QUERY = """
                 pages
                 edition_format
                 physical_format
+                reading_format {
+                    format
+                }
+                language {
+                    code3
+                }
                 audio_seconds
                 cached_image
+                contributions {
+                    contribution
+                    author {
+                        name
+                    }
+                }
             }
             default_physical_edition {
                 id
@@ -129,8 +157,20 @@ BOOK_BY_ID_QUERY = """
                 pages
                 edition_format
                 physical_format
+                reading_format {
+                    format
+                }
+                language {
+                    code3
+                }
                 audio_seconds
                 cached_image
+                contributions {
+                    contribution
+                    author {
+                        name
+                    }
+                }
             }
             default_audio_edition {
                 id
@@ -140,8 +180,20 @@ BOOK_BY_ID_QUERY = """
                 pages
                 edition_format
                 physical_format
+                reading_format {
+                    format
+                }
+                language {
+                    code3
+                }
                 audio_seconds
                 cached_image
+                contributions {
+                    contribution
+                    author {
+                        name
+                    }
+                }
             }
             editions {
                 id
@@ -151,8 +203,20 @@ BOOK_BY_ID_QUERY = """
                 pages
                 edition_format
                 physical_format
+                reading_format {
+                    format
+                }
+                language {
+                    code3
+                }
                 audio_seconds
                 cached_image
+                contributions {
+                    contribution
+                    author {
+                        name
+                    }
+                }
             }
             taggings {
                 spoiler

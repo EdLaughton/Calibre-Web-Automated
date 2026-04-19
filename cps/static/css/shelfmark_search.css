@@ -21,22 +21,31 @@
 }
 
 body.request > div.container-fluid > div > div.col-sm-10 > div.discover.shelfmark-request-page {
-  margin: 8px 0 30px !important;
+  margin: 0 0 30px !important;
 }
 
-body.request .shelfmark-request-page .shelfmark-external-shell {
-  padding-top: 0;
-}
-
-.shelfmark-request-page__intro {
+.shelfmark-request-page__band {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 10px 18px;
-  margin: 0 0 16px;
-  padding: 0 0 12px;
-  border-bottom: 1px solid rgba(226, 236, 242, 0.14);
+  gap: 10px 24px;
+  margin: 0 auto 18px;
+  padding: 0 0 16px;
+}
+
+.shelfmark-request-page__band-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.shelfmark-request-page__band-title {
+  margin: 0;
+  color: var(--shelfmark-shell-text);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.15;
 }
 
 .shelfmark-request-page__subtitle {
@@ -44,13 +53,13 @@ body.request .shelfmark-request-page .shelfmark-external-shell {
   max-width: 72ch;
   color: var(--shelfmark-shell-muted);
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .shelfmark-request-page__meta {
   flex: 0 0 auto;
   margin: 0;
-  padding-top: 1px;
+  padding-bottom: 4px;
   color: rgba(223, 233, 240, 0.78);
   font-size: 12px;
   font-weight: 600;
@@ -295,9 +304,9 @@ body.request .shelfmark-request-page .shelfmark-external-shell {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 14px 18px;
+  gap: 12px 18px;
   margin-top: 10px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   border: 1px solid var(--shelfmark-shell-soft-border);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
@@ -317,7 +326,7 @@ body.request .shelfmark-request-page .shelfmark-external-shell {
   flex: 1 1 640px;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 14px;
+  gap: 10px 12px;
   min-width: 0;
 }
 
@@ -369,26 +378,6 @@ body.request .shelfmark-request-page .shelfmark-external-shell {
 
 .shelfmark-external-controls__select option {
   color: #1e2c38;
-}
-
-.shelfmark-external-controls__checkbox-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0;
-  margin: 0;
-  color: var(--shelfmark-shell-muted);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.shelfmark-external-controls__checkbox {
-  margin: 0;
-  accent-color: rgba(93, 170, 222, 0.92);
-  transform: translateY(-1px);
 }
 
 .shelfmark-external-controls__apply,
@@ -446,6 +435,90 @@ body.request .shelfmark-request-page .shelfmark-external-shell {
 
 .shelfmark-external-toolbar__open-search .glyphicon {
   margin-right: 6px;
+}
+
+.shelfmark-filter-dropdown {
+  position: relative;
+  margin: 0;
+}
+
+.shelfmark-filter-dropdown__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--shelfmark-shell-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.shelfmark-filter-dropdown__summary::-webkit-details-marker {
+  display: none;
+}
+
+.shelfmark-filter-dropdown[open] .shelfmark-filter-dropdown__summary,
+.shelfmark-filter-dropdown__summary:hover,
+.shelfmark-filter-dropdown__summary:focus {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.shelfmark-filter-dropdown__menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 25;
+  width: min(360px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(11, 18, 24, 0.98);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.34);
+}
+
+.shelfmark-filter-dropdown__section {
+  display: grid;
+  gap: 6px;
+}
+
+.shelfmark-filter-dropdown__section--secondary {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.shelfmark-filter-dropdown__heading {
+  margin: 0 0 2px;
+  color: rgba(223, 233, 240, 0.7);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shelfmark-filter-dropdown__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  color: var(--shelfmark-shell-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.shelfmark-filter-dropdown__checkbox {
+  margin: 2px 0 0;
+  accent-color: rgba(93, 170, 222, 0.92);
 }
 
 .shelfmark-empty-state__actions {
@@ -1484,7 +1557,7 @@ body.request .shelfmark-request-page .shelfmark-external-shell {
 
 .shelfmark-detail-hero__summary {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin: 14px 0 0;
   padding: 12px 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1506,9 +1579,22 @@ body.request .shelfmark-request-page .shelfmark-external-shell {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   color: var(--shelfmark-shell-text);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.35;
+}
+
+.shelfmark-detail-hero__context-notes {
+  display: grid;
+  gap: 5px;
+  margin: 4px 0 0;
+}
+
+.shelfmark-detail-hero__context-note {
+  margin: 0;
+  color: rgba(231, 238, 244, 0.82);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .shelfmark-detail-hero__actions {
@@ -1606,9 +1692,9 @@ body.request .shelfmark-request-page .shelfmark-external-shell {
 .shelfmark-detail-top-stats__item {
   display: inline-flex;
   align-items: baseline;
-  gap: 7px;
+  gap: 8px;
   margin: 0;
-  padding: 9px 12px;
+  padding: 8px 12px;
   border: 1px solid var(--shelfmark-shell-soft-border);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.05);
@@ -1746,6 +1832,11 @@ html.modal-open,
 body.modal-open {
   overflow: hidden !important;
   height: 100%;
+}
+
+body.modal-open {
+  position: fixed;
+  width: 100%;
 }
 
 .shelfmark-detail-pane--modal .shelfmark-detail-sidebar {

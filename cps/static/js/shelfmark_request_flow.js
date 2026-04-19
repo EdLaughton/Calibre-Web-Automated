@@ -679,7 +679,7 @@
         return {
           kind: 'release_queued',
           bannerLevel: 'alert-success',
-          bannerText: 'Preferred release queued in Shelfmark.',
+          bannerText: '',
           actionState: buildQueuedState('Shelfmark has queued the preferred release.')
         };
       }

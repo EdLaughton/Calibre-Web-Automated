@@ -105,10 +105,37 @@ def search_module(monkeypatch):
     shelfmark_service_module.DEFAULT_SHELFMARK_FILTER_HAS_COVER = True
     shelfmark_service_module.DEFAULT_SHELFMARK_FILTER_REQUESTABLE = True
     shelfmark_service_module.DEFAULT_SHELFMARK_SERIES_FILTER = "all"
+    shelfmark_service_module.SHELFMARK_REQUEST_FILTER_OPTIONS = (
+        ("requestable", "Requestable only", True),
+        ("has_cover", "Has cover", True),
+        ("english_only", "English only", True),
+        ("hide_owned", "Hide owned books", True),
+        ("hide_partial", "Hide partial books", True),
+        ("hide_compilations", "Hide compilations / omnibuses / bind-ups", True),
+        ("prefer_primary", "Prefer primary editions", True),
+        ("hide_audiobook_only", "Hide audiobook-only", True),
+        ("suppress_non_book", "Suppress non-book results", True),
+        ("next_missing_only", "Next missing only", False),
+        ("well_rated_only", "Well rated only", False),
+        ("popular_only", "Popular only", False),
+        ("new_releases_only", "New releases only", False),
+        ("standalone_only", "Standalone only", False),
+        ("first_in_series_only", "First in series only", False),
+    )
     shelfmark_service_module.ShelfmarkIntegrationError = RuntimeError
     shelfmark_service_module.fetch_shelfmark_detail = lambda *args, **kwargs: None
     shelfmark_service_module.get_shelfmark_preferred_release_settings = lambda: types.SimpleNamespace(to_template_dict=lambda: {})
     shelfmark_service_module.lookup_visible_library_matches = lambda ids: {}
+    shelfmark_service_module.normalize_request_filter_state = (
+        lambda values=None, **overrides: {
+            **{
+                key: default
+                for key, _label, default in shelfmark_service_module.SHELFMARK_REQUEST_FILTER_OPTIONS
+            },
+            **(values or {}),
+            **{key: value for key, value in overrides.items() if value is not None},
+        }
+    )
     shelfmark_service_module.result_matches_shelfmark_filters = lambda *args, **kwargs: True
     shelfmark_service_module.search_request_shelfmark_results = lambda *args, **kwargs: types.SimpleNamespace(to_template_dict=lambda: {})
     shelfmark_service_module.search_shelfmark_results = lambda *args, **kwargs: types.SimpleNamespace(to_template_dict=lambda: {})

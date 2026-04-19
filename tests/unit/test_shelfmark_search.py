@@ -667,6 +667,33 @@ def test_resolve_shelfmark_authors_strips_audio_contributor_names_from_fallback_
     assert shelfmark_module._resolve_shelfmark_authors(book) == ["Peter V. Brett"]
 
 
+def test_resolve_shelfmark_authors_prefers_non_audio_edition_contributors_over_audio_narrators(shelfmark_module):
+    book = {
+        "authors": ["Peter V. Brett", "Colin Mace"],
+        "default_ebook_edition_id": "ebook-ed",
+        "default_audio_edition_id": "audio-ed",
+        "default_ebook_edition": {
+            "id": "ebook-ed",
+            "edition_format": "Ebook",
+            "reading_format": {"format": "ebook"},
+            "contributions": [
+                {"contribution": "Author", "author": {"name": "Peter V. Brett"}},
+            ],
+        },
+        "default_audio_edition": {
+            "id": "audio-ed",
+            "edition_format": "Audiobook",
+            "reading_format": {"format": "audiobook"},
+            "audio_seconds": 41234,
+            "contributions": [
+                {"contribution": "Narrator", "author": {"name": "Colin Mace"}},
+            ],
+        },
+    }
+
+    assert shelfmark_module._resolve_shelfmark_authors(book) == ["Peter V. Brett"]
+
+
 def test_build_result_view_capitalizes_moods_and_content_warnings(shelfmark_module):
     result = shelfmark_module.build_shelfmark_result_view(
         {
@@ -918,8 +945,8 @@ def test_series_context_flags_next_missing_and_owned_series(shelfmark_module):
     assert contexts[1] is not None
     assert contexts[1].is_continuation is True
     assert contexts[1].is_next_missing is False
-    assert contexts[1].badges[0]["label"] == "Continue series"
-    assert contexts[1].detail_value == "Continue series · 3 books owned in this series · Owned through 1"
+    assert contexts[1].badges[0]["label"] == "Owned series"
+    assert contexts[1].detail_value == "Owned series · 3 books owned in this series · Owned through 1"
     assert contexts[2] is None
 
 
@@ -3787,3 +3814,199 @@ def test_request_search_suppresses_probable_non_book_entities(shelfmark_module, 
     assert section.filtered_non_books == 1
     assert section.total_available == 1
     assert section.raw_total_available == 2
+
+
+def test_request_search_tracks_extended_suppression_breakdown(shelfmark_module, monkeypatch):
+    shelfmark_module.config.config_shelfmark_search = True
+    shelfmark_module.config.config_shelfmark_url = "https://shelfmark.example.com"
+    shelfmark_module.config.config_shelfmark_browser_url = "https://library.example.com/shelfmark"
+    monkeypatch.setattr(shelfmark_module, "_normalize_page_size", lambda value: int(value))
+
+    class DummyClient:
+        def __init__(self, config_data):
+            self.config = config_data
+
+    monkeypatch.setattr(shelfmark_module, "ShelfmarkClient", DummyClient)
+
+    raw_books = (
+        {"provider": "hardcover", "provider_id": "good", "title": "Visible", "authors": ["Author"]},
+        {"provider": "hardcover", "provider_id": "owned", "title": "Owned", "authors": ["Author"]},
+        {"provider": "hardcover", "provider_id": "coverless", "title": "Coverless", "authors": ["Author"]},
+        {
+            "provider": "hardcover",
+            "provider_id": "audio",
+            "title": "Audio Original",
+            "authors": ["Author"],
+            "default_audio_edition_id": "audio-ed",
+            "default_audio_edition": {
+                "id": "audio-ed",
+                "edition_format": "Audiobook",
+                "reading_format": {"format": "audiobook"},
+                "audio_seconds": 7200,
+            },
+        },
+        {
+            "provider": "hardcover",
+            "provider_id": "foreign",
+            "title": "Foreign",
+            "authors": ["Author"],
+            "language": {"code3": "spa"},
+        },
+        {"provider": "hardcover", "provider_id": "partial", "title": "Preview Sampler", "authors": ["Author"]},
+        {"provider": "hardcover", "provider_id": "omnibus", "title": "Collected Stories Omnibus", "authors": ["Author"]},
+        {
+            "provider": "hardcover",
+            "provider_id": "non-primary",
+            "title": "Alternate Edition",
+            "authors": ["Author"],
+            "edition_id": "edition-2",
+            "edition": {"id": "edition-2", "edition_format": "Ebook", "reading_format": {"format": "ebook"}},
+            "default_ebook_edition_id": "edition-1",
+            "default_ebook_edition": {"id": "edition-1", "edition_format": "Ebook", "reading_format": {"format": "ebook"}},
+        },
+        {"provider": "hardcover", "provider_id": "blocked", "title": "Blocked", "authors": ["Author"]},
+        {"provider": "hardcover", "provider_id": "author-1", "title": "Brandon Sanderson", "authors": ["Brandon Sanderson"], "entity_type": "author"},
+    )
+
+    monkeypatch.setattr(
+        shelfmark_module,
+        "_fetch_shelfmark_search_page",
+        lambda client, query, *, page, page_size, sort: shelfmark_module.ShelfmarkSearchResponse(
+            books=raw_books,
+            page=1,
+            total_found=len(raw_books),
+            has_more=False,
+        ),
+    )
+
+    def fake_build_views(books, **kwargs):
+        results = []
+        for book in books:
+            result = _make_request_result(
+                shelfmark_module,
+                book["provider_id"],
+                title=book["title"],
+                already_in_library=book["provider_id"] == "owned",
+                has_cover=book["provider_id"] != "coverless",
+            )
+            if book["provider_id"] == "blocked":
+                result = shelfmark_module.replace(
+                    result,
+                    hardcover_id=None,
+                    request_payload=None,
+                )
+            results.append(result)
+        return tuple(results), tuple(books)
+
+    monkeypatch.setattr(shelfmark_module, "_build_search_result_views", fake_build_views)
+
+    section = shelfmark_module.search_request_shelfmark_results(
+        "painted man",
+        detail_url_builder=lambda book: f"/request/detail/{book['provider']}/{book['provider_id']}",
+        page=1,
+        page_size=12,
+        sort="popularity",
+    )
+
+    assert [result.provider_id for result in section.results] == ["good"]
+    assert section.filtered_non_books == 1
+    assert section.filtered_owned == 1
+    assert section.filtered_coverless == 1
+    assert section.filtered_audiobook_only == 1
+    assert section.filtered_non_english == 1
+    assert section.filtered_partial == 1
+    assert section.filtered_compilations == 1
+    assert section.filtered_non_primary == 1
+    assert section.filtered_unrequestable == 1
+    assert [item["key"] for item in section.suppression_counts] == [
+        "non_book",
+        "owned",
+        "coverless",
+        "audiobook_only",
+        "partial",
+        "compilation",
+        "non_english",
+        "unrequestable",
+        "non_primary",
+    ]
+
+
+def test_request_suppression_counts_include_active_focus_filters(shelfmark_module):
+    counts = {
+        "next_missing_only": 3,
+        "well_rated_only": 4,
+        "popular_only": 5,
+        "new_releases_only": 6,
+        "standalone_only": 7,
+        "first_in_series_only": 8,
+    }
+    filters = shelfmark_module.normalize_request_filter_state(
+        next_missing_only=True,
+        well_rated_only=True,
+        popular_only=True,
+        new_releases_only=True,
+        standalone_only=True,
+        first_in_series_only=True,
+    )
+
+    items = shelfmark_module._build_request_suppression_counts(counts, filters)
+
+    assert [item["key"] for item in items] == [
+        "next_missing_only",
+        "well_rated_only",
+        "popular_only",
+        "new_releases_only",
+        "standalone_only",
+        "first_in_series_only",
+    ]
+
+
+def test_build_request_badges_include_owned_series_and_complete_metadata(shelfmark_module):
+    result = shelfmark_module.build_shelfmark_result_view(
+        {
+            "provider": "hardcover",
+            "provider_id": "900",
+            "title": "Abaddon's Gate",
+            "authors": ["James S. A. Corey"],
+            "description": "<p>A fully enriched request result.</p>",
+            "cover_url": "/api/covers/hardcover_900?url=x",
+            "rating": 4.4,
+            "ratings_count": 1200,
+            "users_count": 8500,
+            "pages": 528,
+            "series_name": "The Expanse",
+            "series_position": 1,
+            "identifiers": {"hardcover-id": "900"},
+        },
+        library_match=None,
+        detail_url="/request/detail/hardcover/900",
+        shelfmark_browser_base_url="https://library.example.com/shelfmark",
+    )
+    contexts = shelfmark_module.build_shelfmark_series_membership_contexts(
+        (result,),
+        {
+            "the expanse": shelfmark_module.ShelfmarkOwnedSeries(
+                key="the expanse",
+                series_name="The Expanse",
+                book_count=2,
+                owned_positions=(1.0, 3.0),
+                max_position=3.0,
+                contiguous_position=1,
+            )
+        },
+    )[0]
+    result = shelfmark_module.apply_primary_series_context(
+        shelfmark_module.replace(result, series_contexts=contexts),
+    )
+    quality_state = shelfmark_module.build_shelfmark_quality_state(result)
+    result = shelfmark_module.replace(result, quality_state=quality_state)
+
+    badges = shelfmark_module._build_request_badges(result)
+    labels = [badge["label"] for badge in badges]
+
+    assert "Owned series" in labels
+    assert "Next missing" not in labels
+    assert "Well rated" in labels
+    assert "Popular" in labels
+    assert "Complete metadata" in labels
+    assert "Continue series" not in labels

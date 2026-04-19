@@ -33,6 +33,19 @@ DEFAULT_SHELFMARK_PREFERRED_RELEASE_CONTENT_TYPE = "ebook"
 DEFAULT_SHELFMARK_PREFERRED_RELEASE_RANKING = "seeders_desc"
 DEFAULT_SHELFMARK_FILTER_REQUESTABLE = True
 DEFAULT_SHELFMARK_FILTER_HAS_COVER = True
+DEFAULT_SHELFMARK_FILTER_ENGLISH_ONLY = True
+DEFAULT_SHELFMARK_FILTER_HIDE_OWNED = True
+DEFAULT_SHELFMARK_FILTER_HIDE_PARTIAL = True
+DEFAULT_SHELFMARK_FILTER_HIDE_COMPILATIONS = True
+DEFAULT_SHELFMARK_FILTER_PREFER_PRIMARY = True
+DEFAULT_SHELFMARK_FILTER_HIDE_AUDIOBOOK_ONLY = True
+DEFAULT_SHELFMARK_FILTER_SUPPRESS_NON_BOOK = True
+DEFAULT_SHELFMARK_FILTER_NEXT_MISSING_ONLY = False
+DEFAULT_SHELFMARK_FILTER_WELL_RATED_ONLY = False
+DEFAULT_SHELFMARK_FILTER_POPULAR_ONLY = False
+DEFAULT_SHELFMARK_FILTER_NEW_RELEASES_ONLY = False
+DEFAULT_SHELFMARK_FILTER_STANDALONE_ONLY = False
+DEFAULT_SHELFMARK_FILTER_FIRST_IN_SERIES_ONLY = False
 DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE = False
 DEFAULT_SHELFMARK_SERIES_FILTER = "all"
 DEFAULT_SHELFMARK_TRIAGE_FILTER = "all"
@@ -53,6 +66,27 @@ SHELFMARK_TRIAGE_FILTER_OPTIONS = (
     ("all", "All shown"),
     ("strong", "Strong candidates"),
 )
+SHELFMARK_REQUEST_FILTER_OPTIONS = (
+    ("requestable", "Requestable only", DEFAULT_SHELFMARK_FILTER_REQUESTABLE),
+    ("has_cover", "Has cover", DEFAULT_SHELFMARK_FILTER_HAS_COVER),
+    ("english_only", "English only", DEFAULT_SHELFMARK_FILTER_ENGLISH_ONLY),
+    ("hide_owned", "Hide owned books", DEFAULT_SHELFMARK_FILTER_HIDE_OWNED),
+    ("hide_partial", "Hide partial books", DEFAULT_SHELFMARK_FILTER_HIDE_PARTIAL),
+    ("hide_compilations", "Hide compilations / omnibuses / bind-ups", DEFAULT_SHELFMARK_FILTER_HIDE_COMPILATIONS),
+    ("prefer_primary", "Prefer primary editions", DEFAULT_SHELFMARK_FILTER_PREFER_PRIMARY),
+    ("hide_audiobook_only", "Hide audiobook-only", DEFAULT_SHELFMARK_FILTER_HIDE_AUDIOBOOK_ONLY),
+    ("suppress_non_book", "Suppress non-book results", DEFAULT_SHELFMARK_FILTER_SUPPRESS_NON_BOOK),
+    ("next_missing_only", "Next missing only", DEFAULT_SHELFMARK_FILTER_NEXT_MISSING_ONLY),
+    ("well_rated_only", "Well rated only", DEFAULT_SHELFMARK_FILTER_WELL_RATED_ONLY),
+    ("popular_only", "Popular only", DEFAULT_SHELFMARK_FILTER_POPULAR_ONLY),
+    ("new_releases_only", "New releases only", DEFAULT_SHELFMARK_FILTER_NEW_RELEASES_ONLY),
+    ("standalone_only", "Standalone only", DEFAULT_SHELFMARK_FILTER_STANDALONE_ONLY),
+    ("first_in_series_only", "First in series only", DEFAULT_SHELFMARK_FILTER_FIRST_IN_SERIES_ONLY),
+)
+SHELFMARK_REQUEST_FILTER_DEFAULTS = {
+    key: default
+    for key, _, default in SHELFMARK_REQUEST_FILTER_OPTIONS
+}
 SHELFMARK_METADATA_PROVIDER = "hardcover"
 SHELFMARK_CONTENT_TYPE = "ebook"
 SHELFMARK_REQUEST_MODE = "request_book"
@@ -451,10 +485,32 @@ class ShelfmarkSearchSection:
     filtered_non_books: int = 0
     filtered_owned: int = 0
     filtered_coverless: int = 0
+    filtered_audiobook_only: int = 0
+    filtered_partial: int = 0
+    filtered_compilations: int = 0
+    filtered_non_english: int = 0
+    filtered_unrequestable: int = 0
+    filtered_non_primary: int = 0
     filter_requestable: bool = DEFAULT_SHELFMARK_FILTER_REQUESTABLE
     filter_has_cover: bool = DEFAULT_SHELFMARK_FILTER_HAS_COVER
+    filter_english_only: bool = DEFAULT_SHELFMARK_FILTER_ENGLISH_ONLY
+    filter_hide_owned: bool = DEFAULT_SHELFMARK_FILTER_HIDE_OWNED
+    filter_hide_partial: bool = DEFAULT_SHELFMARK_FILTER_HIDE_PARTIAL
+    filter_hide_compilations: bool = DEFAULT_SHELFMARK_FILTER_HIDE_COMPILATIONS
+    filter_prefer_primary: bool = DEFAULT_SHELFMARK_FILTER_PREFER_PRIMARY
+    filter_hide_audiobook_only: bool = DEFAULT_SHELFMARK_FILTER_HIDE_AUDIOBOOK_ONLY
+    filter_suppress_non_book: bool = DEFAULT_SHELFMARK_FILTER_SUPPRESS_NON_BOOK
+    filter_next_missing_only: bool = DEFAULT_SHELFMARK_FILTER_NEXT_MISSING_ONLY
+    filter_well_rated_only: bool = DEFAULT_SHELFMARK_FILTER_WELL_RATED_ONLY
+    filter_popular_only: bool = DEFAULT_SHELFMARK_FILTER_POPULAR_ONLY
+    filter_new_releases_only: bool = DEFAULT_SHELFMARK_FILTER_NEW_RELEASES_ONLY
+    filter_standalone_only: bool = DEFAULT_SHELFMARK_FILTER_STANDALONE_ONLY
+    filter_first_in_series_only: bool = DEFAULT_SHELFMARK_FILTER_FIRST_IN_SERIES_ONLY
     filter_high_confidence: bool = DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE
     filters_active: bool = False
+    request_filter_state: dict[str, bool] = field(default_factory=dict)
+    request_filter_options: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    suppression_counts: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     open_search_url: str | None = None
     query_label: str | None = None
     context_hint: str | None = None
@@ -494,10 +550,32 @@ class ShelfmarkSearchSection:
             "filtered_non_books": self.filtered_non_books,
             "filtered_owned": self.filtered_owned,
             "filtered_coverless": self.filtered_coverless,
+            "filtered_audiobook_only": self.filtered_audiobook_only,
+            "filtered_partial": self.filtered_partial,
+            "filtered_compilations": self.filtered_compilations,
+            "filtered_non_english": self.filtered_non_english,
+            "filtered_unrequestable": self.filtered_unrequestable,
+            "filtered_non_primary": self.filtered_non_primary,
             "filter_requestable": self.filter_requestable,
             "filter_has_cover": self.filter_has_cover,
+            "filter_english_only": self.filter_english_only,
+            "filter_hide_owned": self.filter_hide_owned,
+            "filter_hide_partial": self.filter_hide_partial,
+            "filter_hide_compilations": self.filter_hide_compilations,
+            "filter_prefer_primary": self.filter_prefer_primary,
+            "filter_hide_audiobook_only": self.filter_hide_audiobook_only,
+            "filter_suppress_non_book": self.filter_suppress_non_book,
+            "filter_next_missing_only": self.filter_next_missing_only,
+            "filter_well_rated_only": self.filter_well_rated_only,
+            "filter_popular_only": self.filter_popular_only,
+            "filter_new_releases_only": self.filter_new_releases_only,
+            "filter_standalone_only": self.filter_standalone_only,
+            "filter_first_in_series_only": self.filter_first_in_series_only,
             "filter_high_confidence": self.filter_high_confidence,
             "filters_active": self.filters_active,
+            "request_filter_state": dict(self.request_filter_state),
+            "request_filter_options": [dict(option) for option in self.request_filter_options],
+            "suppression_counts": [dict(item) for item in self.suppression_counts],
             "open_search_url": self.open_search_url,
             "query_label": self.query_label,
             "context_hint": self.context_hint,
@@ -914,6 +992,67 @@ def get_shelfmark_triage_filter_options() -> tuple[dict[str, str], ...]:
     )
 
 
+def normalize_request_filter_state(
+    values: Mapping[str, Any] | None = None,
+    **overrides: Any,
+) -> dict[str, bool]:
+    state = dict(SHELFMARK_REQUEST_FILTER_DEFAULTS)
+    if values:
+        for key in SHELFMARK_REQUEST_FILTER_DEFAULTS:
+            if key in values and values[key] is not None:
+                value = values[key]
+                state[key] = _normalize_flag(value) if isinstance(value, str) else bool(value)
+    for key, value in overrides.items():
+        if key in state and value is not None:
+            state[key] = _normalize_flag(value) if isinstance(value, str) else bool(value)
+    return state
+
+
+def get_request_filter_options(
+    state: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], ...]:
+    normalized_state = normalize_request_filter_state(state)
+    return tuple(
+        {
+            "key": key,
+            "label": _(label),
+            "default": default,
+            "checked": bool(normalized_state.get(key, default)),
+        }
+        for key, label, default in SHELFMARK_REQUEST_FILTER_OPTIONS
+    )
+
+
+def _build_request_suppression_counts(
+    counts: Mapping[str, int],
+    filters: Mapping[str, bool],
+) -> tuple[dict[str, Any], ...]:
+    definitions = (
+        ("non_book", lambda state: state.get("suppress_non_book"), _("%(count)s non-book results suppressed")),
+        ("owned", lambda state: state.get("hide_owned") or state.get("requestable"), _("%(count)s owned books hidden")),
+        ("coverless", lambda state: state.get("has_cover"), _("%(count)s coverless books hidden")),
+        ("audiobook_only", lambda state: state.get("hide_audiobook_only"), _("%(count)s audiobook-only results hidden")),
+        ("partial", lambda state: state.get("hide_partial"), _("%(count)s partial books hidden")),
+        ("compilation", lambda state: state.get("hide_compilations"), _("%(count)s omnibus or compilation results hidden")),
+        ("non_english", lambda state: state.get("english_only"), _("%(count)s non-English results hidden")),
+        ("unrequestable", lambda state: state.get("requestable"), _("%(count)s unrequestable books hidden")),
+        ("non_primary", lambda state: state.get("prefer_primary"), _("%(count)s non-primary editions hidden")),
+        ("next_missing_only", lambda state: state.get("next_missing_only"), _("%(count)s non-next-missing books hidden")),
+        ("well_rated_only", lambda state: state.get("well_rated_only"), _("%(count)s lower-rated books hidden")),
+        ("popular_only", lambda state: state.get("popular_only"), _("%(count)s less popular books hidden")),
+        ("new_releases_only", lambda state: state.get("new_releases_only"), _("%(count)s older books hidden")),
+        ("standalone_only", lambda state: state.get("standalone_only"), _("%(count)s series books hidden")),
+        ("first_in_series_only", lambda state: state.get("first_in_series_only"), _("%(count)s non-first-in-series books hidden")),
+    )
+    items: list[dict[str, Any]] = []
+    for key, predicate, message in definitions:
+        count = int(counts.get(key, 0) or 0)
+        if count <= 0 or not predicate(filters):
+            continue
+        items.append({"key": key, "count": count, "label": message % {"count": count}})
+    return tuple(items)
+
+
 def _normalize_page_size(value: Any) -> int:
     normalized = _normalize_int(value) or DEFAULT_SHELFMARK_LIMIT
     if normalized in SHELFMARK_PAGE_SIZE_OPTIONS:
@@ -1251,8 +1390,6 @@ def _build_series_context_badges(
 ) -> tuple[dict[str, str], ...]:
     if is_next_missing:
         return ({"label": _("Next missing"), "badge_class": "label-primary"},)
-    if is_continuation:
-        return ({"label": _("Continue series"), "badge_class": "label-info"},)
     if matched:
         return ({"label": _("Owned series"), "badge_class": "label-default"},)
     return tuple()
@@ -1289,8 +1426,6 @@ def _build_series_context_detail_value(context: ShelfmarkSeriesContext) -> str |
     parts: list[str] = []
     if context.is_next_missing:
         parts.append(_("Next missing"))
-    elif context.is_continuation:
-        parts.append(_("Continue series"))
     else:
         parts.append(_("Owned series"))
     parts.extend(context.facts)
@@ -1540,16 +1675,21 @@ def _build_request_badges(result: ShelfmarkResultView) -> tuple[dict[str, str], 
         seen.add(label_key)
         badges.append({"label": normalized_label, "badge_class": badge_class})
 
-    context = result.best_series_context or result.series_context
-    if context and context.badges:
-        for badge in context.badges:
-            add(badge.get("label", ""), badge.get("badge_class", "label-default"))
+    contexts = result.series_contexts or (
+        (result.best_series_context,) if result.best_series_context is not None else ()
+    ) or ((result.series_context,) if result.series_context is not None else ())
+    for context in contexts:
+        if context and context.badges:
+            for badge in context.badges:
+                add(badge.get("label", ""), badge.get("badge_class", "label-default"))
 
     quality = result.quality_state
     if quality and quality.rating_signal:
         add(_("Well rated"), "label-success")
     if quality and quality.popularity_signal:
         add(_("Popular"), "label-info")
+    if quality and quality.metadata_complete:
+        add(_("Complete metadata"), "label-default")
     if _is_recent_release_result(result):
         add(_("New release"), "label-warning")
 
@@ -2363,8 +2503,13 @@ def _build_search_result_views(
     shelfmark_browser_base_url: str,
     enrich_with_details: bool = False,
     detail_client: "ShelfmarkClient" | None = None,
+    exclude_audiobooks: bool = True,
 ) -> tuple[tuple[ShelfmarkResultView, ...], tuple[Mapping[str, Any], ...]]:
-    page_books = tuple(book for book in books if not _is_audiobook_result(book))
+    page_books = (
+        tuple(book for book in books if not _is_audiobook_result(book))
+        if exclude_audiobooks
+        else tuple(books)
+    )
     if enrich_with_details and detail_client is not None:
         page_books = _enrich_books_with_detail_covers(detail_client, page_books)
 
@@ -2638,15 +2783,14 @@ def _filter_request_candidate_books(
     books: Sequence[Mapping[str, Any]],
     *,
     query: str,
+    suppress_non_book: bool,
 ) -> tuple[tuple[Mapping[str, Any], ...], int]:
     filtered_books: list[Mapping[str, Any]] = []
     filtered_non_books = 0
     seen_keys: set[tuple[str, str]] = set()
 
     for book in books:
-        if _is_audiobook_result(book):
-            continue
-        if _is_probable_non_book_request_result(book, query=query):
+        if suppress_non_book and _is_probable_non_book_request_result(book, query=query):
             filtered_non_books += 1
             continue
         provider = _normalize_text(book.get("provider")).casefold()
@@ -2678,6 +2822,326 @@ def _count_hidden_request_results(
             filtered_coverless += 1
 
     return filtered_owned, filtered_coverless
+
+
+def _iter_request_language_values(book: Mapping[str, Any]) -> tuple[str, ...]:
+    values: list[str] = []
+
+    def add_language(value: Any) -> None:
+        if isinstance(value, Mapping):
+            for key in ("code3", "code2", "language", "name"):
+                normalized = _normalize_text(value.get(key))
+                if normalized:
+                    values.append(normalized.casefold())
+        else:
+            normalized = _normalize_text(value)
+            if normalized:
+                values.append(normalized.casefold())
+
+    for record in (
+        book,
+        _resolve_display_edition(book),
+        _select_edition_by_kind(book, "ebook"),
+        _select_edition_by_kind(book, "physical"),
+    ):
+        if not isinstance(record, Mapping):
+            continue
+        add_language(record.get("language"))
+        add_language(record.get("language_code"))
+        add_language(record.get("language_name"))
+
+    display_value = _lookup_display_field_value(book, "Language", "Languages")
+    if display_value:
+        values.append(display_value.casefold())
+    return tuple(values)
+
+
+def _is_request_result_english(book: Mapping[str, Any]) -> bool:
+    language_values = _iter_request_language_values(book)
+    if not language_values:
+        return True
+    return any(
+        value in {"eng", "en", "english"}
+        or value.startswith("eng ")
+        or value.endswith(" english")
+        or "english" in value
+        for value in language_values
+    )
+
+
+def _iter_request_text_values(book: Mapping[str, Any]) -> tuple[str, ...]:
+    values: list[str] = []
+
+    def add(value: Any) -> None:
+        normalized = _normalize_text(value)
+        if normalized:
+            values.append(normalized.casefold())
+
+    for record in (
+        book,
+        _resolve_display_edition(book),
+        _select_edition_by_kind(book, "ebook"),
+        _select_edition_by_kind(book, "physical"),
+        _select_edition_by_kind(book, "audio"),
+    ):
+        if not isinstance(record, Mapping):
+            continue
+        for key in (
+            "title",
+            "subtitle",
+            "edition_format",
+            "physical_format",
+            "media_type",
+            "content_type",
+            "format",
+            "object_type",
+        ):
+            add(record.get(key))
+        reading_format = record.get("reading_format")
+        if isinstance(reading_format, Mapping):
+            add(reading_format.get("format"))
+
+    for key in ("title", "subtitle", "description"):
+        add(book.get(key))
+
+    for label in ("Format", "Edition format", "Media", "Medium"):
+        display_value = _lookup_display_field_value(book, label)
+        if display_value:
+            add(display_value)
+    return tuple(values)
+
+
+_REQUEST_PARTIAL_HINTS = (
+    "excerpt",
+    "preview",
+    "sample",
+    "sampler",
+    "teaser",
+    "extract",
+    "serial",
+)
+
+
+def _is_partial_request_result(book: Mapping[str, Any]) -> bool:
+    values = _iter_request_text_values(book)
+    return any(
+        any(hint in value for hint in _REQUEST_PARTIAL_HINTS)
+        for value in values
+    )
+
+
+_REQUEST_COMPILATION_HINTS = (
+    "omnibus",
+    "bind-up",
+    "bind up",
+    "boxed set",
+    "box set",
+    "collection",
+    "collected",
+    "anthology",
+    "anthologies",
+    "compendium",
+    "combined edition",
+    "complete stories",
+    "complete novels",
+    "two-in-one",
+    "three-in-one",
+    "all-in-one",
+)
+
+
+def _is_compilation_request_result(book: Mapping[str, Any]) -> bool:
+    values = _iter_request_text_values(book)
+    return any(
+        any(hint in value for hint in _REQUEST_COMPILATION_HINTS)
+        for value in values
+    )
+
+
+def _is_non_primary_request_result(book: Mapping[str, Any]) -> bool:
+    current_ids = {
+        _normalize_text(book.get("edition_id")),
+    }
+    inline_edition = book.get("edition")
+    if isinstance(inline_edition, Mapping):
+        current_ids.add(_normalize_text(inline_edition.get("id")))
+    current_ids.discard("")
+    current_ids.discard(None)
+    if not current_ids:
+        return False
+
+    preferred_ids: set[str] = set()
+    for key in (
+        "default_ebook_edition_id",
+        "default_physical_edition_id",
+        "default_cover_edition_id",
+    ):
+        value = _normalize_text(book.get(key))
+        if value:
+            preferred_ids.add(value)
+    for key in (
+        "default_ebook_edition",
+        "default_physical_edition",
+        "default_cover_edition",
+    ):
+        edition = book.get(key)
+        if isinstance(edition, Mapping) and not _is_audio_edition(edition):
+            edition_id = _normalize_text(edition.get("id"))
+            if edition_id:
+                preferred_ids.add(edition_id)
+
+    if not preferred_ids:
+        return False
+    return not any(current_id in preferred_ids for current_id in current_ids)
+
+
+def _is_audio_only_request_result(book: Mapping[str, Any]) -> bool:
+    if _select_edition_by_kind(book, "ebook") is not None:
+        return False
+    if _select_edition_by_kind(book, "physical") is not None:
+        return False
+    primary_content_type = _resolve_primary_content_type(book)
+    if primary_content_type == "audio":
+        return True
+    return _is_audiobook_result(book)
+
+
+def _is_first_in_series_result(result: ShelfmarkResultView) -> bool:
+    if result.series_position is None:
+        return False
+    return abs(float(result.series_position) - 1.0) < 0.0001
+
+
+def _result_matches_request_filters(
+    result: ShelfmarkResultView,
+    raw_book: Mapping[str, Any],
+    *,
+    request_filters: Mapping[str, bool],
+) -> tuple[bool, tuple[str, ...]]:
+    reasons: list[str] = []
+
+    if request_filters.get("requestable"):
+        if result.already_in_library:
+            reasons.append("owned")
+        elif not result.hardcover_id or not result.request_payload:
+            reasons.append("unrequestable")
+    elif request_filters.get("hide_owned") and result.already_in_library:
+        reasons.append("owned")
+
+    if request_filters.get("has_cover") and not result.cover_url:
+        reasons.append("coverless")
+    if request_filters.get("hide_audiobook_only") and _is_audio_only_request_result(raw_book):
+        reasons.append("audiobook_only")
+    if request_filters.get("english_only") and not _is_request_result_english(raw_book):
+        reasons.append("non_english")
+    if request_filters.get("hide_partial") and _is_partial_request_result(raw_book):
+        reasons.append("partial")
+    if request_filters.get("hide_compilations") and _is_compilation_request_result(raw_book):
+        reasons.append("compilation")
+    if request_filters.get("prefer_primary") and _is_non_primary_request_result(raw_book):
+        reasons.append("non_primary")
+    if request_filters.get("next_missing_only") and not (
+        result.best_series_context and result.best_series_context.is_next_missing
+    ):
+        reasons.append("next_missing_only")
+    if request_filters.get("well_rated_only") and not (
+        result.quality_state and result.quality_state.rating_signal
+    ):
+        reasons.append("well_rated_only")
+    if request_filters.get("popular_only") and not (
+        result.quality_state and result.quality_state.popularity_signal
+    ):
+        reasons.append("popular_only")
+    if request_filters.get("new_releases_only") and not _is_recent_release_result(result):
+        reasons.append("new_releases_only")
+    if request_filters.get("standalone_only") and (
+        result.series_memberships or result.series_display
+    ):
+        reasons.append("standalone_only")
+    if request_filters.get("first_in_series_only") and not _is_first_in_series_result(result):
+        reasons.append("first_in_series_only")
+
+    return (not reasons), tuple(reasons)
+
+
+def _filter_request_results(
+    results: Sequence[ShelfmarkResultView],
+    raw_books: Sequence[Mapping[str, Any]],
+    *,
+    request_filters: Mapping[str, bool],
+    filtered_non_books: int = 0,
+) -> tuple[tuple[ShelfmarkResultView, ...], tuple[Mapping[str, Any], ...], dict[str, int]]:
+    visible_results: list[ShelfmarkResultView] = []
+    visible_raw_books: list[Mapping[str, Any]] = []
+    counts = {
+        "non_book": int(filtered_non_books or 0),
+        "owned": 0,
+        "coverless": 0,
+        "audiobook_only": 0,
+        "partial": 0,
+        "compilation": 0,
+        "non_english": 0,
+        "unrequestable": 0,
+        "non_primary": 0,
+        "next_missing_only": 0,
+        "well_rated_only": 0,
+        "popular_only": 0,
+        "new_releases_only": 0,
+        "standalone_only": 0,
+        "first_in_series_only": 0,
+    }
+
+    countable_keys = set(counts.keys())
+
+    for result, raw_book in zip(results, raw_books):
+        is_visible, reasons = _result_matches_request_filters(
+            result,
+            raw_book,
+            request_filters=request_filters,
+        )
+        for reason in reasons:
+            if reason in countable_keys:
+                counts[reason] += 1
+        if not is_visible:
+            continue
+        visible_results.append(result)
+        visible_raw_books.append(raw_book)
+
+    return tuple(visible_results), tuple(visible_raw_books), counts
+
+
+def _refine_request_page_results(
+    client: "ShelfmarkClient",
+    raw_books: Sequence[Mapping[str, Any]],
+    *,
+    detail_url_builder: Callable[[Mapping[str, Any]], str | None],
+) -> tuple[ShelfmarkResultView, ...]:
+    if not raw_books:
+        return tuple()
+    if not hasattr(client, "fetch_book"):
+        results, _ = _build_search_result_views(
+            raw_books,
+            detail_url_builder=detail_url_builder,
+            shelfmark_browser_base_url=client.config.browser_base_url,
+            exclude_audiobooks=False,
+        )
+        return results
+    if not any(_needs_detail_enrichment(book) for book in raw_books):
+        results, _ = _build_search_result_views(
+            raw_books,
+            detail_url_builder=detail_url_builder,
+            shelfmark_browser_base_url=client.config.browser_base_url,
+            exclude_audiobooks=False,
+        )
+        return results
+    refined_books = _enrich_books_with_detail_covers(client, raw_books)
+    results, _ = _build_search_result_views(
+        refined_books,
+        detail_url_builder=detail_url_builder,
+        shelfmark_browser_base_url=client.config.browser_base_url,
+        exclude_audiobooks=False,
+    )
+    return results
 
 
 def _filter_visible_results(
@@ -3192,8 +3656,9 @@ def search_request_shelfmark_results(
     page: int = DEFAULT_SHELFMARK_PAGE,
     page_size: int = DEFAULT_SHELFMARK_LIMIT,
     sort: str = DEFAULT_SHELFMARK_SORT,
-    filter_requestable: bool = True,
-    filter_has_cover: bool = True,
+    filter_requestable: bool | None = None,
+    filter_has_cover: bool | None = None,
+    request_filters: Mapping[str, Any] | None = None,
     query_label: str | None = None,
     context_hint: str | None = None,
     empty_message: str | None = None,
@@ -3202,13 +3667,22 @@ def search_request_shelfmark_results(
     requested_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(page) or DEFAULT_SHELFMARK_PAGE)
     requested_page_size = _normalize_page_size(page_size)
     selected_sort = _normalize_sort(sort)
-    requestable_only = bool(filter_requestable)
-    has_cover_only = bool(filter_has_cover)
+    request_filter_state = normalize_request_filter_state(
+        request_filters,
+        requestable=filter_requestable,
+        has_cover=filter_has_cover,
+    )
+    requestable_only = bool(request_filter_state.get("requestable"))
+    has_cover_only = bool(request_filter_state.get("has_cover"))
     filters_active = (
-        requestable_only != DEFAULT_SHELFMARK_FILTER_REQUESTABLE
-        or has_cover_only != DEFAULT_SHELFMARK_FILTER_HAS_COVER
+        any(
+            bool(request_filter_state.get(key, default)) != bool(default)
+            for key, _, default in SHELFMARK_REQUEST_FILTER_OPTIONS
+        )
+        or selected_sort != DEFAULT_SHELFMARK_SORT
     )
     sort_options = get_shelfmark_sort_options()
+    request_filter_options = get_request_filter_options(request_filter_state)
     config_data = get_shelfmark_client_config()
     if not config_data.enabled:
         return ShelfmarkSearchSection(enabled=False, available=False, query=normalized_query or "")
@@ -3233,9 +3707,31 @@ def search_request_shelfmark_results(
             total_available=0,
             raw_total_available=0,
             page_result_count=0,
+            filtered_audiobook_only=0,
+            filtered_partial=0,
+            filtered_compilations=0,
+            filtered_non_english=0,
+            filtered_unrequestable=0,
+            filtered_non_primary=0,
             filter_requestable=requestable_only,
             filter_has_cover=has_cover_only,
+            filter_english_only=bool(request_filter_state.get("english_only")),
+            filter_hide_owned=bool(request_filter_state.get("hide_owned")),
+            filter_hide_partial=bool(request_filter_state.get("hide_partial")),
+            filter_hide_compilations=bool(request_filter_state.get("hide_compilations")),
+            filter_prefer_primary=bool(request_filter_state.get("prefer_primary")),
+            filter_hide_audiobook_only=bool(request_filter_state.get("hide_audiobook_only")),
+            filter_suppress_non_book=bool(request_filter_state.get("suppress_non_book")),
+            filter_next_missing_only=bool(request_filter_state.get("next_missing_only")),
+            filter_well_rated_only=bool(request_filter_state.get("well_rated_only")),
+            filter_popular_only=bool(request_filter_state.get("popular_only")),
+            filter_new_releases_only=bool(request_filter_state.get("new_releases_only")),
+            filter_standalone_only=bool(request_filter_state.get("standalone_only")),
+            filter_first_in_series_only=bool(request_filter_state.get("first_in_series_only")),
             filters_active=filters_active,
+            request_filter_state=request_filter_state,
+            request_filter_options=request_filter_options,
+            suppression_counts=tuple(),
             open_search_url=(
                 build_shelfmark_search_url(
                     config_data.browser_base_url,
@@ -3277,6 +3773,7 @@ def search_request_shelfmark_results(
             page_books, page_filtered_non_books = _filter_request_candidate_books(
                 search_response.books,
                 query=normalized_query,
+                suppress_non_book=bool(request_filter_state.get("suppress_non_book")),
             )
             filtered_non_books += page_filtered_non_books
             collected_books.extend(page_books)
@@ -3298,23 +3795,17 @@ def search_request_shelfmark_results(
             normalized_query,
             tuple(collected_books),
         )
-        results, _ = _build_search_result_views(
+        results, raw_books = _build_search_result_views(
             enriched_books,
             detail_url_builder=detail_url_builder,
             shelfmark_browser_base_url=config_data.browser_base_url,
+            exclude_audiobooks=False,
         )
-        filtered_owned, filtered_coverless = _count_hidden_request_results(
+        visible_results, visible_raw_books, filtered_counts = _filter_request_results(
             results,
-            requestable_only=requestable_only,
-            has_cover_only=has_cover_only,
-        )
-        visible_results = _filter_visible_results(
-            results,
-            requestable_only=requestable_only,
-            has_cover_only=has_cover_only,
-            high_confidence_only=False,
-            series_filter=DEFAULT_SHELFMARK_SERIES_FILTER,
-            triage_filter=DEFAULT_SHELFMARK_TRIAGE_FILTER,
+            raw_books,
+            request_filters=request_filter_state,
+            filtered_non_books=filtered_non_books,
         )
         visible_total = len(visible_results)
         total_pages = max(1, math.ceil(visible_total / requested_page_size)) if visible_total else 0
@@ -3322,6 +3813,13 @@ def search_request_shelfmark_results(
         start_index = (current_page - 1) * requested_page_size
         end_index = start_index + requested_page_size
         page_results = tuple(visible_results[start_index:end_index])
+        page_raw_books = tuple(visible_raw_books[start_index:end_index])
+        if page_raw_books:
+            page_results = _refine_request_page_results(
+                client,
+                page_raw_books,
+                detail_url_builder=detail_url_builder,
+            )
         visible_start = start_index + 1 if page_results else 0
         visible_end = start_index + len(page_results) if page_results else 0
         has_next = bool(total_pages and current_page < total_pages)
@@ -3330,6 +3828,10 @@ def search_request_shelfmark_results(
             total_available=visible_total,
             raw_total_available=total_found,
             has_more=has_next,
+        )
+        suppression_counts = _build_request_suppression_counts(
+            filtered_counts,
+            request_filter_state,
         )
         return ShelfmarkSearchSection(
             enabled=True,
@@ -3350,12 +3852,34 @@ def search_request_shelfmark_results(
             total_available=visible_total,
             raw_total_available=total_found,
             page_result_count=len(page_results),
-            filtered_non_books=filtered_non_books,
-            filtered_owned=filtered_owned,
-            filtered_coverless=filtered_coverless,
+            filtered_non_books=filtered_counts.get("non_book", 0),
+            filtered_owned=filtered_counts.get("owned", 0),
+            filtered_coverless=filtered_counts.get("coverless", 0),
+            filtered_audiobook_only=filtered_counts.get("audiobook_only", 0),
+            filtered_partial=filtered_counts.get("partial", 0),
+            filtered_compilations=filtered_counts.get("compilation", 0),
+            filtered_non_english=filtered_counts.get("non_english", 0),
+            filtered_unrequestable=filtered_counts.get("unrequestable", 0),
+            filtered_non_primary=filtered_counts.get("non_primary", 0),
             filter_requestable=requestable_only,
             filter_has_cover=has_cover_only,
+            filter_english_only=bool(request_filter_state.get("english_only")),
+            filter_hide_owned=bool(request_filter_state.get("hide_owned")),
+            filter_hide_partial=bool(request_filter_state.get("hide_partial")),
+            filter_hide_compilations=bool(request_filter_state.get("hide_compilations")),
+            filter_prefer_primary=bool(request_filter_state.get("prefer_primary")),
+            filter_hide_audiobook_only=bool(request_filter_state.get("hide_audiobook_only")),
+            filter_suppress_non_book=bool(request_filter_state.get("suppress_non_book")),
+            filter_next_missing_only=bool(request_filter_state.get("next_missing_only")),
+            filter_well_rated_only=bool(request_filter_state.get("well_rated_only")),
+            filter_popular_only=bool(request_filter_state.get("popular_only")),
+            filter_new_releases_only=bool(request_filter_state.get("new_releases_only")),
+            filter_standalone_only=bool(request_filter_state.get("standalone_only")),
+            filter_first_in_series_only=bool(request_filter_state.get("first_in_series_only")),
             filters_active=filters_active,
+            request_filter_state=request_filter_state,
+            request_filter_options=request_filter_options,
+            suppression_counts=suppression_counts,
             open_search_url=build_shelfmark_search_url(
                 config_data.browser_base_url,
                 query=normalized_query,
@@ -3390,7 +3914,22 @@ def search_request_shelfmark_results(
             page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
             filter_requestable=requestable_only,
             filter_has_cover=has_cover_only,
+            filter_english_only=bool(request_filter_state.get("english_only")),
+            filter_hide_owned=bool(request_filter_state.get("hide_owned")),
+            filter_hide_partial=bool(request_filter_state.get("hide_partial")),
+            filter_hide_compilations=bool(request_filter_state.get("hide_compilations")),
+            filter_prefer_primary=bool(request_filter_state.get("prefer_primary")),
+            filter_hide_audiobook_only=bool(request_filter_state.get("hide_audiobook_only")),
+            filter_suppress_non_book=bool(request_filter_state.get("suppress_non_book")),
+            filter_next_missing_only=bool(request_filter_state.get("next_missing_only")),
+            filter_well_rated_only=bool(request_filter_state.get("well_rated_only")),
+            filter_popular_only=bool(request_filter_state.get("popular_only")),
+            filter_new_releases_only=bool(request_filter_state.get("new_releases_only")),
+            filter_standalone_only=bool(request_filter_state.get("standalone_only")),
+            filter_first_in_series_only=bool(request_filter_state.get("first_in_series_only")),
             filters_active=filters_active,
+            request_filter_state=request_filter_state,
+            request_filter_options=request_filter_options,
             query_label=query_label,
             context_hint=context_hint,
             message=str(exc),
@@ -4416,26 +4955,34 @@ def _resolve_contributor_authors(book: Mapping[str, Any]) -> list[str]:
         seen.add(author_key)
         authors.append(normalized)
 
-    explicit_contributions = _iter_mapping_items(book.get("contributions"))
-    if explicit_contributions:
-        for contribution in explicit_contributions:
-            role = _extract_contributor_role(contribution)
-            if role and any(hint in role for hint in SHELFMARK_AUTHOR_CONTRIBUTION_HINTS):
-                add(contribution)
-        if authors:
-            return authors
+    candidate_sources = (
+        _resolve_display_edition(book),
+        _select_edition_by_kind(book, "ebook"),
+        _select_edition_by_kind(book, "physical"),
+        book,
+    )
+    for source in candidate_sources:
+        if not isinstance(source, Mapping):
+            continue
+        explicit_contributions = _iter_mapping_items(source.get("contributions"))
+        if explicit_contributions:
+            for contribution in explicit_contributions:
+                role = _extract_contributor_role(contribution)
+                if role and any(hint in role for hint in SHELFMARK_AUTHOR_CONTRIBUTION_HINTS):
+                    add(contribution)
+            if authors:
+                return authors
 
-    cached_contributors = book.get("cached_contributors")
-    if isinstance(cached_contributors, Sequence) and not isinstance(cached_contributors, (str, bytes)):
-        for contributor in cached_contributors:
-            if isinstance(contributor, Mapping):
+        cached_contributors = source.get("cached_contributors")
+        if isinstance(cached_contributors, Sequence) and not isinstance(cached_contributors, (str, bytes)):
+            for contributor in cached_contributors:
+                if not isinstance(contributor, Mapping):
+                    continue
                 role = _extract_contributor_role(contributor)
                 if role and any(hint in role for hint in SHELFMARK_AUTHOR_CONTRIBUTION_HINTS):
                     add(contributor)
-            else:
-                continue
-        if authors:
-            return authors
+            if authors:
+                return authors
 
     return authors
 
@@ -4443,23 +4990,31 @@ def _resolve_contributor_authors(book: Mapping[str, Any]) -> list[str]:
 def _resolve_audio_contributor_names(book: Mapping[str, Any]) -> set[str]:
     names: set[str] = set()
 
-    for contributor in _iter_mapping_items(book.get("contributions")):
-        role = _extract_contributor_role(contributor)
-        if role and any(hint in role for hint in SHELFMARK_AUDIO_CONTRIBUTION_HINTS):
-            name = _extract_contributor_name(contributor)
-            if name:
-                names.add(name.casefold())
-
-    cached_contributors = book.get("cached_contributors")
-    if isinstance(cached_contributors, Sequence) and not isinstance(cached_contributors, (str, bytes)):
-        for contributor in cached_contributors:
-            if not isinstance(contributor, Mapping):
-                continue
+    candidate_sources = (
+        book,
+        _select_edition_by_kind(book, "audio"),
+        _resolve_display_edition(book),
+    )
+    for source in candidate_sources:
+        if not isinstance(source, Mapping):
+            continue
+        for contributor in _iter_mapping_items(source.get("contributions")):
             role = _extract_contributor_role(contributor)
             if role and any(hint in role for hint in SHELFMARK_AUDIO_CONTRIBUTION_HINTS):
                 name = _extract_contributor_name(contributor)
                 if name:
                     names.add(name.casefold())
+
+        cached_contributors = source.get("cached_contributors")
+        if isinstance(cached_contributors, Sequence) and not isinstance(cached_contributors, (str, bytes)):
+            for contributor in cached_contributors:
+                if not isinstance(contributor, Mapping):
+                    continue
+                role = _extract_contributor_role(contributor)
+                if role and any(hint in role for hint in SHELFMARK_AUDIO_CONTRIBUTION_HINTS):
+                    name = _extract_contributor_name(contributor)
+                    if name:
+                        names.add(name.casefold())
 
     return names
 
@@ -4850,6 +5405,16 @@ def _edition_identity(edition: Mapping[str, Any]) -> tuple[str | None, ...]:
     )
 
 
+def _lookup_edition_by_id(book: Mapping[str, Any], edition_id: Any) -> Mapping[str, Any] | None:
+    normalized_id = _normalize_text(edition_id)
+    if not normalized_id:
+        return None
+    for edition in _iter_schema_editions(book):
+        if _normalize_text(edition.get("id")) == normalized_id:
+            return edition
+    return None
+
+
 def _iter_schema_editions(book: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     editions: list[Mapping[str, Any]] = []
     seen: set[tuple[str | None, ...]] = set()
@@ -4942,6 +5507,16 @@ def _select_edition_by_kind(book: Mapping[str, Any], kind: str) -> Mapping[str, 
         "physical": "default_physical_edition",
         "audio": "default_audio_edition",
     }
+    default_id_key_by_kind = {
+        "ebook": "default_ebook_edition_id",
+        "physical": "default_physical_edition_id",
+        "audio": "default_audio_edition_id",
+    }
+    default_id = book.get(default_id_key_by_kind[kind])
+    default_candidate = _lookup_edition_by_id(book, default_id)
+    if isinstance(default_candidate, Mapping):
+        return default_candidate
+
     default_candidate = book.get(default_key_by_kind[kind])
     if isinstance(default_candidate, Mapping):
         return default_candidate
@@ -4957,6 +5532,16 @@ def _select_edition_by_kind(book: Mapping[str, Any], kind: str) -> Mapping[str, 
             return candidate
 
     return None
+
+
+def _non_audio_edition_rank(edition: Mapping[str, Any]) -> tuple[int, int, int, int]:
+    edition_kind = _classify_schema_content_type(edition)
+    return (
+        0 if edition_kind == "ebook" else 1 if edition_kind == "physical" else 2,
+        0 if _normalize_int(edition.get("pages")) else 1,
+        0 if _normalize_text(edition.get("release_date")) else 1,
+        0 if _iter_mapping_items(edition.get("contributions")) else 1,
+    )
 
 
 def _resolve_display_edition(book: Mapping[str, Any]) -> Mapping[str, Any] | None:
@@ -4975,7 +5560,7 @@ def _resolve_display_edition(book: Mapping[str, Any]) -> Mapping[str, Any] | Non
         if not _is_audio_edition(edition)
     )
     if non_audio_editions:
-        return non_audio_editions[0]
+        return min(non_audio_editions, key=_non_audio_edition_rank)
 
     audio_candidate = _select_edition_by_kind(book, "audio")
     if audio_candidate is not None:

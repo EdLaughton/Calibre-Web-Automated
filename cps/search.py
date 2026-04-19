@@ -24,10 +24,12 @@ from .services.shelfmark_search import (
     DEFAULT_SHELFMARK_FILTER_HAS_COVER,
     DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
     DEFAULT_SHELFMARK_SERIES_FILTER,
+    SHELFMARK_REQUEST_FILTER_OPTIONS,
     ShelfmarkIntegrationError,
     fetch_shelfmark_detail,
     get_shelfmark_preferred_release_settings,
     lookup_visible_library_matches,
+    normalize_request_filter_state,
     result_matches_shelfmark_filters,
     search_request_shelfmark_results,
     search_shelfmark_results,
@@ -98,7 +100,16 @@ def _request_page_arg(name, *, default):
     return value if value > 0 else default
 
 
-def _request_search_state(query, *, page=None, sort=None, requestable=None, has_cover=None):
+def _request_filters_from_args():
+    return normalize_request_filter_state(
+        {
+            key: _request_checkbox_arg(key, default=default)
+            for key, _, default in SHELFMARK_REQUEST_FILTER_OPTIONS
+        }
+    )
+
+
+def _request_search_state(query, *, page=None, sort=None, request_filters=None):
     params = {}
     normalized_query = (query or "").strip()
     if normalized_query:
@@ -107,27 +118,25 @@ def _request_search_state(query, *, page=None, sort=None, requestable=None, has_
         params["page"] = int(page)
     if sort:
         params["sort"] = sort
-    if requestable is not None:
-        params["requestable"] = "1" if requestable else "0"
-    if has_cover is not None:
-        params["has_cover"] = "1" if has_cover else "0"
+    normalized_filters = normalize_request_filter_state(request_filters or {})
+    for key, _, _default in SHELFMARK_REQUEST_FILTER_OPTIONS:
+        params[key] = "1" if normalized_filters.get(key) else "0"
     return params
 
 
-def _request_search_state_url(query, *, page=None, sort=None, requestable=None, has_cover=None):
+def _request_search_state_url(query, *, page=None, sort=None, request_filters=None):
     return url_for(
         "search.request_page",
         **_request_search_state(
             query,
             page=page,
             sort=sort,
-            requestable=requestable,
-            has_cover=has_cover,
+            request_filters=request_filters,
         ),
     )
 
 
-def _request_page_links(query, *, current_page, total_pages, sort, requestable, has_cover):
+def _request_page_links(query, *, current_page, total_pages, sort, request_filters):
     if not total_pages or total_pages <= 1:
         return []
 
@@ -151,8 +160,7 @@ def _request_page_links(query, *, current_page, total_pages, sort, requestable, 
                     query,
                     page=page_number,
                     sort=sort,
-                    requestable=requestable,
-                    has_cover=has_cover,
+                    request_filters=request_filters,
                 ),
             }
         )
@@ -178,14 +186,7 @@ def request_page():
     query = (request.args.get("query") or "").strip()
     current_page = _request_page_arg("page", default=1)
     selected_sort = (request.args.get("sort", "popularity") or "popularity").strip().lower()
-    requestable_only = _request_checkbox_arg(
-        "requestable",
-        default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
-    )
-    has_cover_only = _request_checkbox_arg(
-        "has_cover",
-        default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
-    )
+    request_filters = _request_filters_from_args()
 
     section = search_request_shelfmark_results(
         query,
@@ -197,22 +198,22 @@ def request_page():
                 query,
                 page=current_page,
                 sort=selected_sort,
-                requestable=requestable_only,
-                has_cover=has_cover_only,
+                request_filters=request_filters,
             ),
             query=query,
             page=current_page,
             sort=selected_sort,
-            requestable="1" if requestable_only else "0",
-            has_cover="1" if has_cover_only else "0",
+            **{
+                key: ("1" if request_filters.get(key) else "0")
+                for key, _, _default in SHELFMARK_REQUEST_FILTER_OPTIONS
+            },
         )
         if (book or {}).get("provider") and (book or {}).get("provider_id")
         else None,
         page=current_page,
         page_size=REQUEST_PAGE_SIZE,
         sort=selected_sort,
-        filter_requestable=requestable_only,
-        filter_has_cover=has_cover_only,
+        request_filters=request_filters,
         empty_message=_("Search by title, author, or ISBN for the specific book you want to request."),
     ).to_template_dict()
 
@@ -220,8 +221,7 @@ def request_page():
         query,
         page=section.get("page") or 1,
         sort=section.get("selected_sort"),
-        requestable=section.get("filter_requestable"),
-        has_cover=section.get("filter_has_cover"),
+        request_filters=section.get("request_filter_state"),
     )
     section["state_url"] = state_url
     section["previous_page_url"] = (
@@ -229,8 +229,7 @@ def request_page():
             query,
             page=section.get("previous_page"),
             sort=section.get("selected_sort"),
-            requestable=section.get("filter_requestable"),
-            has_cover=section.get("filter_has_cover"),
+            request_filters=section.get("request_filter_state"),
         )
         if section.get("previous_page")
         else None
@@ -240,8 +239,7 @@ def request_page():
             query,
             page=section.get("next_page"),
             sort=section.get("selected_sort"),
-            requestable=section.get("filter_requestable"),
-            has_cover=section.get("filter_has_cover"),
+            request_filters=section.get("request_filter_state"),
         )
         if section.get("next_page")
         else None
@@ -252,8 +250,7 @@ def request_page():
         current_page=section.get("page") or 1,
         total_pages=section.get("total_pages") or 0,
         sort=section.get("selected_sort"),
-        requestable=section.get("filter_requestable"),
-        has_cover=section.get("filter_has_cover"),
+        request_filters=section.get("request_filter_state"),
     )
     section["preferred_release_settings"] = get_shelfmark_preferred_release_settings().to_template_dict()
     _decorate_request_result_rows(section)
@@ -338,14 +335,7 @@ def request_detail(provider, provider_id):
         query,
         page=_request_page_arg("page", default=1),
         sort=(request.args.get("sort", "popularity") or "popularity").strip().lower(),
-        requestable=_request_checkbox_arg(
-            "requestable",
-            default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
-        ),
-        has_cover=_request_checkbox_arg(
-            "has_cover",
-            default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
-        ),
+        request_filters=_request_filters_from_args(),
     )
     modal_view = (request.args.get("view") or "").strip().lower() == "modal"
     return _render_shelfmark_detail_page(

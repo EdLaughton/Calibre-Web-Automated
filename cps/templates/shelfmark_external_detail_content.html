@@ -81,6 +81,14 @@
               </p>
             {% endif %}
 
+            {% if series_context_notes %}
+              <div class="shelfmark-detail-hero__context-notes" aria-label="{{ _('Series context') }}">
+                {% for note in series_context_notes %}
+                  <p class="shelfmark-detail-hero__context-note">{{ note.detail_value }}</p>
+                {% endfor %}
+              </div>
+            {% endif %}
+
             {% if result.workflow_state %}
               <div class="shelfmark-detail-status{% if result.workflow_state.key == 'available' %} is-hidden{% endif %}">
                 <div class="shelfmark-detail-status__row">
@@ -176,17 +184,6 @@
                 {% else %}
                   {{ result.series_display }}
                 {% endif %}
-              </dd>
-            {% endif %}
-            {% if series_context_notes %}
-              <dt>{{ _("Library context") }}</dt>
-              <dd class="shelfmark-detail-meta-list__context-list">
-                {% for note in series_context_notes %}
-                  <div class="shelfmark-detail-meta-list__context-entry">
-                    <span class="shelfmark-detail-meta-list__context-name">{{ note.series_display }}</span>
-                    <span class="shelfmark-detail-meta-list__context-detail">{{ note.detail_value }}</span>
-                  </div>
-                {% endfor %}
               </dd>
             {% endif %}
             {% if result.hardcover_id %}

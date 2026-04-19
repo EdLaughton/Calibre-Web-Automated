@@ -45,6 +45,7 @@
   var topUpInFlight = false;
   var fetchedTopUpPages = new Set();
   var scheduledWorkflowRefreshTimers = new Map();
+  var modalScrollLockTop = 0;
 
   function toArray(value) {
     return Array.prototype.slice.call(value || []);
@@ -1917,6 +1918,21 @@
     if (document.body && document.body.classList) {
       document.body.classList[method]('modal-open');
     }
+    if (!document.body || !document.body.style) {
+      return;
+    }
+    if (isOpen) {
+      modalScrollLockTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+      document.body.style.top = '-' + modalScrollLockTop + 'px';
+      document.body.style.width = '100%';
+      return;
+    }
+    document.body.style.top = '';
+    document.body.style.width = '';
+    if (modalScrollLockTop) {
+      window.scrollTo(0, modalScrollLockTop);
+    }
+    modalScrollLockTop = 0;
   }
 
   function showModal(modalNode) {

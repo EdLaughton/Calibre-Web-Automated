@@ -6,17 +6,19 @@
 
 {% block body %}
 <div class="discover shelfmark-search-page shelfmark-request-page">
-  <h2 class="shelfmark-request-page__band-title">{{ _('Request Book') }}</h2>
-  <div class="shelfmark-external-shell">
-    <div class="shelfmark-request-page__intro shelfmark-external-header">
+  <div class="shelfmark-external-shell shelfmark-request-page__band">
+    <div class="shelfmark-request-page__band-copy">
+      <h2 class="shelfmark-request-page__band-title">{{ _('Request Book') }}</h2>
       <p class="shelfmark-request-page__subtitle">
         {{ _('Search Shelfmark for a specific book, inspect the richer metadata if needed, and request it without touching the normal library search.') }}
       </p>
-      {% if request_query %}
-        <p class="shelfmark-request-page__meta">{{ _('%(count)s Shelfmark matches', count=shelfmark.raw_total_available if shelfmark else 0) }}</p>
-      {% endif %}
     </div>
+    {% if request_query %}
+      <p class="shelfmark-request-page__meta">{{ _('%(count)s Shelfmark matches', count=shelfmark.raw_total_available if shelfmark else 0) }}</p>
+    {% endif %}
+  </div>
 
+  <div class="shelfmark-external-shell">
     <form class="shelfmark-request-form" method="get" action="{{ url_for('search.request_page') }}">
       <div class="shelfmark-request-form__search">
         <label class="sr-only" for="request_query">{{ _('Search Shelfmark') }}</label>
@@ -42,34 +44,48 @@
               {% endfor %}
             </select>
           </div>
-          <div class="shelfmark-external-controls__group shelfmark-external-controls__checkbox-group">
-            <input type="hidden" name="requestable" value="0">
-            <label class="shelfmark-external-controls__checkbox-label" for="requestable">
-              <input
-                class="shelfmark-external-controls__checkbox"
-                id="requestable"
-                type="checkbox"
-                name="requestable"
-                value="1"
-                {% if shelfmark and shelfmark.filter_requestable %}checked{% endif %}
-              >
-              <span>{{ _('Requestable only') }}</span>
-            </label>
-          </div>
-          <div class="shelfmark-external-controls__group shelfmark-external-controls__checkbox-group">
-            <input type="hidden" name="has_cover" value="0">
-            <label class="shelfmark-external-controls__checkbox-label" for="has_cover">
-              <input
-                class="shelfmark-external-controls__checkbox"
-                id="has_cover"
-                type="checkbox"
-                name="has_cover"
-                value="1"
-                {% if shelfmark and shelfmark.filter_has_cover %}checked{% endif %}
-              >
-              <span>{{ _('Has cover') }}</span>
-            </label>
-          </div>
+          <details class="shelfmark-filter-dropdown shelfmark-external-controls__group">
+            <summary class="shelfmark-filter-dropdown__summary">
+              <span class="glyphicon glyphicon-filter" aria-hidden="true"></span>
+              <span>{{ _('Filters') }}</span>
+            </summary>
+            <div class="shelfmark-filter-dropdown__menu">
+              <div class="shelfmark-filter-dropdown__section">
+                <p class="shelfmark-filter-dropdown__heading">{{ _('Quality filters') }}</p>
+                {% for option in shelfmark.request_filter_options if option.default %}
+                  <input type="hidden" name="{{ option.key }}" value="0">
+                  <label class="shelfmark-filter-dropdown__option" for="request_filter_{{ option.key }}">
+                    <input
+                      class="shelfmark-filter-dropdown__checkbox"
+                      id="request_filter_{{ option.key }}"
+                      type="checkbox"
+                      name="{{ option.key }}"
+                      value="1"
+                      {% if option.checked %}checked{% endif %}
+                    >
+                    <span>{{ option.label }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+              <div class="shelfmark-filter-dropdown__section shelfmark-filter-dropdown__section--secondary">
+                <p class="shelfmark-filter-dropdown__heading">{{ _('Focus filters') }}</p>
+                {% for option in shelfmark.request_filter_options if not option.default %}
+                  <input type="hidden" name="{{ option.key }}" value="0">
+                  <label class="shelfmark-filter-dropdown__option" for="request_filter_{{ option.key }}">
+                    <input
+                      class="shelfmark-filter-dropdown__checkbox"
+                      id="request_filter_{{ option.key }}"
+                      type="checkbox"
+                      name="{{ option.key }}"
+                      value="1"
+                      {% if option.checked %}checked{% endif %}
+                    >
+                    <span>{{ option.label }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+          </details>
         </div>
         <div class="shelfmark-external-toolbar__actions">
           <button type="submit" class="btn btn-default btn-sm shelfmark-external-controls__apply">{{ _('Apply') }}</button>
@@ -106,17 +122,11 @@
               {% endif %}
             {% endif %}
           </p>
-          {% if shelfmark.filtered_non_books or shelfmark.filtered_owned or shelfmark.filtered_coverless %}
+          {% if shelfmark.suppression_counts %}
             <p class="shelfmark-request-summary__filters">
-              {% if shelfmark.filtered_non_books %}
-                <span>{{ _('%(count)s non-book results suppressed', count=shelfmark.filtered_non_books) }}</span>
-              {% endif %}
-              {% if shelfmark.filtered_owned %}
-                <span>{{ _('%(count)s owned books hidden', count=shelfmark.filtered_owned) }}</span>
-              {% endif %}
-              {% if shelfmark.filtered_coverless %}
-                <span>{{ _('%(count)s coverless books hidden', count=shelfmark.filtered_coverless) }}</span>
-              {% endif %}
+              {% for item in shelfmark.suppression_counts %}
+                <span>{{ item.label }}</span>
+              {% endfor %}
             </p>
           {% endif %}
         </div>
