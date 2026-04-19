@@ -77,6 +77,25 @@
   text-transform: uppercase;
 }
 
+.shelfmark-request-form {
+  margin-bottom: 18px;
+}
+
+.shelfmark-request-form__search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.shelfmark-request-form__query {
+  flex: 1 1 520px;
+}
+
+.shelfmark-request-form__submit {
+  min-width: 132px;
+}
+
 .shelfmark-external-header__query {
   margin-bottom: 8px;
 }
@@ -203,6 +222,28 @@
   background: rgba(255, 255, 255, 0.06);
   color: var(--shelfmark-shell-text);
   font-size: 12px;
+}
+
+.shelfmark-request-summary {
+  margin-bottom: 14px;
+}
+
+.shelfmark-request-summary__count,
+.shelfmark-request-summary__filters {
+  margin: 0;
+  color: var(--shelfmark-shell-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.shelfmark-request-summary__filters {
+  margin-top: 4px;
+}
+
+.shelfmark-request-summary__filters span + span::before {
+  content: "·";
+  margin: 0 8px 0 6px;
+  color: rgba(255, 255, 255, 0.34);
 }
 
 .shelfmark-external-toolbar {

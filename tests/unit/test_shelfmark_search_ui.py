@@ -73,10 +73,25 @@ class DummyShelfCollection:
 
 class DummyCurrentUser:
     is_authenticated = True
+    is_anonymous = False
+    name = "Tester"
+    locale = "en"
     shelf = DummyShelfCollection()
 
     @staticmethod
     def role_edit_shelfs():
+        return False
+
+    @staticmethod
+    def role_upload():
+        return False
+
+    @staticmethod
+    def role_admin():
+        return False
+
+    @staticmethod
+    def role_edit():
         return False
 
 
@@ -108,8 +123,10 @@ def _create_app():
     app.jinja_env.filters["shortentitle"] = lambda value, *args, **kwargs: value
     app.jinja_env.filters["formatfloat"] = lambda value, *args, **kwargs: f"{value:.2f}"
     app.jinja_env.filters["music"] = lambda value: False
+    app.jinja_env.filters["get_cover_srcset"] = lambda value: ""
 
     web = Blueprint("web", __name__)
+    search = Blueprint("search", __name__)
 
     @web.route("/book/<int:book_id>")
     def show_book(book_id):
@@ -119,7 +136,94 @@ def _create_app():
     def books_list():
         return "books"
 
+    @search.route("/request")
+    def request_page():
+        return "request"
+
+    @search.route("/request/detail/<provider>/<provider_id>")
+    def request_detail(provider, provider_id):
+        return f"detail:{provider}:{provider_id}"
+
+    @search.route("/advsearch")
+    def advanced_search():
+        return "advsearch"
+
+    @search.route("/search")
+    def simple_search():
+        return "search"
+
     app.register_blueprint(web)
+    app.register_blueprint(search)
+    return app
+
+
+def _create_real_layout_app():
+    _ensure_real_flask_package()
+    app = Flask(__name__, template_folder=str(TEMPLATES_DIR))
+    app.config["SECRET_KEY"] = "test-secret"
+    app.jinja_loader = ChoiceLoader(
+        [
+            DictLoader(
+                {
+                    "request_layout_smoke.html": (
+                        "{% extends 'layout.html' %}"
+                        "{% block body %}<div class='request-layout-smoke'>ok</div>{% endblock %}"
+                    ),
+                    "image.html": (
+                        "{% macro book_cover(book) %}"
+                        "<img alt=\"{{ book.title if book and book.title is defined else 'cover' }}\" src=\"/static/test-cover.png\">"
+                        "{% endmacro %}"
+                    ),
+                }
+            ),
+            FileSystemLoader(str(TEMPLATES_DIR)),
+        ]
+    )
+
+    app.jinja_env.globals["csrf_token"] = lambda: "csrf-token"
+    app.jinja_env.globals["_"] = lambda value, **kwargs: value % kwargs if kwargs else value
+    app.jinja_env.filters["shortentitle"] = lambda value, *args, **kwargs: value
+    app.jinja_env.filters["formatfloat"] = lambda value, *args, **kwargs: f"{value:.2f}"
+    app.jinja_env.filters["music"] = lambda value: False
+    app.jinja_env.filters["get_cover_srcset"] = lambda value: ""
+
+    web = Blueprint("web", __name__)
+    search = Blueprint("search", __name__)
+
+    @web.route("/")
+    def index():
+        return "index"
+
+    @web.route("/profile")
+    def profile():
+        return "profile"
+
+    @web.route("/logout")
+    def logout():
+        return "logout"
+
+    @web.route("/login")
+    def login():
+        return "login"
+
+    @web.route("/list")
+    def books_list():
+        return "books"
+
+    @search.route("/search")
+    def simple_search():
+        return "search"
+
+    @search.route("/advsearch")
+    def advanced_search():
+        return "advsearch"
+
+    @search.route("/request")
+    def request_page():
+        return "request"
+
+    app.register_blueprint(web)
+    app.register_blueprint(search)
     return app
 
 
@@ -650,6 +754,94 @@ def _base_context():
     }
 
 
+def _request_page_context():
+    context = _base_context()
+    requestable = dict(context["shelfmark_section"]["results"][1])
+    requestable["detail_url"] = (
+        "/request/detail/hardcover/222?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"
+        "&return_to=%2Frequest%3Fquery%3DDune%26page%3D2%26sort%3Dpopularity%26requestable%3D1%26has_cover%3D1"
+    )
+    requestable["row_enrichment_url"] = None
+    requestable["needs_progressive_enrichment"] = False
+    requestable["progressive_filter_pending"] = False
+    requestable["row_class_name"] = (
+        "shelfmark-result-card js-shelfmark-result-row shelfmark-result-card--info "
+        "js-shelfmark-status-target js-shelfmark-batch-row"
+    )
+
+    unavailable = dict(context["shelfmark_section"]["results"][2])
+    unavailable["detail_url"] = (
+        "/request/detail/other/333?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"
+        "&return_to=%2Frequest%3Fquery%3DDune%26page%3D2%26sort%3Dpopularity%26requestable%3D1%26has_cover%3D1"
+    )
+    unavailable["row_enrichment_url"] = None
+
+    return {
+        "page": "request",
+        "request_query": "Dune",
+        "current_user": DummyCurrentUser(),
+        "preferred_release": {
+            "enabled": False,
+            "provider": "",
+            "content_type": "ebook",
+            "ranking": "seeders_desc",
+        },
+        "shelfmark_section": {
+            "enabled": True,
+            "available": True,
+            "query": "Dune",
+            "page": 2,
+            "page_size": 12,
+            "selected_sort": "popularity",
+            "sort_options": [
+                {"value": "popularity", "label": "Most popular"},
+                {"value": "relevance", "label": "Most relevant"},
+                {"value": "rating", "label": "Highest rated"},
+            ],
+            "page_size_options": [12, 24, 50, 100],
+            "total_pages": 5,
+            "visible_start": 13,
+            "visible_end": 24,
+            "has_previous": True,
+            "previous_page": 1,
+            "next_page": 3,
+            "has_more": True,
+            "total_available": 58,
+            "raw_total_available": 224,
+            "page_result_count": 2,
+            "filtered_non_books": 4,
+            "filtered_owned": 19,
+            "filtered_coverless": 11,
+            "filter_requestable": True,
+            "filter_has_cover": True,
+            "filter_high_confidence": False,
+            "filters_active": False,
+            "open_search_url": "https://library.example.com/shelfmark/?content_type=ebook&sort=popularity&limit=12&page=1&query=Dune",
+            "previous_page_url": "/request?query=Dune&page=1&sort=popularity&requestable=1&has_cover=1",
+            "next_page_url": "/request?query=Dune&page=3&sort=popularity&requestable=1&has_cover=1",
+            "clear_filters_url": "/request?query=Dune",
+            "state_url": "/request?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1",
+            "preferred_release_settings": {
+                "enabled": False,
+                "provider": "",
+                "content_type": "ebook",
+                "ranking": "seeders_desc",
+            },
+            "results": [requestable, unavailable],
+            "groups": [],
+            "summary": {
+                "total_results": 2,
+                "total_available": 58,
+                "raw_total_available": 224,
+                "has_more": True,
+                "already_in_library": 0,
+                "external_candidates": 1,
+                "library_match_unavailable": 1,
+            },
+        },
+    }
+
+
 def test_search_template_renders_local_and_external_sections_with_duplicate_states():
     app = _create_app()
     with app.test_request_context("/search?query=Dune"):
@@ -1175,6 +1367,124 @@ def test_search_template_omits_transient_modal_state_from_search_forms():
     assert 'name="shelfmark_detail_provider"' not in html
     assert 'name="shelfmark_detail_id"' not in html
     assert 'data-search-state-url="/search/stored/?query=Dune&amp;shelfmark_page=2&amp;shelfmark_page_size=24&amp;shelfmark_sort=rating&amp;shelfmark_filter_requestable=1&amp;shelfmark_filter_has_cover=1"' in html
+
+
+def test_request_template_renders_summary_and_pagination_for_requestable_results():
+    app = _create_app()
+    with app.test_request_context("/request?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"):
+        html = render_template("request.html", **_request_page_context())
+
+    assert "Request Book" in html
+    assert "Search Shelfmark for a specific book" in html
+    assert "224 Shelfmark matches" in html
+    assert "Showing 13-24 of 58 requestable books from 224 Shelfmark matches" in html
+    assert "Page 2 of 5" in html
+    assert "4 non-book results suppressed" in html
+    assert "19 owned books hidden" in html
+    assert "11 coverless books hidden" in html
+    assert 'id="requestable"' in html
+    assert 'id="has_cover"' in html
+    assert 'name="requestable"' in html and "checked" in html
+    assert 'name="has_cover"' in html and "checked" in html
+    assert 'href="/request?query=Dune&amp;page=1&amp;sort=popularity&amp;requestable=1&amp;has_cover=1"' in html
+    assert 'href="/request?query=Dune&amp;page=3&amp;sort=popularity&amp;requestable=1&amp;has_cover=1"' in html
+    assert 'data-total-available="224"' in html
+    assert 'data-filter-requestable="1"' in html
+    assert 'data-filter-has-cover="1"' in html
+    assert "shelfmark_external_search.js" in html
+    assert "shelfmark_request_flow.js" in html
+    assert "External Candidate" in html
+    assert "Middle-earth (5)" not in html
+    assert "No cover" in html
+    assert 'id="shelfmarkDetailModal"' in html
+    assert 'data-search-state-url="/request?query=Dune&amp;page=2&amp;sort=popularity&amp;requestable=1&amp;has_cover=1"' in html
+
+
+def test_request_template_renders_empty_state_for_filtered_request_results():
+    app = _create_app()
+    context = _request_page_context()
+    context["shelfmark_section"] = {
+        **context["shelfmark_section"],
+        "results": [],
+        "total_available": 0,
+        "page_result_count": 0,
+        "total_pages": 0,
+        "visible_start": 0,
+        "visible_end": 0,
+        "has_previous": False,
+        "previous_page": None,
+        "next_page": None,
+        "filtered_non_books": 0,
+        "filtered_owned": 19,
+        "filtered_coverless": 11,
+        "summary": {
+            **context["shelfmark_section"]["summary"],
+            "total_results": 0,
+            "total_available": 0,
+            "raw_total_available": 224,
+        },
+    }
+
+    with app.test_request_context("/request?query=Dune&requestable=1&has_cover=1"):
+        html = render_template("request.html", **context)
+
+    assert "No requestable books matched the current filters" in html
+    assert "Try showing non-requestable matches or turning off cover filtering to widen the search." in html
+    assert "Search query <code>Dune</code>" in html
+
+
+def test_real_layout_renders_request_book_link_on_normal_blur_page():
+    app = _create_real_layout_app()
+    with app.test_request_context("/"):
+        g.google_site_verification = ""
+        g.current_theme = 1
+        g.allow_anonymous = True
+        g.allow_registration = False
+        g.shelves_access = []
+        g.magic_shelves_access = []
+        anonymous_user = type(
+            "AnonymousUser",
+            (),
+            {
+                "is_authenticated": False,
+                "is_anonymous": True,
+                "name": "Guest",
+                "locale": "en",
+                "role_upload": staticmethod(lambda: False),
+                "role_admin": staticmethod(lambda: False),
+                "role_edit": staticmethod(lambda: False),
+                "check_visibility": staticmethod(lambda value: True),
+                "shelf": DummyShelfCollection(),
+            },
+        )()
+        html = render_template(
+            "request_layout_smoke.html",
+            instance="Library",
+            title="Home",
+            page="index",
+            bodyClass="",
+            searchterm="",
+            simple=True,
+            accept=["epub"],
+            cwa_settings={},
+            current_user=anonymous_user,
+            sidebar=[],
+            magic_shelf_routes=type("MagicRoutes", (), {"render": False, "create": False})(),
+            config=type(
+                "Config",
+                (),
+                {
+                    "config_shelfmark_search": True,
+                    "config_shelfmark_url": "https://shelfmark.example.com",
+                },
+            )(),
+        )
+
+    assert 'class="navbar-form navbar-left cwa-navbar-search"' in html
+    assert 'class="nav navbar-nav cwa-navbar-primary"' in html
+    assert 'id="advanced_search"' in html
+    assert 'id="request_book"' in html
+    assert 'href="/request"' in html
 
 
 def test_detail_template_back_link_preserves_full_saved_search_state():

@@ -205,6 +205,10 @@ a#advanced_search > span.hidden-sm {
     margin-left: 4px;
 }
 
+a#request_book > span.hidden-sm {
+    margin-left: 4px;
+}
+
 .btn-primary[disabled] {
     background-color: var(--color-secondary);
 }

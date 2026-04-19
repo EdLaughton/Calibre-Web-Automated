@@ -7,7 +7,7 @@
 import json
 from datetime import datetime
 
-from flask import Blueprint, request, redirect, render_template, url_for, flash, jsonify
+from flask import Blueprint, abort, request, redirect, render_template, url_for, flash, jsonify
 from flask import session as flask_session
 from .cw_login import current_user
 from flask_babel import format_date
@@ -25,11 +25,11 @@ from .services.shelfmark_search import (
     DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
     DEFAULT_SHELFMARK_SERIES_FILTER,
     ShelfmarkIntegrationError,
-    build_shelfmark_advanced_query,
     fetch_shelfmark_detail,
     get_shelfmark_preferred_release_settings,
     lookup_visible_library_matches,
     result_matches_shelfmark_filters,
+    search_request_shelfmark_results,
     search_shelfmark_results,
 )
 
@@ -44,6 +44,7 @@ SHELFMARK_TRANSIENT_QUERY_KEYS = (
     "shelfmark_filter_high_confidence",
     "shelfmark_triage_filter",
 )
+REQUEST_PAGE_SIZE = 12
 
 
 @search.route("/search", methods=["GET"])
@@ -71,6 +72,250 @@ def simple_search():
                                      result_count=0,
                                      title=_("Search"),
                                      page="search")
+
+
+def _request_feature_enabled():
+    return bool(config.config_shelfmark_search and config.config_shelfmark_url)
+
+
+def _request_checkbox_arg(name, *, default):
+    values = request.args.getlist(name)
+    if not values:
+        return default
+    value = (values[-1] or "").strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _request_page_arg(name, *, default):
+    try:
+        value = int(str(request.args.get(name, default)).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _request_search_state(query, *, page=None, sort=None, requestable=None, has_cover=None):
+    params = {}
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        params["query"] = normalized_query
+    if page and int(page) > 1:
+        params["page"] = int(page)
+    if sort:
+        params["sort"] = sort
+    if requestable is not None:
+        params["requestable"] = "1" if requestable else "0"
+    if has_cover is not None:
+        params["has_cover"] = "1" if has_cover else "0"
+    return params
+
+
+def _request_search_state_url(query, *, page=None, sort=None, requestable=None, has_cover=None):
+    return url_for(
+        "search.request_page",
+        **_request_search_state(
+            query,
+            page=page,
+            sort=sort,
+            requestable=requestable,
+            has_cover=has_cover,
+        ),
+    )
+
+
+def _decorate_request_result_rows(section):
+    for index, result in enumerate(section.get("results") or []):
+        result["row_index"] = index
+        result["needs_progressive_enrichment"] = False
+        result["progressive_filter_pending"] = False
+        result["row_enrichment_url"] = None
+        _populate_shelfmark_row_state(result)
+
+
+@search.route("/request", methods=["GET"])
+@login_required_if_no_ano
+def request_page():
+    if not _request_feature_enabled():
+        abort(404)
+
+    query = (request.args.get("query") or "").strip()
+    current_page = _request_page_arg("page", default=1)
+    selected_sort = (request.args.get("sort", "popularity") or "popularity").strip().lower()
+    requestable_only = _request_checkbox_arg(
+        "requestable",
+        default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+    )
+    has_cover_only = _request_checkbox_arg(
+        "has_cover",
+        default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+    )
+
+    section = search_request_shelfmark_results(
+        query,
+        detail_url_builder=lambda book: url_for(
+            "search.request_detail",
+            provider=(book or {}).get("provider") or "",
+            provider_id=(book or {}).get("provider_id") or "",
+            return_to=_request_search_state_url(
+                query,
+                page=current_page,
+                sort=selected_sort,
+                requestable=requestable_only,
+                has_cover=has_cover_only,
+            ),
+            query=query,
+            page=current_page,
+            sort=selected_sort,
+            requestable="1" if requestable_only else "0",
+            has_cover="1" if has_cover_only else "0",
+        )
+        if (book or {}).get("provider") and (book or {}).get("provider_id")
+        else None,
+        page=current_page,
+        page_size=REQUEST_PAGE_SIZE,
+        sort=selected_sort,
+        filter_requestable=requestable_only,
+        filter_has_cover=has_cover_only,
+        empty_message=_("Search by title, author, or ISBN for the specific book you want to request."),
+    ).to_template_dict()
+
+    state_url = _request_search_state_url(
+        query,
+        page=section.get("page") or 1,
+        sort=section.get("selected_sort"),
+        requestable=section.get("filter_requestable"),
+        has_cover=section.get("filter_has_cover"),
+    )
+    section["state_url"] = state_url
+    section["previous_page_url"] = (
+        _request_search_state_url(
+            query,
+            page=section.get("previous_page"),
+            sort=section.get("selected_sort"),
+            requestable=section.get("filter_requestable"),
+            has_cover=section.get("filter_has_cover"),
+        )
+        if section.get("previous_page")
+        else None
+    )
+    section["next_page_url"] = (
+        _request_search_state_url(
+            query,
+            page=section.get("next_page"),
+            sort=section.get("selected_sort"),
+            requestable=section.get("filter_requestable"),
+            has_cover=section.get("filter_has_cover"),
+        )
+        if section.get("next_page")
+        else None
+    )
+    section["clear_filters_url"] = _request_search_state_url(query)
+    section["preferred_release_settings"] = get_shelfmark_preferred_release_settings().to_template_dict()
+    _decorate_request_result_rows(section)
+
+    return render_title_template(
+        "request.html",
+        title=_("Request Book"),
+        page="request",
+        request_query=query,
+        shelfmark_section=section,
+        preferred_release=section["preferred_release_settings"],
+    )
+
+
+def _render_shelfmark_detail_page(*, provider, provider_id, query, return_to, modal_view, page_name, detail_endpoint):
+    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
+    detail_url = url_for(
+        detail_endpoint,
+        provider=provider,
+        provider_id=provider_id,
+        query=query,
+        return_to=return_to,
+    )
+
+    try:
+        result = fetch_shelfmark_detail(
+            provider,
+            provider_id,
+            detail_url=detail_url,
+        ).to_template_dict()
+        if modal_view:
+            return render_template(
+                "shelfmark_external_detail_content.html",
+                result=result,
+                modal_mode=True,
+                preferred_release=preferred_release,
+                shelfmark_error=None,
+            )
+        return render_title_template(
+            "shelfmark_external_detail.html",
+            title=result.get("title") or _("Shelfmark External Result"),
+            page=page_name,
+            result=result,
+            search_query=query,
+            return_to=return_to,
+            modal_mode=False,
+            preferred_release=preferred_release,
+            shelfmark_error=None,
+        )
+    except ShelfmarkIntegrationError as exc:
+        flash(str(exc), category="error")
+        if modal_view:
+            return render_template(
+                "shelfmark_external_detail_content.html",
+                title=_("Shelfmark External Result"),
+                result=None,
+                modal_mode=True,
+                preferred_release=preferred_release,
+                shelfmark_error=str(exc),
+            )
+        return render_title_template(
+            "shelfmark_external_detail.html",
+            title=_("Shelfmark External Result"),
+            page=page_name,
+            result=None,
+            search_query=query,
+            return_to=return_to,
+            shelfmark_error=str(exc),
+            modal_mode=False,
+            preferred_release=preferred_release,
+        )
+
+
+@search.route("/request/detail/<provider>/<provider_id>", methods=["GET"])
+@login_required_if_no_ano
+def request_detail(provider, provider_id):
+    if not _request_feature_enabled():
+        abort(404)
+
+    query = (request.args.get("query") or "").strip()
+    return_to = _safe_local_return_url(request.args.get("return_to")) or _request_search_state_url(
+        query,
+        page=_request_page_arg("page", default=1),
+        sort=(request.args.get("sort", "popularity") or "popularity").strip().lower(),
+        requestable=_request_checkbox_arg(
+            "requestable",
+            default=DEFAULT_SHELFMARK_FILTER_REQUESTABLE,
+        ),
+        has_cover=_request_checkbox_arg(
+            "has_cover",
+            default=DEFAULT_SHELFMARK_FILTER_HAS_COVER,
+        ),
+    )
+    modal_view = (request.args.get("view") or "").strip().lower() == "modal"
+    return _render_shelfmark_detail_page(
+        provider=provider,
+        provider_id=provider_id,
+        query=query,
+        return_to=return_to,
+        modal_view=modal_view,
+        page_name="request",
+        detail_endpoint="search.request_detail",
+    )
 
 
 @search.route("/advsearch", methods=['POST'])
@@ -395,28 +640,12 @@ def render_adv_search_results(term, offset=None, order=None, limit=None):
     ub.store_combo_ids(results)
 
     entries = calibre_db.order_authors(results, list_return=True, combined=True)
-    shelfmark_query, shelfmark_fields = build_shelfmark_advanced_query(term)
-    shelfmark_section = _build_shelfmark_section(
-        shelfmark_query,
-        detail_url_builder=lambda book: _build_shelfmark_detail_url(
-            book,
-            query=shelfmark_query or search_term,
-            return_to=_current_shelfmark_search_state_url(),
-        ),
-        query_label=_("Advanced external query"),
-        context_hint=(
-            _("Built from %(fields)s only. Other advanced filters stay local to CWA.", fields=", ".join(shelfmark_fields))
-            if shelfmark_query
-            else _("Advanced external search only uses title, author, and publisher fields when present.")
-        ),
-        empty_message=_("Add a title, author, or publisher filter to include Shelfmark external results in advanced search."),
-    )
     return render_title_template('search.html',
                                  adv_searchterm=search_term,
                                  pagination=pagination,
                                  entries=entries,
                                  query="",
-                                 shelfmark_section=shelfmark_section,
+                                 shelfmark_section=None,
                                  result_count=result_count,
                                  title=_("Advanced Search"), page="advsearch",
                                  order=order[1])
@@ -454,7 +683,6 @@ def render_prepare_search_form(cc):
 
 
 def render_search_results(term, offset=None, order=None, limit=None):
-    shelfmark_section = None
     if term:
         join = db.books_series_link, db.Books.id == db.books_series_link.c.book, db.Series
         entries, result_count, pagination = calibre_db.get_search_results(term,
@@ -463,15 +691,6 @@ def render_search_results(term, offset=None, order=None, limit=None):
                                                                           order,
                                                                           limit,
                                                                           *join)
-        shelfmark_section = _build_shelfmark_section(
-            term,
-            detail_url_builder=lambda book: _build_shelfmark_detail_url(
-                book,
-                query=term,
-                return_to=_current_shelfmark_search_state_url(),
-            ),
-            query_label=_("External lookup query"),
-        )
     else:
         entries = list()
         order = [None, None]
@@ -483,7 +702,7 @@ def render_search_results(term, offset=None, order=None, limit=None):
                                  query=term,
                                  adv_searchterm=term,
                                  entries=entries,
-                                 shelfmark_section=shelfmark_section,
+                                 shelfmark_section=None,
                                  result_count=result_count,
                                  title=_("Search"),
                                  page="search",
@@ -496,61 +715,15 @@ def shelfmark_external_detail(provider, provider_id):
     query = (request.args.get("query") or "").strip()
     return_to = _safe_local_return_url(request.args.get("return_to"))
     modal_view = (request.args.get("view") or "").strip().lower() == "modal"
-    preferred_release = get_shelfmark_preferred_release_settings().to_template_dict()
-    detail_url = url_for(
-        "search.shelfmark_external_detail",
+    return _render_shelfmark_detail_page(
         provider=provider,
         provider_id=provider_id,
         query=query,
         return_to=return_to,
+        modal_view=modal_view,
+        page_name="search",
+        detail_endpoint="search.shelfmark_external_detail",
     )
-
-    try:
-        result = fetch_shelfmark_detail(
-            provider,
-            provider_id,
-            detail_url=detail_url,
-        ).to_template_dict()
-        if modal_view:
-            return render_template(
-                "shelfmark_external_detail_content.html",
-                result=result,
-                modal_mode=True,
-                preferred_release=preferred_release,
-                shelfmark_error=None,
-            )
-        return render_title_template(
-            "shelfmark_external_detail.html",
-            title=result.get("title") or _("Shelfmark External Result"),
-            page="search",
-            result=result,
-            search_query=query,
-            return_to=return_to,
-            modal_mode=False,
-            preferred_release=preferred_release,
-        )
-    except ShelfmarkIntegrationError as exc:
-        flash(str(exc), category="error")
-        if modal_view:
-            return render_template(
-                "shelfmark_external_detail_content.html",
-                title=_("Shelfmark External Result"),
-                result=None,
-                modal_mode=True,
-                preferred_release=preferred_release,
-                shelfmark_error=str(exc),
-            )
-        return render_title_template(
-            "shelfmark_external_detail.html",
-            title=_("Shelfmark External Result"),
-            page="search",
-            result=None,
-            search_query=query,
-            return_to=return_to,
-            shelfmark_error=str(exc),
-            modal_mode=False,
-            preferred_release=preferred_release,
-        )
 
 
 @search.route("/search/external/shelfmark/<provider>/<provider_id>/row", methods=["GET"])

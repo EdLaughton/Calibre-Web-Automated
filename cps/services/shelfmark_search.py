@@ -65,6 +65,9 @@ SHELFMARK_COVER_CACHE_MAX_ENTRIES = 512
 SHELFMARK_SCAN_CACHE_TTL_SECONDS = 120
 SHELFMARK_SCAN_CACHE_MAX_ENTRIES = 16
 SHELFMARK_SCAN_PAGE_SIZE = 100
+DEFAULT_SHELFMARK_CONTEXTUAL_LIMIT = 12
+SHELFMARK_CONTEXT_MAX_SOURCE_PAGES = 4
+SHELFMARK_CONTEXT_SCAN_PAGE_SIZE = 24
 SHELFMARK_QUALITY_MIN_METADATA_SIGNALS = 5
 SHELFMARK_TRIAGE_MIN_RATINGS = 200
 SHELFMARK_TRIAGE_MIN_READERS = 1000
@@ -422,6 +425,9 @@ class ShelfmarkSearchSection:
     total_available: int = 0
     raw_total_available: int = 0
     page_result_count: int = 0
+    filtered_non_books: int = 0
+    filtered_owned: int = 0
+    filtered_coverless: int = 0
     filter_requestable: bool = DEFAULT_SHELFMARK_FILTER_REQUESTABLE
     filter_has_cover: bool = DEFAULT_SHELFMARK_FILTER_HAS_COVER
     filter_high_confidence: bool = DEFAULT_SHELFMARK_FILTER_HIGH_CONFIDENCE
@@ -462,6 +468,9 @@ class ShelfmarkSearchSection:
             "total_available": self.total_available,
             "raw_total_available": self.raw_total_available,
             "page_result_count": self.page_result_count,
+            "filtered_non_books": self.filtered_non_books,
+            "filtered_owned": self.filtered_owned,
+            "filtered_coverless": self.filtered_coverless,
             "filter_requestable": self.filter_requestable,
             "filter_has_cover": self.filter_has_cover,
             "filter_high_confidence": self.filter_high_confidence,
@@ -2433,6 +2442,140 @@ def _prepare_progressive_page_results(
     return _rank_visible_results(visible_results)
 
 
+_REQUEST_NON_BOOK_ENTITY_TYPES = {
+    "author",
+    "authors",
+    "series",
+    "publisher",
+    "publishers",
+    "genre",
+    "genres",
+    "tag",
+    "tags",
+    "list",
+    "lists",
+    "shelf",
+    "shelves",
+}
+
+
+def _normalize_request_match_text(value: Any) -> str:
+    normalized = _normalize_text(value).replace("|", ",")
+    normalized = re.sub(r"[\W_]+", " ", normalized.casefold())
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _request_result_entity_kind(book: Mapping[str, Any]) -> str:
+    for key in (
+        "entity_type",
+        "result_type",
+        "type",
+        "kind",
+        "metadata_type",
+        "match_type",
+    ):
+        normalized = (_normalize_text(book.get(key)) or "").casefold()
+        if normalized:
+            return normalized
+    return ""
+
+
+def _normalize_request_authors(book: Mapping[str, Any]) -> tuple[str, ...]:
+    authors = book.get("authors")
+    if isinstance(authors, Sequence) and not isinstance(authors, (str, bytes)):
+        values = authors
+    else:
+        author = _normalize_text(book.get("author"))
+        values = [author] if author else []
+    return tuple(
+        _normalize_text(author).replace("|", ",")
+        for author in values
+        if _normalize_text(author)
+    )
+
+
+def _is_probable_non_book_request_result(book: Mapping[str, Any], *, query: str) -> bool:
+    entity_kind = _request_result_entity_kind(book)
+    if entity_kind in _REQUEST_NON_BOOK_ENTITY_TYPES:
+        return True
+
+    title = _normalize_text(book.get("title"))
+    normalized_title = _normalize_request_match_text(title)
+    if not normalized_title:
+        return True
+
+    authors = _normalize_request_authors(book)
+    normalized_authors = [
+        _normalize_request_match_text(author)
+        for author in authors
+        if _normalize_request_match_text(author)
+    ]
+    primary_author = normalized_authors[0] if normalized_authors else ""
+    joined_authors = " ".join(normalized_authors)
+    normalized_query = _normalize_request_match_text(query)
+
+    if primary_author and normalized_title == primary_author:
+        return True
+    if joined_authors and normalized_title == joined_authors:
+        return True
+    if (
+        normalized_query
+        and normalized_title == normalized_query
+        and not normalized_authors
+        and not _normalize_text(book.get("subtitle"))
+        and not _normalize_text(book.get("description"))
+        and not _resolve_series_name(book)
+    ):
+        return True
+    return False
+
+
+def _filter_request_candidate_books(
+    books: Sequence[Mapping[str, Any]],
+    *,
+    query: str,
+) -> tuple[tuple[Mapping[str, Any], ...], int]:
+    filtered_books: list[Mapping[str, Any]] = []
+    filtered_non_books = 0
+    seen_keys: set[tuple[str, str]] = set()
+
+    for book in books:
+        if _is_audiobook_result(book):
+            continue
+        if _is_probable_non_book_request_result(book, query=query):
+            filtered_non_books += 1
+            continue
+        provider = _normalize_text(book.get("provider")).casefold()
+        provider_id = _normalize_text(book.get("provider_id"))
+        if provider and provider_id:
+            identity = (provider, provider_id)
+            if identity in seen_keys:
+                continue
+            seen_keys.add(identity)
+        filtered_books.append(book)
+
+    return tuple(filtered_books), filtered_non_books
+
+
+def _count_hidden_request_results(
+    results: Sequence[ShelfmarkResultView],
+    *,
+    requestable_only: bool,
+    has_cover_only: bool,
+) -> tuple[int, int]:
+    filtered_owned = 0
+    filtered_coverless = 0
+
+    for result in results:
+        if requestable_only and result.already_in_library:
+            filtered_owned += 1
+            continue
+        if has_cover_only and not result.cover_url:
+            filtered_coverless += 1
+
+    return filtered_owned, filtered_coverless
+
+
 def _filter_visible_results(
     results: Sequence[ShelfmarkResultView],
     *,
@@ -2935,6 +3078,217 @@ def search_shelfmark_results(
             context_hint=context_hint,
             message=str(exc),
             message_level="warning",
+        )
+
+
+def search_request_shelfmark_results(
+    query: str | None,
+    *,
+    detail_url_builder: Callable[[Mapping[str, Any]], str | None],
+    page: int = DEFAULT_SHELFMARK_PAGE,
+    page_size: int = DEFAULT_SHELFMARK_LIMIT,
+    sort: str = DEFAULT_SHELFMARK_SORT,
+    filter_requestable: bool = True,
+    filter_has_cover: bool = True,
+    query_label: str | None = None,
+    context_hint: str | None = None,
+    empty_message: str | None = None,
+) -> ShelfmarkSearchSection:
+    normalized_query = _normalize_text(query)
+    requested_page = max(DEFAULT_SHELFMARK_PAGE, _normalize_int(page) or DEFAULT_SHELFMARK_PAGE)
+    requested_page_size = _normalize_page_size(page_size)
+    selected_sort = _normalize_sort(sort)
+    requestable_only = bool(filter_requestable)
+    has_cover_only = bool(filter_has_cover)
+    filters_active = (
+        requestable_only != DEFAULT_SHELFMARK_FILTER_REQUESTABLE
+        or has_cover_only != DEFAULT_SHELFMARK_FILTER_HAS_COVER
+    )
+    sort_options = get_shelfmark_sort_options()
+    config_data = get_shelfmark_client_config()
+    if not config_data.enabled:
+        return ShelfmarkSearchSection(enabled=False, available=False, query=normalized_query or "")
+
+    if not normalized_query:
+        return ShelfmarkSearchSection(
+            enabled=True,
+            available=True,
+            query="",
+            page=requested_page,
+            page_size=requested_page_size,
+            selected_sort=selected_sort,
+            sort_options=sort_options,
+            page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
+            total_pages=0,
+            visible_start=0,
+            visible_end=0,
+            has_previous=False,
+            previous_page=None,
+            next_page=None,
+            has_more=False,
+            total_available=0,
+            raw_total_available=0,
+            page_result_count=0,
+            filter_requestable=requestable_only,
+            filter_has_cover=has_cover_only,
+            filters_active=filters_active,
+            open_search_url=(
+                build_shelfmark_search_url(
+                    config_data.browser_base_url,
+                    query="",
+                    page=1,
+                    page_size=requested_page_size,
+                    sort=selected_sort,
+                )
+                if config_data.browser_base_url
+                else None
+            ),
+            query_label=query_label,
+            context_hint=context_hint,
+            message=empty_message,
+            message_level="info",
+            pagination_mode="request",
+            progressive_refinement=False,
+            results=tuple(),
+            groups=tuple(),
+            summary=ShelfmarkResultSummary(),
+        )
+
+    client = ShelfmarkClient(config_data)
+    try:
+        collected_books: list[Mapping[str, Any]] = []
+        filtered_non_books = 0
+        total_found = 0
+        source_page = 1
+
+        while True:
+            search_response = _fetch_shelfmark_search_page(
+                client,
+                normalized_query,
+                page=source_page,
+                page_size=requested_page_size,
+                sort=selected_sort,
+            )
+            total_found = max(total_found, int(search_response.total_found or 0))
+            page_books, page_filtered_non_books = _filter_request_candidate_books(
+                search_response.books,
+                query=normalized_query,
+            )
+            filtered_non_books += page_filtered_non_books
+            collected_books.extend(page_books)
+
+            total_pages = (
+                max(1, math.ceil(total_found / requested_page_size))
+                if total_found
+                else 0
+            )
+            has_more = bool(
+                search_response.has_more
+                or (total_pages and source_page < total_pages)
+            )
+            if not has_more:
+                break
+            source_page += 1
+
+        results, _ = _build_search_result_views(
+            tuple(collected_books),
+            detail_url_builder=detail_url_builder,
+            shelfmark_browser_base_url=config_data.browser_base_url,
+        )
+        filtered_owned, filtered_coverless = _count_hidden_request_results(
+            results,
+            requestable_only=requestable_only,
+            has_cover_only=has_cover_only,
+        )
+        visible_results = _filter_visible_results(
+            results,
+            requestable_only=requestable_only,
+            has_cover_only=has_cover_only,
+            high_confidence_only=False,
+            series_filter=DEFAULT_SHELFMARK_SERIES_FILTER,
+            triage_filter=DEFAULT_SHELFMARK_TRIAGE_FILTER,
+        )
+        visible_total = len(visible_results)
+        total_pages = max(1, math.ceil(visible_total / requested_page_size)) if visible_total else 0
+        current_page = min(requested_page, total_pages) if total_pages else DEFAULT_SHELFMARK_PAGE
+        start_index = (current_page - 1) * requested_page_size
+        end_index = start_index + requested_page_size
+        page_results = tuple(visible_results[start_index:end_index])
+        visible_start = start_index + 1 if page_results else 0
+        visible_end = start_index + len(page_results) if page_results else 0
+        has_next = bool(total_pages and current_page < total_pages)
+        summary = summarize_shelfmark_results(
+            page_results,
+            total_available=visible_total,
+            raw_total_available=total_found,
+            has_more=has_next,
+        )
+        return ShelfmarkSearchSection(
+            enabled=True,
+            available=True,
+            query=normalized_query,
+            page=current_page,
+            page_size=requested_page_size,
+            selected_sort=selected_sort,
+            sort_options=sort_options,
+            page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
+            total_pages=total_pages,
+            visible_start=visible_start,
+            visible_end=visible_end,
+            has_previous=current_page > DEFAULT_SHELFMARK_PAGE,
+            previous_page=current_page - 1 if current_page > DEFAULT_SHELFMARK_PAGE else None,
+            next_page=current_page + 1 if has_next else None,
+            has_more=has_next,
+            total_available=visible_total,
+            raw_total_available=total_found,
+            page_result_count=len(page_results),
+            filtered_non_books=filtered_non_books,
+            filtered_owned=filtered_owned,
+            filtered_coverless=filtered_coverless,
+            filter_requestable=requestable_only,
+            filter_has_cover=has_cover_only,
+            filters_active=filters_active,
+            open_search_url=build_shelfmark_search_url(
+                config_data.browser_base_url,
+                query=normalized_query,
+                page=1,
+                page_size=requested_page_size,
+                sort=selected_sort,
+            ),
+            query_label=query_label,
+            context_hint=context_hint,
+            message=(
+                empty_message
+                if not page_results and not visible_total and not total_found
+                else None
+            ),
+            message_level="info",
+            pagination_mode="request",
+            progressive_refinement=False,
+            results=page_results,
+            groups=tuple(),
+            summary=summary,
+        )
+    except ShelfmarkIntegrationError as exc:
+        log.warning("Shelfmark request search unavailable for query '%s': %s", normalized_query, exc)
+        return ShelfmarkSearchSection(
+            enabled=True,
+            available=False,
+            query=normalized_query,
+            page=requested_page,
+            page_size=requested_page_size,
+            selected_sort=selected_sort,
+            sort_options=sort_options,
+            page_size_options=SHELFMARK_PAGE_SIZE_OPTIONS,
+            filter_requestable=requestable_only,
+            filter_has_cover=has_cover_only,
+            filters_active=filters_active,
+            query_label=query_label,
+            context_hint=context_hint,
+            message=str(exc),
+            message_level="warning",
+            pagination_mode="request",
+            progressive_refinement=False,
         )
 
 
