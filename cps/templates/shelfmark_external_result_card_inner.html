@@ -1,4 +1,9 @@
 {% set preferred_release = preferred_release or {} %}
+{% set primary_context = result.best_series_context if result.best_series_context is defined and result.best_series_context else (result.series_context if result.series_context is defined and result.series_context else None) %}
+{% set facts_text = (result.facts if result.facts is defined and result.facts else [])|join(' · ') %}
+{% set primary_series_display = result.series_display if result.series_display is defined and result.series_display else (primary_context.series_display if primary_context and primary_context.series_display is defined else '') %}
+{% set show_request_chrome = page is defined and page == 'request' %}
+{% set request_badges = result.request_badges if result.request_badges is defined and result.request_badges else [] %}
 <div class="shelfmark-result-card__media">
   {% if result.request_payload and not result.already_in_library and (not result.workflow_state or result.workflow_state.key == 'available') %}
     <label class="shelfmark-result-card__select shelfmark-batch-select js-shelfmark-batch-select is-hidden">
@@ -18,7 +23,7 @@
   </div>
   <div class="shelfmark-result-card__body">
     <div class="shelfmark-result-card__header">
-      <div>
+      <div class="shelfmark-result-card__header-copy">
         <h4 class="media-heading shelfmark-result-card__title">
           {% if result.detail_url %}
             <a href="{{ result.detail_url }}">{{ result.title }}</a>
@@ -39,16 +44,32 @@
           </span>
         {% endif %}
       </div>
+      {% if show_request_chrome and request_badges %}
+        <div class="shelfmark-result-card__badges">
+          {% for badge in request_badges %}
+            <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
     </div>
     {% if result.authors %}
       <p class="shelfmark-result-card__authors">{{ result.authors|join(', ') }}</p>
     {% endif %}
-    {% if result.facts %}
+    {% if result.facts or (result.pages and 'page' not in facts_text|lower) or (primary_series_display and primary_series_display not in facts_text) %}
       <p class="shelfmark-result-card__facts" aria-label="{{ _('Shelfmark facts') }}">
-        {% for fact in result.facts %}
+        {% for fact in result.facts if result.facts is defined and result.facts %}
           <span class="shelfmark-result-card__fact">{{ fact }}</span>
         {% endfor %}
+        {% if result.pages and 'page' not in facts_text|lower %}
+          <span class="shelfmark-result-card__fact">{{ _('%(count)s pages', count=result.pages) }}</span>
+        {% endif %}
+        {% if primary_series_display and primary_series_display not in facts_text %}
+          <span class="shelfmark-result-card__fact">{{ primary_series_display }}</span>
+        {% endif %}
       </p>
+    {% endif %}
+    {% if show_request_chrome and primary_context and primary_context.detail_value %}
+      <p class="shelfmark-result-card__series-note shelfmark-result-card__series-note--context">{{ primary_context.detail_value }}</p>
     {% endif %}
     {% if result.secondary_series_note %}
       <p class="shelfmark-result-card__series-note text-muted">{{ result.secondary_series_note }}</p>

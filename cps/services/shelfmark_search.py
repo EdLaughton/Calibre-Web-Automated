@@ -1,6 +1,7 @@
 from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field, replace
+from datetime import date
 import ipaddress
 import math
 import re
@@ -60,6 +61,9 @@ SHELFMARK_DETAIL_CACHE_TTL_SECONDS = 300
 SHELFMARK_DETAIL_CACHE_MAX_ENTRIES = 256
 HARDCOVER_DETAIL_CACHE_TTL_SECONDS = 300
 HARDCOVER_DETAIL_CACHE_MAX_ENTRIES = 128
+HARDCOVER_QUERY_CACHE_TTL_SECONDS = 120
+HARDCOVER_QUERY_CACHE_MAX_ENTRIES = 24
+HARDCOVER_QUERY_MIN_LENGTH = 3
 SHELFMARK_COVER_CACHE_TTL_SECONDS = 300
 SHELFMARK_COVER_CACHE_MAX_ENTRIES = 512
 SHELFMARK_SCAN_CACHE_TTL_SECONDS = 120
@@ -109,9 +113,24 @@ SHELFMARK_CONTENT_WARNING_CATEGORY_HINTS = (
     "trigger warning",
     "trigger warnings",
 )
+SHELFMARK_AUTHOR_CONTRIBUTION_HINTS = (
+    "author",
+    "writer",
+    "created by",
+    "story by",
+)
+SHELFMARK_AUDIO_CONTRIBUTION_HINTS = (
+    "narrator",
+    "read by",
+    "reader",
+    "performed by",
+    "voice",
+    "audio",
+)
 
 _SHELFMARK_DETAIL_CACHE: OrderedDict[tuple[str, str, str], tuple[float, dict[str, Any]]] = OrderedDict()
 _HARDCOVER_DETAIL_CACHE: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
+_HARDCOVER_QUERY_CACHE: OrderedDict[str, tuple[float, tuple[dict[str, Any], ...]]] = OrderedDict()
 _SHELFMARK_COVER_CACHE: OrderedDict[tuple[str, str], tuple[float, str]] = OrderedDict()
 _SHELFMARK_SCAN_CACHE: OrderedDict[
     tuple[str, str, str, int, int],
@@ -320,6 +339,8 @@ class ShelfmarkResultView:
     moods: tuple[str, ...] = field(default_factory=tuple)
     content_warnings: tuple[str, ...] = field(default_factory=tuple)
     series_context: ShelfmarkSeriesContext | None = None
+    series_context_notes: tuple[dict[str, str], ...] = field(default_factory=tuple)
+    request_badges: tuple[dict[str, str], ...] = field(default_factory=tuple)
     workflow_state: ShelfmarkWorkflowState | None = None
     quality_state: ShelfmarkQualityState | None = None
     triage_state: ShelfmarkTriageState | None = None
@@ -349,6 +370,8 @@ class ShelfmarkResultView:
         payload["genres"] = list(self.genres)
         payload["moods"] = list(self.moods)
         payload["content_warnings"] = list(self.content_warnings)
+        payload["series_context_notes"] = [dict(note) for note in self.series_context_notes]
+        payload["request_badges"] = [dict(badge) for badge in self.request_badges]
         if self.series_context:
             payload["series_context"] = self.series_context.to_template_dict()
         if self.quality_state:
@@ -1467,6 +1490,72 @@ def _build_result_facts_for_view(result: ShelfmarkResultView) -> tuple[str, ...]
     return tuple(facts)
 
 
+def _build_series_context_notes(
+    contexts: Sequence[ShelfmarkSeriesContext],
+) -> tuple[dict[str, str], ...]:
+    notes: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for context in contexts:
+        if not context.matched:
+            continue
+        detail_value = _normalize_text(context.detail_value)
+        if not detail_value:
+            continue
+        series_display = context.series_display or context.series_name
+        if not series_display:
+            continue
+        note_key = (series_display.casefold(), detail_value.casefold())
+        if note_key in seen:
+            continue
+        seen.add(note_key)
+        notes.append(
+            {
+                "series_display": series_display,
+                "detail_value": detail_value,
+            }
+        )
+
+    return tuple(notes)
+
+
+def _is_recent_release_result(result: ShelfmarkResultView) -> bool:
+    if result.publish_year is None:
+        return False
+    current_year = date.today().year
+    return result.publish_year >= current_year
+
+
+def _build_request_badges(result: ShelfmarkResultView) -> tuple[dict[str, str], ...]:
+    badges: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(label: str, badge_class: str) -> None:
+        normalized_label = _normalize_text(label)
+        if not normalized_label:
+            return
+        label_key = normalized_label.casefold()
+        if label_key in seen:
+            return
+        seen.add(label_key)
+        badges.append({"label": normalized_label, "badge_class": badge_class})
+
+    context = result.best_series_context or result.series_context
+    if context and context.badges:
+        for badge in context.badges:
+            add(badge.get("label", ""), badge.get("badge_class", "label-default"))
+
+    quality = result.quality_state
+    if quality and quality.rating_signal:
+        add(_("Well rated"), "label-success")
+    if quality and quality.popularity_signal:
+        add(_("Popular"), "label-info")
+    if _is_recent_release_result(result):
+        add(_("New release"), "label-warning")
+
+    return tuple(badges[:4])
+
+
 def apply_primary_series_context(
     result: ShelfmarkResultView,
     *,
@@ -1505,6 +1594,7 @@ def apply_primary_series_context(
             result.series_memberships,
             primary_series_name,
         ),
+        series_context_notes=_build_series_context_notes(result.series_contexts),
     )
     return replace(updated, facts=_build_result_facts_for_view(updated))
 
@@ -1567,6 +1657,14 @@ def _rank_visible_results(results: Sequence[ShelfmarkResultView]) -> tuple[Shelf
         )
     )
     return tuple(result for _, result in indexed_results)
+
+
+def _decorate_result_chrome(result: ShelfmarkResultView) -> ShelfmarkResultView:
+    return replace(
+        result,
+        request_badges=_build_request_badges(result),
+        series_context_notes=_build_series_context_notes(result.series_contexts),
+    )
 
 
 def build_shelfmark_result_view(
@@ -1843,6 +1941,8 @@ def _merge_book_details(
         "moods",
         "content_warnings",
         "warnings",
+        "cached_contributors",
+        "contributions",
         "taggings",
         "cached_tags",
         "cached_featured_series",
@@ -2295,6 +2395,10 @@ def _build_search_result_views(
     )
     results = tuple(
         replace(result, quality_state=build_shelfmark_quality_state(result))
+        for result in results
+    )
+    results = tuple(
+        _decorate_result_chrome(result)
         for result in results
     )
     results = tuple(
@@ -3190,8 +3294,12 @@ def search_request_shelfmark_results(
                 break
             source_page += 1
 
-        results, _ = _build_search_result_views(
+        enriched_books = _apply_hardcover_query_enrichment(
+            normalized_query,
             tuple(collected_books),
+        )
+        results, _ = _build_search_result_views(
+            enriched_books,
             detail_url_builder=detail_url_builder,
             shelfmark_browser_base_url=config_data.browser_base_url,
         )
@@ -3330,6 +3438,7 @@ def fetch_shelfmark_detail(
         replace(result, series_contexts=series_contexts),
     )
     result = replace(result, quality_state=build_shelfmark_quality_state(result))
+    result = _decorate_result_chrome(result)
     return replace(
         result,
         triage_state=build_shelfmark_triage_state(
@@ -4224,6 +4333,137 @@ def _normalize_authors(value: Any) -> list[str]:
     return authors
 
 
+def _normalize_identifier(value: Any) -> str:
+    return re.sub(r"[^0-9Xx]", "", _normalize_text(value) or "").upper()
+
+
+def _normalize_for_match(value: Any) -> str:
+    normalized = (_normalize_text(value) or "").replace("|", ",")
+    normalized = re.sub(r"[\W_]+", " ", normalized.lower())
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _normalize_title_variants(value: Any) -> tuple[str, ...]:
+    normalized = _normalize_for_match(value)
+    if not normalized:
+        return tuple()
+    variants = {
+        normalized,
+        re.sub(r"^(the|a|an)\s+", "", normalized),
+        re.sub(r"\s+(book|novel|series)\b", "", normalized),
+    }
+    return tuple(variant for variant in variants if variant)
+
+
+def _description_plain_text(value: Any) -> str:
+    normalized = _normalize_text(value) or ""
+    if not normalized:
+        return ""
+    normalized = re.sub(r"<[^>]+>", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _published_year(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    normalized = _normalize_text(value) or ""
+    if not normalized:
+        return None
+    match = re.search(r"\b(1[89]\d{2}|20\d{2}|21\d{2})\b", normalized)
+    if not match:
+        return None
+    return _normalize_int(match.group(1))
+
+
+def _extract_contributor_name(value: Any) -> str | None:
+    if isinstance(value, Mapping):
+        author = value.get("author")
+        if isinstance(author, Mapping):
+            normalized = _normalize_text(author.get("name"))
+            if normalized:
+                return normalized
+        for key in ("name", "author_name", "display"):
+            normalized = _normalize_text(value.get(key))
+            if normalized:
+                return normalized
+        return None
+    return _normalize_text(value)
+
+
+def _extract_contributor_role(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        return ""
+    for key in ("contribution", "role", "kind", "type"):
+        normalized = _normalize_text(value.get(key))
+        if normalized:
+            return normalized.casefold()
+    return ""
+
+
+def _resolve_contributor_authors(book: Mapping[str, Any]) -> list[str]:
+    authors: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: Any) -> None:
+        normalized = _extract_contributor_name(value)
+        if not normalized:
+            return
+        author_key = normalized.casefold()
+        if author_key in seen:
+            return
+        seen.add(author_key)
+        authors.append(normalized)
+
+    explicit_contributions = _iter_mapping_items(book.get("contributions"))
+    if explicit_contributions:
+        for contribution in explicit_contributions:
+            role = _extract_contributor_role(contribution)
+            if role and any(hint in role for hint in SHELFMARK_AUTHOR_CONTRIBUTION_HINTS):
+                add(contribution)
+        if authors:
+            return authors
+
+    cached_contributors = book.get("cached_contributors")
+    if isinstance(cached_contributors, Sequence) and not isinstance(cached_contributors, (str, bytes)):
+        for contributor in cached_contributors:
+            if isinstance(contributor, Mapping):
+                role = _extract_contributor_role(contributor)
+                if role and any(hint in role for hint in SHELFMARK_AUTHOR_CONTRIBUTION_HINTS):
+                    add(contributor)
+            else:
+                continue
+        if authors:
+            return authors
+
+    return authors
+
+
+def _resolve_audio_contributor_names(book: Mapping[str, Any]) -> set[str]:
+    names: set[str] = set()
+
+    for contributor in _iter_mapping_items(book.get("contributions")):
+        role = _extract_contributor_role(contributor)
+        if role and any(hint in role for hint in SHELFMARK_AUDIO_CONTRIBUTION_HINTS):
+            name = _extract_contributor_name(contributor)
+            if name:
+                names.add(name.casefold())
+
+    cached_contributors = book.get("cached_contributors")
+    if isinstance(cached_contributors, Sequence) and not isinstance(cached_contributors, (str, bytes)):
+        for contributor in cached_contributors:
+            if not isinstance(contributor, Mapping):
+                continue
+            role = _extract_contributor_role(contributor)
+            if role and any(hint in role for hint in SHELFMARK_AUDIO_CONTRIBUTION_HINTS):
+                name = _extract_contributor_name(contributor)
+                if name:
+                    names.add(name.casefold())
+
+    return names
+
+
 def _iter_mapping_items(value: Any) -> tuple[Mapping[str, Any], ...]:
     if isinstance(value, Mapping):
         return (value,)
@@ -4244,7 +4484,20 @@ def _resolve_shelfmark_title(book: Mapping[str, Any]) -> str | None:
 
 
 def _resolve_shelfmark_authors(book: Mapping[str, Any]) -> list[str]:
+    contributor_authors = _resolve_contributor_authors(book)
+    if contributor_authors:
+        return contributor_authors
+
     authors = _normalize_authors(book.get("authors"))
+    audio_contributors = _resolve_audio_contributor_names(book)
+    if authors and audio_contributors:
+        filtered_authors = [
+            author
+            for author in authors
+            if author.casefold() not in audio_contributors
+        ]
+        if filtered_authors:
+            authors = filtered_authors
     if authors:
         return authors
 
@@ -4309,6 +4562,17 @@ def _extract_schema_tag_label(tagging: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _is_valid_display_token(value: str | None) -> bool:
+    normalized = _normalize_text(value) or ""
+    if not normalized:
+        return False
+    if re.fullmatch(r"\d{6,}", normalized):
+        return False
+    if not re.search(r"[A-Za-z]", normalized) and re.fullmatch(r"[\d\W_]+", normalized):
+        return False
+    return True
+
+
 def _resolve_schema_tag_values(
     book: Mapping[str, Any],
     *,
@@ -4332,7 +4596,7 @@ def _resolve_schema_tag_values(
             continue
 
         label = _extract_schema_tag_label(tagging)
-        if not label:
+        if not _is_valid_display_token(label):
             continue
 
         label_key = label.casefold()
@@ -4374,6 +4638,207 @@ def _resolve_source_url(book: Mapping[str, Any]) -> str | None:
     if not slug:
         return None
     return f"https://hardcover.app/books/{slug}"
+
+
+def _get_cached_hardcover_query_results(query: str) -> tuple[dict[str, Any], ...] | None:
+    current_time = monotonic()
+    expired = [
+        cache_key
+        for cache_key, (cached_at, _) in _HARDCOVER_QUERY_CACHE.items()
+        if current_time - cached_at >= HARDCOVER_QUERY_CACHE_TTL_SECONDS
+    ]
+    for cache_key in expired:
+        _HARDCOVER_QUERY_CACHE.pop(cache_key, None)
+    while len(_HARDCOVER_QUERY_CACHE) > HARDCOVER_QUERY_CACHE_MAX_ENTRIES:
+        _HARDCOVER_QUERY_CACHE.popitem(last=False)
+
+    cached_entry = _HARDCOVER_QUERY_CACHE.get(query)
+    if not cached_entry:
+        return None
+    _HARDCOVER_QUERY_CACHE.move_to_end(query)
+    return tuple(dict(item) for item in cached_entry[1])
+
+
+def _remember_hardcover_query_results(
+    query: str,
+    results: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    normalized_results = tuple(dict(result) for result in results)
+    _HARDCOVER_QUERY_CACHE[query] = (monotonic(), normalized_results)
+    _HARDCOVER_QUERY_CACHE.move_to_end(query)
+    while len(_HARDCOVER_QUERY_CACHE) > HARDCOVER_QUERY_CACHE_MAX_ENTRIES:
+        _HARDCOVER_QUERY_CACHE.popitem(last=False)
+    return tuple(dict(result) for result in normalized_results)
+
+
+def _normalize_hardcover_query_record(record: Any) -> dict[str, Any]:
+    identifiers = getattr(record, "identifiers", {}) if hasattr(record, "identifiers") else {}
+    languages = getattr(record, "languages", []) or []
+    authors = [
+        _normalize_text(value)
+        for value in (getattr(record, "authors", []) or [])
+        if _normalize_text(value)
+    ]
+    return {
+        "hardcover_id": _normalize_text(
+            identifiers.get("hardcover-id") if isinstance(identifiers, Mapping) else ""
+        ) or _normalize_text(getattr(record, "id", "")),
+        "isbn": _normalize_identifier(
+            identifiers.get("isbn") if isinstance(identifiers, Mapping) else ""
+        ),
+        "title": _normalize_text(getattr(record, "title", "")),
+        "subtitle": _normalize_text(getattr(record, "subtitle", "")),
+        "authors": authors,
+        "description": _description_plain_text(getattr(record, "description", "")),
+        "cover_url": _normalize_text(getattr(record, "cover", "")),
+        "series_name": _normalize_text(getattr(record, "series", "")),
+        "series_position": getattr(record, "series_index", None),
+        "publish_year": _published_year(getattr(record, "publishedDate", "")),
+        "publisher": _normalize_text(getattr(record, "publisher", "")),
+        "language": _normalize_text(languages[0] if languages else ""),
+        "format": _normalize_text(getattr(record, "format", "")),
+        "pages": _normalize_int(getattr(record, "pages", None)),
+        "rating": getattr(record, "rating", None) or getattr(record, "average_rating", None),
+        "ratings_count": (
+            getattr(record, "ratings_count", None)
+            or getattr(record, "ratingsCount", None)
+            or getattr(record, "ratings", None)
+        ),
+        "readers_count": (
+            getattr(record, "readers_count", None)
+            or getattr(record, "readersCount", None)
+            or getattr(record, "readers", None)
+            or getattr(record, "users_count", None)
+        ),
+        "source_url": _normalize_text(getattr(record, "url", "")),
+    }
+
+
+def _search_hardcover_query_enrichment(query: str) -> tuple[dict[str, Any], ...]:
+    normalized_query = _normalize_text(query) or ""
+    if len(normalized_query) < HARDCOVER_QUERY_MIN_LENGTH:
+        return tuple()
+
+    cached = _get_cached_hardcover_query_results(normalized_query)
+    if cached is not None:
+        return cached
+
+    try:
+        from cps.metadata_provider.hardcover import Hardcover
+    except Exception as exc:
+        log.debug("Hardcover search provider unavailable for '%s': %s", normalized_query, exc)
+        return tuple()
+
+    try:
+        results = Hardcover().search(normalized_query)
+    except Exception as exc:  # pragma: no cover - provider throws broad exceptions
+        log.debug("Hardcover search enrichment failed for '%s': %s", normalized_query, exc)
+        return tuple()
+
+    normalized_results = tuple(
+        _normalize_hardcover_query_record(record)
+        for record in (results or [])
+        if record is not None
+    )
+    return _remember_hardcover_query_results(normalized_query, normalized_results)
+
+
+def _match_hardcover_query_enrichment(
+    book: Mapping[str, Any],
+    hardcover_results: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Any] | None:
+    if not hardcover_results:
+        return None
+
+    hardcover_id = _extract_hardcover_id(book)
+    if not hardcover_id and (_normalize_text(book.get("provider")) or "").lower() == SHELFMARK_METADATA_PROVIDER:
+        hardcover_id = _normalize_text(book.get("provider_id"))
+
+    isbn = (
+        _normalize_identifier(book.get("isbn"))
+        or _normalize_identifier(book.get("isbn_13"))
+        or _normalize_identifier(book.get("isbn_10"))
+    )
+    normalized_titles = _normalize_title_variants(book.get("title"))
+    authors = _resolve_shelfmark_authors(book)
+    normalized_author = _normalize_for_match(authors[0] if authors else "")
+
+    for candidate in hardcover_results:
+        if hardcover_id and _normalize_text(candidate.get("hardcover_id")) == hardcover_id:
+            return candidate
+    for candidate in hardcover_results:
+        if isbn and _normalize_identifier(candidate.get("isbn")) == isbn:
+            return candidate
+    for candidate in hardcover_results:
+        if _normalize_for_match(candidate.get("title")) not in normalized_titles:
+            continue
+        candidate_authors = candidate.get("authors") or []
+        candidate_author = _normalize_for_match(candidate_authors[0] if candidate_authors else "")
+        if normalized_author and candidate_author and candidate_author != normalized_author:
+            continue
+        return candidate
+    return None
+
+
+def _merge_hardcover_query_enrichment(
+    book: Mapping[str, Any],
+    hardcover_match: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    merged = dict(book)
+    if hardcover_match is None:
+        return merged
+
+    for key in (
+        "subtitle",
+        "cover_url",
+        "series_name",
+        "series_position",
+        "publisher",
+        "language",
+        "format",
+        "pages",
+        "rating",
+        "ratings_count",
+        "readers_count",
+        "source_url",
+    ):
+        if not _normalize_text(merged.get(key)) and hardcover_match.get(key):
+            merged[key] = hardcover_match.get(key)
+
+    if not _resolve_publish_year(merged) and hardcover_match.get("publish_year"):
+        merged["publish_year"] = hardcover_match.get("publish_year")
+
+    description = _description_plain_text(merged.get("description"))
+    overlay_description = _description_plain_text(hardcover_match.get("description"))
+    if len(overlay_description) > len(description):
+        merged["description"] = overlay_description
+
+    if not _extract_hardcover_id(merged) and hardcover_match.get("hardcover_id"):
+        identifiers = dict(merged.get("identifiers") or {})
+        identifiers["hardcover-id"] = hardcover_match.get("hardcover_id")
+        merged["identifiers"] = identifiers
+
+    if not _resolve_shelfmark_authors(merged) and hardcover_match.get("authors"):
+        merged["authors"] = list(hardcover_match.get("authors") or [])
+
+    return merged
+
+
+def _apply_hardcover_query_enrichment(
+    query: str,
+    books: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    hardcover_results = _search_hardcover_query_enrichment(query)
+    if not hardcover_results:
+        return tuple(dict(book) for book in books)
+
+    return tuple(
+        _merge_hardcover_query_enrichment(
+            book,
+            _match_hardcover_query_enrichment(book, hardcover_results),
+        )
+        for book in books
+    )
 
 
 def _edition_identity(edition: Mapping[str, Any]) -> tuple[str | None, ...]:
@@ -4464,6 +4929,13 @@ def _classify_schema_content_type(record: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _is_audio_edition(record: Mapping[str, Any]) -> bool:
+    if _classify_schema_content_type(record) == "audio":
+        return True
+    audio_seconds = _normalize_int(record.get("audio_seconds"))
+    return bool(audio_seconds and audio_seconds > 0)
+
+
 def _select_edition_by_kind(book: Mapping[str, Any], kind: str) -> Mapping[str, Any] | None:
     default_key_by_kind = {
         "ebook": "default_ebook_edition",
@@ -4488,16 +4960,27 @@ def _select_edition_by_kind(book: Mapping[str, Any], kind: str) -> Mapping[str, 
 
 
 def _resolve_display_edition(book: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    for kind in ("ebook", "physical", "audio"):
+    for kind in ("ebook", "physical"):
         candidate = _select_edition_by_kind(book, kind)
-        if candidate is not None:
+        if candidate is not None and not _is_audio_edition(candidate):
             return candidate
 
     default_cover_edition = book.get("default_cover_edition")
-    if isinstance(default_cover_edition, Mapping):
+    if isinstance(default_cover_edition, Mapping) and not _is_audio_edition(default_cover_edition):
         return default_cover_edition
 
     all_editions = _iter_schema_editions(book)
+    non_audio_editions = tuple(
+        edition for edition in all_editions
+        if not _is_audio_edition(edition)
+    )
+    if non_audio_editions:
+        return non_audio_editions[0]
+
+    audio_candidate = _select_edition_by_kind(book, "audio")
+    if audio_candidate is not None:
+        return audio_candidate
+
     return all_editions[0] if all_editions else None
 
 
@@ -4963,6 +5446,8 @@ def _normalize_tag_list(value: Any, *, limit: int | None = None) -> tuple[str, .
             continue
         if normalized.casefold() in generic_labels:
             continue
+        if not _is_valid_display_token(normalized):
+            continue
         tag_key = normalized.casefold()
         if tag_key in seen:
             continue
@@ -5037,6 +5522,8 @@ def _normalize_compact_values(value: Any, *, limit: int | None = None) -> tuple[
             continue
         if item.casefold() in generic_labels:
             continue
+        if not _is_valid_display_token(item):
+            continue
         item_key = item.casefold()
         if item_key in seen:
             continue
@@ -5047,6 +5534,27 @@ def _normalize_compact_values(value: Any, *, limit: int | None = None) -> tuple[
     return tuple(values)
 
 
+def _capitalize_display_value(value: str) -> str:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return ""
+    if any(character.isupper() for character in normalized[1:]):
+        return normalized
+    return re.sub(
+        r"(^|[\s/\-\(\[\{])([a-z])",
+        lambda match: f"{match.group(1)}{match.group(2).upper()}",
+        normalized,
+    )
+
+
+def _capitalize_display_values(values: Sequence[str]) -> tuple[str, ...]:
+    return tuple(
+        capitalized
+        for capitalized in (_capitalize_display_value(value) for value in values)
+        if capitalized
+    )
+
+
 def _resolve_moods(book: Mapping[str, Any]) -> tuple[str, ...]:
     schema_values = _resolve_schema_tag_values(
         book,
@@ -5054,14 +5562,16 @@ def _resolve_moods(book: Mapping[str, Any]) -> tuple[str, ...]:
         limit=5,
     )
     if schema_values:
-        return schema_values
+        return _capitalize_display_values(schema_values)
 
     direct = _normalize_compact_values(book.get("moods"), limit=5)
     if direct:
-        return direct
-    return _normalize_compact_values(
-        _lookup_display_field_value(book, "Moods", "Mood"),
-        limit=5,
+        return _capitalize_display_values(direct)
+    return _capitalize_display_values(
+        _normalize_compact_values(
+            _lookup_display_field_value(book, "Moods", "Mood"),
+            limit=5,
+        )
     )
 
 
@@ -5073,19 +5583,21 @@ def _resolve_content_warnings(book: Mapping[str, Any]) -> tuple[str, ...]:
         prefer_non_spoilers=True,
     )
     if schema_values:
-        return schema_values
+        return _capitalize_display_values(schema_values)
 
     direct = _normalize_compact_values(book.get("content_warnings"), limit=6)
     if direct:
-        return direct
+        return _capitalize_display_values(direct)
 
     fallback = _normalize_compact_values(book.get("warnings"), limit=6)
     if fallback:
-        return fallback
+        return _capitalize_display_values(fallback)
 
-    return _normalize_compact_values(
-        _lookup_display_field_value(book, "Content warnings", "Content warning", "Warnings"),
-        limit=6,
+    return _capitalize_display_values(
+        _normalize_compact_values(
+            _lookup_display_field_value(book, "Content warnings", "Content warning", "Warnings"),
+            limit=6,
+        )
     )
 
 

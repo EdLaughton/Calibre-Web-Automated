@@ -20,6 +20,44 @@
   margin: 0 auto;
 }
 
+body.request > div.container-fluid > div > div.col-sm-10 > div.discover.shelfmark-request-page {
+  margin: 8px 0 30px !important;
+}
+
+body.request .shelfmark-request-page .shelfmark-external-shell {
+  padding-top: 0;
+}
+
+.shelfmark-request-page__intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 18px;
+  margin: 0 0 16px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid rgba(226, 236, 242, 0.14);
+}
+
+.shelfmark-request-page__subtitle {
+  margin: 0;
+  max-width: 72ch;
+  color: var(--shelfmark-shell-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.shelfmark-request-page__meta {
+  flex: 0 0 auto;
+  margin: 0;
+  padding-top: 1px;
+  color: rgba(223, 233, 240, 0.78);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .shelfmark-section-line {
   display: flex;
   align-items: baseline;
@@ -78,7 +116,7 @@
 }
 
 .shelfmark-request-form {
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .shelfmark-request-form__search {
@@ -225,6 +263,11 @@
 }
 
 .shelfmark-request-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 20px;
   margin-bottom: 14px;
 }
 
@@ -237,7 +280,8 @@
 }
 
 .shelfmark-request-summary__filters {
-  margin-top: 4px;
+  margin-top: 0;
+  text-align: right;
 }
 
 .shelfmark-request-summary__filters span + span::before {
@@ -249,11 +293,11 @@
 .shelfmark-external-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px 16px;
+  gap: 14px 18px;
   margin-top: 10px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--shelfmark-shell-soft-border);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
@@ -273,7 +317,7 @@
   flex: 1 1 640px;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
+  gap: 10px 14px;
   min-width: 0;
 }
 
@@ -281,8 +325,9 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 7px;
+  gap: 8px;
   margin-right: 0;
+  min-height: 36px;
   min-width: 0;
 }
 
@@ -290,6 +335,7 @@
   display: inline-flex;
   align-items: center;
   margin: 0;
+  min-height: 36px;
 }
 
 .shelfmark-external-controls__submit-group {
@@ -309,7 +355,7 @@
 
 .shelfmark-external-controls__select {
   min-width: 88px;
-  height: 32px;
+  height: 36px;
   border-color: rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.06);
   color: var(--shelfmark-shell-text);
@@ -329,7 +375,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 20px;
+  min-height: 36px;
   padding: 0;
   margin: 0;
   color: var(--shelfmark-shell-muted);
@@ -342,6 +388,7 @@
 .shelfmark-external-controls__checkbox {
   margin: 0;
   accent-color: rgba(93, 170, 222, 0.92);
+  transform: translateY(-1px);
 }
 
 .shelfmark-external-controls__apply,
@@ -350,8 +397,11 @@
 .shelfmark-external-toolbar__open-search,
 .shelfmark-batch-toolbar__request,
 .shelfmark-pagination-footer__page-link {
-  padding: 6px 12px;
-  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  min-height: 36px;
   border-color: rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.06);
   color: var(--shelfmark-shell-text);
@@ -360,7 +410,7 @@
 }
 
 .shelfmark-external-controls__apply {
-  min-width: 64px;
+  min-width: 74px;
   background: rgba(84, 153, 204, 0.22);
   border-color: rgba(105, 176, 229, 0.34);
 }
@@ -511,6 +561,11 @@
   gap: 12px;
 }
 
+.shelfmark-result-card__header-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .shelfmark-result-card__title {
   margin: 0 0 4px;
   font-size: 19px;
@@ -542,7 +597,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
-  min-width: 170px;
+  min-width: 178px;
 }
 
 .shelfmark-result-card__badges .label,
@@ -660,13 +715,13 @@
 .shelfmark-result-card__authors,
 .shelfmark-result-card__description,
 .shelfmark-result-card__action-hint {
-  margin-bottom: 9px;
+  margin-bottom: 8px;
 }
 
 .shelfmark-result-card__authors {
   color: #33495d;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.42;
 }
 
 .shelfmark-result-card__authors strong {
@@ -859,6 +914,7 @@
 }
 
 .shelfmark-result-card__subtitle {
+  margin: 0 0 2px;
   font-size: 12px;
 }
 
@@ -869,15 +925,21 @@
   line-height: 1.45;
 }
 
+.shelfmark-result-card__description {
+  max-width: 76ch;
+  line-height: 1.65;
+}
+
 .shelfmark-result-card__facts,
 .shelfmark-detail-hero__facts {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0;
-  margin: 0 0 10px;
+  margin: 0 0 9px;
   color: var(--shelfmark-shell-muted);
   font-size: 12px;
+  font-weight: 600;
   line-height: 1.55;
 }
 
@@ -895,9 +957,13 @@
 }
 
 .shelfmark-result-card__series-note {
-  margin: -4px 0 10px;
+  margin: -2px 0 10px;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.shelfmark-result-card__series-note--context {
+  color: rgba(223, 233, 240, 0.82);
 }
 
 .shelfmark-result-card__badges .label-default,
@@ -908,15 +974,17 @@
 
 .shelfmark-result-card__actions {
   gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top-color: var(--shelfmark-shell-soft-border);
 }
 
 .shelfmark-result-card__primary-action,
 .shelfmark-detail-hero__primary-action {
   min-width: 0;
-  padding: 6px 11px;
+  min-height: 40px;
+  padding: 8px 14px;
   font-size: 11px;
   font-weight: 600;
   box-shadow: none;
@@ -934,7 +1002,7 @@
 }
 
 .shelfmark-result-card__secondary-action {
-  padding: 4px 2px;
+  padding: 8px 4px;
   border: 0;
   background: transparent;
   color: rgba(214, 227, 237, 0.86);
@@ -1165,6 +1233,52 @@
   align-items: center;
 }
 
+.shelfmark-pagination-footer__pages {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.shelfmark-pagination-footer__page-number,
+.shelfmark-pagination-footer__ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--shelfmark-shell-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.shelfmark-pagination-footer__page-number:hover,
+.shelfmark-pagination-footer__page-number:focus {
+  color: #fff;
+  text-decoration: none;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.shelfmark-pagination-footer__page-number.is-current {
+  border-color: rgba(108, 181, 234, 0.42);
+  background: rgba(84, 153, 204, 0.24);
+}
+
+.shelfmark-pagination-footer__ellipsis {
+  min-width: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--shelfmark-shell-muted);
+}
+
 .shelfmark-pagination-footer__page-size-form {
   display: inline-flex;
   align-items: center;
@@ -1361,11 +1475,40 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .shelfmark-detail-hero__badges .label .glyphicon {
   margin-right: 4px;
+}
+
+.shelfmark-detail-hero__summary {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.shelfmark-detail-hero__quality-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+.shelfmark-detail-hero__quality-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--shelfmark-shell-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .shelfmark-detail-hero__actions {
@@ -1405,21 +1548,38 @@
   line-height: 1.5;
 }
 
-.shelfmark-detail-meta-list__series-row {
-  display: inline-flex;
+.shelfmark-detail-meta-list__series-list {
+  display: grid;
+  gap: 10px;
+}
+
+.shelfmark-detail-meta-list__series-entry {
+  display: grid;
+  gap: 4px;
+}
+
+.shelfmark-detail-meta-list__series-primary {
+  display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 0;
+  align-items: baseline;
+  gap: 8px 10px;
+}
+
+.shelfmark-detail-meta-list__series-detail {
+  color: var(--shelfmark-shell-muted);
 }
 
 .shelfmark-detail-meta-list__context-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .shelfmark-detail-meta-list__context-entry {
   display: grid;
-  gap: 2px;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .shelfmark-detail-meta-list__context-name {
@@ -1439,23 +1599,27 @@
 .shelfmark-detail-top-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 14px;
-  margin: 0 0 12px;
+  gap: 10px 12px;
+  margin: 0;
 }
 
 .shelfmark-detail-top-stats__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
   margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  padding: 9px 12px;
+  border: 1px solid var(--shelfmark-shell-soft-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
   min-width: 0;
 }
 
 .shelfmark-detail-top-stats__label {
   display: inline;
-  margin: 0 6px 0 0;
+  margin: 0;
   color: var(--shelfmark-shell-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1465,9 +1629,9 @@
   display: inline;
   margin: 0;
   color: var(--shelfmark-shell-text);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.4;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .shelfmark-detail-section {
@@ -1507,12 +1671,16 @@
 }
 
 .shelfmark-detail-modal__dialog {
-  width: min(980px, calc(100% - 24px));
-  max-width: 980px;
-  margin: 18px auto;
+  width: min(1020px, calc(100% - 56px));
+  max-width: 1020px;
+  margin: 28px auto;
 }
 
 .shelfmark-detail-modal__content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 56px);
+  overflow: hidden;
   border-color: rgba(255, 255, 255, 0.14);
   background: linear-gradient(180deg, rgba(13, 21, 29, 0.98) 0%, rgba(10, 16, 22, 0.98) 100%);
   color: var(--shelfmark-shell-text);
@@ -1544,9 +1712,12 @@
 }
 
 .shelfmark-detail-modal__body {
-  max-height: calc(100vh - 132px);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
-  padding: 20px 24px 26px;
+  overscroll-behavior: contain;
+  padding: 18px 22px 22px;
 }
 
 .shelfmark-detail-modal__loading {
@@ -1571,8 +1742,21 @@
   animation: shelfmark-detail-spin 0.8s linear infinite;
 }
 
+html.modal-open,
+body.modal-open {
+  overflow: hidden !important;
+  height: 100%;
+}
+
+.shelfmark-detail-pane--modal .shelfmark-detail-sidebar {
+  position: sticky;
+  top: 6px;
+  align-self: start;
+}
+
 .shelfmark-detail-pane--modal .shelfmark-detail-cover-card {
-  position: static;
+  position: sticky;
+  top: 6px;
 }
 
 .shelfmark-detail-meta-list {
@@ -1627,13 +1811,13 @@
 .shelfmark-detail-token {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   color: rgba(244, 248, 251, 0.94);
   font-size: 12px;
   line-height: 1.45;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .shelfmark-detail-token-list--warnings .shelfmark-detail-token {
@@ -1645,6 +1829,10 @@
   .shelfmark-external-shell,
   .shelfmark-detail-page__shell {
     max-width: none;
+  }
+
+  body.request > div.container-fluid > div > div.col-sm-10 > div.discover.shelfmark-request-page {
+    margin: 0 0 24px !important;
   }
 
   .shelfmark-batch-toolbar {
@@ -1713,6 +1901,15 @@
     width: 108px;
   }
 
+  .shelfmark-request-summary {
+    display: block;
+  }
+
+  .shelfmark-request-summary__filters {
+    margin-top: 4px;
+    text-align: left;
+  }
+
   .shelfmark-pagination-footer,
   .shelfmark-pagination-footer__controls {
     flex-direction: column;
@@ -1760,8 +1957,13 @@
   }
 
   .shelfmark-detail-modal__body {
-    max-height: calc(100vh - 82px);
+    max-height: none;
     padding: 16px 14px 20px;
+  }
+
+  .shelfmark-detail-pane--modal .shelfmark-detail-sidebar,
+  .shelfmark-detail-pane--modal .shelfmark-detail-cover-card {
+    position: static;
   }
 
   .shelfmark-detail-page__title,

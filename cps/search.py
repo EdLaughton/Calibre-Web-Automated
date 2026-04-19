@@ -127,6 +127,39 @@ def _request_search_state_url(query, *, page=None, sort=None, requestable=None, 
     )
 
 
+def _request_page_links(query, *, current_page, total_pages, sort, requestable, has_cover):
+    if not total_pages or total_pages <= 1:
+        return []
+
+    pages = {1, total_pages, current_page}
+    for offset in range(-2, 3):
+        page_number = current_page + offset
+        if 1 <= page_number <= total_pages:
+            pages.add(page_number)
+
+    ordered_pages = sorted(pages)
+    page_links = []
+    previous_page = None
+    for page_number in ordered_pages:
+        if previous_page is not None and page_number - previous_page > 1:
+            page_links.append({"ellipsis": True})
+        page_links.append(
+            {
+                "page": page_number,
+                "current": page_number == current_page,
+                "url": _request_search_state_url(
+                    query,
+                    page=page_number,
+                    sort=sort,
+                    requestable=requestable,
+                    has_cover=has_cover,
+                ),
+            }
+        )
+        previous_page = page_number
+    return page_links
+
+
 def _decorate_request_result_rows(section):
     for index, result in enumerate(section.get("results") or []):
         result["row_index"] = index
@@ -214,6 +247,14 @@ def request_page():
         else None
     )
     section["clear_filters_url"] = _request_search_state_url(query)
+    section["page_links"] = _request_page_links(
+        query,
+        current_page=section.get("page") or 1,
+        total_pages=section.get("total_pages") or 0,
+        sort=section.get("selected_sort"),
+        requestable=section.get("filter_requestable"),
+        has_cover=section.get("filter_has_cover"),
+    )
     section["preferred_release_settings"] = get_shelfmark_preferred_release_settings().to_template_dict()
     _decorate_request_result_rows(section)
 

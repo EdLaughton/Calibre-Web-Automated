@@ -1909,7 +1909,18 @@
     return window.jQuery(modalNode);
   }
 
+  function setModalOpenState(isOpen) {
+    var method = isOpen ? 'add' : 'remove';
+    if (document.documentElement && document.documentElement.classList) {
+      document.documentElement.classList[method]('modal-open');
+    }
+    if (document.body && document.body.classList) {
+      document.body.classList[method]('modal-open');
+    }
+  }
+
   function showModal(modalNode) {
+    setModalOpenState(true);
     var modalApi = getModalJquery(modalNode);
     if (modalApi && typeof modalApi.modal === 'function') {
       modalApi.modal('show');
@@ -1917,9 +1928,6 @@
     }
     modalNode.style.display = 'block';
     modalNode.classList.add('in');
-    if (document.body) {
-      document.body.classList.add('modal-open');
-    }
   }
 
   function hideModal(modalNode) {
@@ -1930,9 +1938,7 @@
     }
     modalNode.style.display = 'none';
     modalNode.classList.remove('in');
-    if (document.body) {
-      document.body.classList.remove('modal-open');
-    }
+    setModalOpenState(false);
     emitCustomEvent(modalNode, 'cwa:modal-hidden');
   }
 
@@ -1943,7 +1949,10 @@
     modalNode.dataset.shelfmarkModalBound = '1';
     var modalApi = getModalJquery(modalNode);
     if (modalApi && typeof modalApi.on === 'function') {
-      modalApi.on('hidden.bs.modal', handler);
+      modalApi.on('hidden.bs.modal', function () {
+        setModalOpenState(false);
+        handler();
+      });
       return;
     }
     modalNode.addEventListener('cwa:modal-hidden', handler);

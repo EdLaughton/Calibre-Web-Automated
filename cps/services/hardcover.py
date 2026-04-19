@@ -74,6 +74,13 @@ BOOK_BY_ID_QUERY = """
             editions_count
             lists_count
             cached_image
+            cached_contributors
+            contributions {
+                contribution
+                author {
+                    name
+                }
+            }
             default_cover_edition {
                 id
                 title

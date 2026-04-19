@@ -68,8 +68,18 @@ def shelfmark_module(monkeypatch):
     )
     cps_module.db = dummy_db
     cps_module.logger = types.SimpleNamespace(create=lambda: logger_instance)
+    cps_module.__path__ = []
     clean_html_module = types.ModuleType("cps.clean_html")
     clean_html_module.clean_string = lambda value, book_id=0: value
+    metadata_provider_module = types.ModuleType("cps.metadata_provider")
+    metadata_provider_module.__path__ = []
+    hardcover_provider_module = types.ModuleType("cps.metadata_provider.hardcover")
+
+    class DummyHardcover:
+        def search(self, query):
+            return []
+
+    hardcover_provider_module.Hardcover = DummyHardcover
 
     cw_advocate_module = types.ModuleType("cps.cw_advocate")
     cw_advocate_exceptions_module = types.ModuleType("cps.cw_advocate.exceptions")
@@ -130,6 +140,8 @@ def shelfmark_module(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "cps", cps_module)
     monkeypatch.setitem(sys.modules, "cps.clean_html", clean_html_module)
+    monkeypatch.setitem(sys.modules, "cps.metadata_provider", metadata_provider_module)
+    monkeypatch.setitem(sys.modules, "cps.metadata_provider.hardcover", hardcover_provider_module)
     monkeypatch.setitem(sys.modules, "cps.cw_advocate", cw_advocate_module)
     monkeypatch.setitem(sys.modules, "cps.cw_advocate.exceptions", cw_advocate_exceptions_module)
     monkeypatch.setitem(sys.modules, "flask", flask_module)
@@ -597,6 +609,147 @@ def test_build_result_view_uses_preview_fallback_for_cover_when_cover_url_is_mis
         "https://library.example.com/shelfmark/api/covers/hardcover_222"
         "?url=aHR0cHM6Ly9jb3ZlcnMuZXhhbXBsZS5jb20vMjIyLmpwZw=="
     )
+
+
+def test_resolve_display_edition_prefers_non_audio_editions_for_detail_metadata(shelfmark_module):
+    book = {
+        "edition": {
+            "id": "inline-audio",
+            "edition_format": "Audiobook",
+            "audio_seconds": 41234,
+            "pages": None,
+        },
+        "default_audio_edition": {
+            "id": "audio",
+            "edition_format": "Audiobook",
+            "audio_seconds": 41234,
+        },
+        "default_physical_edition": {
+            "id": "hardcover",
+            "edition_format": "Hardcover",
+            "physical_format": "Hardcover",
+            "pages": 544,
+        },
+        "default_ebook_edition": {
+            "id": "ebook",
+            "edition_format": "Ebook",
+            "pages": 544,
+        },
+    }
+
+    edition = shelfmark_module._resolve_display_edition(book)
+
+    assert edition is not None
+    assert edition["id"] == "ebook"
+    assert shelfmark_module._is_audio_edition(edition) is False
+
+
+def test_resolve_shelfmark_authors_prefers_author_contributions_over_audio_narrators(shelfmark_module):
+    book = {
+        "authors": ["Peter V. Brett", "Colin Mace"],
+        "contributions": [
+            {"contribution": "Narrator", "author": {"name": "Colin Mace"}},
+            {"contribution": "Author", "author": {"name": "Peter V. Brett"}},
+        ],
+    }
+
+    assert shelfmark_module._resolve_shelfmark_authors(book) == ["Peter V. Brett"]
+
+
+def test_resolve_shelfmark_authors_strips_audio_contributor_names_from_fallback_authors(shelfmark_module):
+    book = {
+        "authors": ["Peter V. Brett", "Colin Mace"],
+        "cached_contributors": [
+            {"role": "Narrator", "author": {"name": "Colin Mace"}},
+        ],
+    }
+
+    assert shelfmark_module._resolve_shelfmark_authors(book) == ["Peter V. Brett"]
+
+
+def test_build_result_view_capitalizes_moods_and_content_warnings(shelfmark_module):
+    result = shelfmark_module.build_shelfmark_result_view(
+        {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "External Candidate",
+            "authors": ["Author Two"],
+            "moods": ["hopeful", "dark"],
+            "content_warnings": ["misogyny", "graphic violence"],
+            "identifiers": {"hardcover-id": "222"},
+        },
+        library_match=None,
+        detail_url="/external/222",
+        shelfmark_browser_base_url="https://library.example.com/shelfmark",
+    )
+
+    assert result.moods == ("Hopeful", "Dark")
+    assert result.content_warnings == ("Misogyny", "Graphic Violence")
+
+
+def test_build_result_view_filters_numeric_garbage_from_moods_and_content_warnings(shelfmark_module):
+    result = shelfmark_module.build_shelfmark_result_view(
+        {
+            "provider": "hardcover",
+            "provider_id": "222",
+            "title": "External Candidate",
+            "authors": ["Author Two"],
+            "moods": ["dark", "1735854282725"],
+            "content_warnings": ["misogyny", "1735854282725"],
+            "identifiers": {"hardcover-id": "222"},
+        },
+        library_match=None,
+        detail_url="/external/222",
+        shelfmark_browser_base_url="https://library.example.com/shelfmark",
+    )
+
+    assert result.moods == ("Dark",)
+    assert result.content_warnings == ("Misogyny",)
+
+
+def test_apply_hardcover_query_enrichment_backfills_request_result_metadata(shelfmark_module, monkeypatch):
+    class FakeRecord:
+        def __init__(self):
+            self.identifiers = {"hardcover-id": "222", "isbn": "9780316066525"}
+            self.title = "The Painted Man"
+            self.subtitle = ""
+            self.authors = ["Peter V. Brett"]
+            self.description = "<p>Nightfall brings demons.</p>"
+            self.cover = "https://covers.example.com/painted-man.jpg"
+            self.series = "The Demon Cycle"
+            self.series_index = 1
+            self.publishedDate = "2008-01-01"
+            self.publisher = "Del Rey"
+            self.languages = ["English"]
+            self.format = "Ebook"
+            self.pages = 590
+            self.rating = 4.2
+            self.ratings_count = 484
+            self.readers_count = 1128
+            self.url = "https://hardcover.app/books/the-painted-man"
+
+    hardcover_module = sys.modules["cps.metadata_provider.hardcover"]
+    monkeypatch.setattr(hardcover_module, "Hardcover", lambda: types.SimpleNamespace(search=lambda query: [FakeRecord()]))
+
+    enriched = shelfmark_module._apply_hardcover_query_enrichment(
+        "painted man",
+        (
+            {
+                "provider": "hardcover",
+                "provider_id": "222",
+                "title": "The Painted Man",
+                "authors": ["Peter V. Brett"],
+                "identifiers": {"hardcover-id": "222", "isbn": "9780316066525"},
+                "description": "",
+            },
+        ),
+    )
+
+    assert len(enriched) == 1
+    assert enriched[0]["pages"] == 590
+    assert enriched[0]["series_name"] == "The Demon Cycle"
+    assert enriched[0]["ratings_count"] == 484
+    assert enriched[0]["readers_count"] == 1128
 
 
 def test_build_request_payload_uses_metadata_book_shape_with_explicit_wildcard_source(shelfmark_module):
@@ -1536,7 +1689,7 @@ def test_fetch_shelfmark_detail_prefers_direct_hardcover_book_by_id_when_availab
         "Discworld (4)",
     )
     assert result.genres == ("Fantasy",)
-    assert result.moods == ("funny",)
+    assert result.moods == ("Funny",)
     assert result.content_warnings == ("Death",)
 
 

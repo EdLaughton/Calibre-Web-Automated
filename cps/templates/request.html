@@ -6,16 +6,14 @@
 
 {% block body %}
 <div class="discover shelfmark-search-page shelfmark-request-page">
+  <h2 class="shelfmark-request-page__band-title">{{ _('Request Book') }}</h2>
   <div class="shelfmark-external-shell">
-    <div class="shelfmark-section-line shelfmark-external-header">
-      <div class="shelfmark-section-line__lead">
-        <h2 class="shelfmark-section-line__title">{{ _('Request Book') }}</h2>
-        <p class="shelfmark-section-line__subtitle">
-          {{ _('Search Shelfmark for a specific book, inspect the richer metadata if needed, and request it without touching the normal library search.') }}
-        </p>
-      </div>
+    <div class="shelfmark-request-page__intro shelfmark-external-header">
+      <p class="shelfmark-request-page__subtitle">
+        {{ _('Search Shelfmark for a specific book, inspect the richer metadata if needed, and request it without touching the normal library search.') }}
+      </p>
       {% if request_query %}
-        <p class="shelfmark-section-line__meta">{{ _('%(count)s Shelfmark matches', count=shelfmark.raw_total_available if shelfmark else 0) }}</p>
+        <p class="shelfmark-request-page__meta">{{ _('%(count)s Shelfmark matches', count=shelfmark.raw_total_available if shelfmark else 0) }}</p>
       {% endif %}
     </div>
 
@@ -108,9 +106,6 @@
               {% endif %}
             {% endif %}
           </p>
-          {% if shelfmark.total_pages %}
-            <p class="shelfmark-request-summary__filters">{{ _('Page %(page)s of %(total)s', page=shelfmark.page, total=shelfmark.total_pages) }}</p>
-          {% endif %}
           {% if shelfmark.filtered_non_books or shelfmark.filtered_owned or shelfmark.filtered_coverless %}
             <p class="shelfmark-request-summary__filters">
               {% if shelfmark.filtered_non_books %}
@@ -183,7 +178,19 @@
                   <span>{{ _('Previous page') }}</span>
                 </span>
               {% endif %}
-              <span class="shelfmark-pagination-footer__page-indicator">{{ _('Page %(page)s of %(total)s', page=shelfmark.page, total=shelfmark.total_pages) }}</span>
+              {% if shelfmark.page_links %}
+                <div class="shelfmark-pagination-footer__pages" role="navigation" aria-label="{{ _('Page links') }}">
+                  {% for link in shelfmark.page_links %}
+                    {% if link.ellipsis %}
+                      <span class="shelfmark-pagination-footer__ellipsis" aria-hidden="true">…</span>
+                    {% elif link.current %}
+                      <span class="shelfmark-pagination-footer__page-number is-current" aria-current="page">{{ link.page }}</span>
+                    {% else %}
+                      <a class="shelfmark-pagination-footer__page-number" href="{{ link.url }}">{{ link.page }}</a>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              {% endif %}
               {% if shelfmark.next_page_url %}
                 <a class="btn btn-default shelfmark-pagination-footer__page-link" href="{{ shelfmark.next_page_url }}">
                   <span>{{ _('Next page') }}</span>

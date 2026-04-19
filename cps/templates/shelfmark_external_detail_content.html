@@ -1,6 +1,12 @@
 {% set preferred_release = preferred_release or {} %}
 {% set series_contexts = result.series_contexts if result and result.series_contexts is defined and result.series_contexts else ([result.best_series_context] if result and result.best_series_context is defined and result.best_series_context else ([result.series_context] if result and result.series_context else [])) %}
 {% set series_memberships = result.series_memberships if result and result.series_memberships is defined and result.series_memberships else result.series_entries if result and result.series_entries else [] %}
+{% set facts_text = (result.facts if result and result.facts is defined and result.facts else [])|join(' · ') if result else '' %}
+{% set primary_context = result.best_series_context if result and result.best_series_context is defined and result.best_series_context else (result.series_context if result and result.series_context else None) %}
+{% set primary_series_display = result.series_display if result and result.series_display else (primary_context.series_display if primary_context and primary_context.series_display is defined else '') %}
+{% set hero_quality_facts = result.quality_state.facts if result and result.quality_state and result.quality_state.facts else (result.triage_state.facts if result and result.triage_state and result.triage_state.facts else []) %}
+{% set request_badges = result.request_badges if result and result.request_badges is defined and result.request_badges else [] %}
+{% set series_context_notes = result.series_context_notes if result and result.series_context_notes is defined and result.series_context_notes else [] %}
 <div
   class="shelfmark-detail-pane{% if modal_mode %} shelfmark-detail-pane--modal{% endif %}{% if result and result.workflow_state %} js-shelfmark-status-target{% endif %}"
   {% if result and result.title %}data-detail-title="{{ result.title }}"{% endif %}
@@ -49,34 +55,29 @@
                   <span class="{{ result.library_state.icon_class }}" aria-hidden="true"></span>
                   {{ result.library_state.label }}
                 </span>
+                {% for badge in request_badges %}
+                  <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
+                {% endfor %}
+              </div>
+            {% elif request_badges %}
+              <div class="shelfmark-detail-hero__badges">
+                {% for badge in request_badges %}
+                  <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
+                {% endfor %}
               </div>
             {% endif %}
 
-            {% if result.facts %}
+            {% if result.facts or (result.pages and 'page' not in facts_text|lower) or (primary_series_display and primary_series_display not in facts_text) %}
               <p class="shelfmark-detail-hero__facts" aria-label="{{ _('Shelfmark facts') }}">
-                {% for fact in result.facts %}
+                {% for fact in result.facts if result.facts %}
                   <span class="shelfmark-detail-hero__fact">{{ fact }}</span>
                 {% endfor %}
-              </p>
-            {% endif %}
-            {% if result.best_series_context and result.best_series_context.facts %}
-              <p class="shelfmark-detail-hero__series-context" aria-label="{{ _('Library series context') }}">
-                {% for fact in result.best_series_context.facts %}
-                  <span class="shelfmark-detail-hero__series-context-fact">{{ fact }}</span>
-                {% endfor %}
-              </p>
-            {% endif %}
-            {% if result.quality_state and result.quality_state.facts %}
-              <p class="shelfmark-detail-hero__triage" aria-label="{{ _('Request quality') }}">
-                {% for fact in result.quality_state.facts %}
-                  <span class="shelfmark-detail-hero__triage-fact">{{ fact }}</span>
-                {% endfor %}
-              </p>
-            {% elif result.triage_state and result.triage_state.facts %}
-              <p class="shelfmark-detail-hero__triage" aria-label="{{ _('Request triage') }}">
-                {% for fact in result.triage_state.facts %}
-                  <span class="shelfmark-detail-hero__triage-fact">{{ fact }}</span>
-                {% endfor %}
+                {% if result.pages and 'page' not in facts_text|lower %}
+                  <span class="shelfmark-detail-hero__fact">{{ _('%(count)s pages', count=result.pages) }}</span>
+                {% endif %}
+                {% if primary_series_display and primary_series_display not in facts_text %}
+                  <span class="shelfmark-detail-hero__fact">{{ primary_series_display }}</span>
+                {% endif %}
               </p>
             {% endif %}
 
@@ -97,15 +98,26 @@
 
             <div class="shelfmark-status-banner js-shelfmark-request-status is-hidden" data-base-url="{{ result.shelfmark_base_url }}" role="status" aria-live="polite" aria-hidden="true"></div>
 
-            {% if result.detail_stats %}
-              <dl class="shelfmark-detail-top-stats" aria-label="{{ _('Book highlights') }}">
-                {% for stat in result.detail_stats %}
-                  <div class="shelfmark-detail-top-stats__item">
-                    <dt class="shelfmark-detail-top-stats__label">{{ stat.label }}</dt>
-                    <dd class="shelfmark-detail-top-stats__value">{{ stat.value }}</dd>
-                  </div>
-                {% endfor %}
-              </dl>
+            {% if hero_quality_facts or result.detail_stats %}
+              <div class="shelfmark-detail-hero__summary">
+                {% if hero_quality_facts %}
+                  <p class="shelfmark-detail-hero__quality-strip" aria-label="{{ _('Request quality') }}">
+                    {% for fact in hero_quality_facts %}
+                      <span class="shelfmark-detail-hero__quality-pill">{{ fact }}</span>
+                    {% endfor %}
+                  </p>
+                {% endif %}
+                {% if result.detail_stats %}
+                  <dl class="shelfmark-detail-top-stats" aria-label="{{ _('Book highlights') }}">
+                    {% for stat in result.detail_stats %}
+                      <div class="shelfmark-detail-top-stats__item">
+                        <dt class="shelfmark-detail-top-stats__label">{{ stat.label }}</dt>
+                        <dd class="shelfmark-detail-top-stats__value">{{ stat.value }}</dd>
+                      </div>
+                    {% endfor %}
+                  </dl>
+                {% endif %}
+              </div>
             {% endif %}
 
             <div class="btn-toolbar shelfmark-detail-hero__actions" role="toolbar">
@@ -141,38 +153,19 @@
         <div class="shelfmark-detail-section">
           <h3 class="shelfmark-detail-section__title">{{ _("Book details") }}</h3>
           <dl class="shelfmark-detail-meta-list">
-            {% if series_contexts %}
-              <dt>{{ _("Library series context") }}</dt>
-              <dd class="shelfmark-detail-meta-list__context-list">
-                {% for context in series_contexts %}
-                  <div class="shelfmark-detail-meta-list__context-entry">
-                    <span class="shelfmark-detail-meta-list__context-name">{{ context.series_display or context.membership.display or context.membership.name }}</span>
-                    {% if context.detail_value %}
-                      <span class="shelfmark-detail-meta-list__context-detail">{{ context.detail_value }}</span>
-                    {% elif context.facts %}
-                      <span class="shelfmark-detail-meta-list__context-detail">
-                        {% for fact in context.facts %}
-                          {% if not loop.first %}<span class="shelfmark-detail-meta-list__separator" aria-hidden="true">·</span>{% endif %}
-                          <span class="shelfmark-detail-meta-list__inline-fact">{{ fact }}</span>
-                        {% endfor %}
-                      </span>
-                    {% endif %}
-                  </div>
-                {% endfor %}
-              </dd>
-            {% endif %}
             {% if series_memberships %}
               <dt>{{ _("Series") }}</dt>
-              <dd class="shelfmark-detail-meta-list__series-row">
+              <dd class="shelfmark-detail-meta-list__series-list">
                 {% for series in series_memberships %}
-                  {% if not loop.first %}
-                    <span class="shelfmark-detail-meta-list__separator" aria-hidden="true">·</span>
-                  {% endif %}
-                  {% if series.url %}
-                    <a class="shelfmark-detail-meta-list__link" href="{{ series.url }}" target="_blank" rel="noopener noreferrer">{{ series.display }}</a>
-                  {% else %}
-                    <span>{{ series.display }}</span>
-                  {% endif %}
+                  <div class="shelfmark-detail-meta-list__series-entry">
+                    <div class="shelfmark-detail-meta-list__series-primary">
+                      {% if series.url %}
+                        <a class="shelfmark-detail-meta-list__link" href="{{ series.url }}" target="_blank" rel="noopener noreferrer">{{ series.display }}</a>
+                      {% else %}
+                        <span>{{ series.display }}</span>
+                      {% endif %}
+                    </div>
+                  </div>
                 {% endfor %}
               </dd>
             {% elif result.series_display %}
@@ -183,6 +176,17 @@
                 {% else %}
                   {{ result.series_display }}
                 {% endif %}
+              </dd>
+            {% endif %}
+            {% if series_context_notes %}
+              <dt>{{ _("Library context") }}</dt>
+              <dd class="shelfmark-detail-meta-list__context-list">
+                {% for note in series_context_notes %}
+                  <div class="shelfmark-detail-meta-list__context-entry">
+                    <span class="shelfmark-detail-meta-list__context-name">{{ note.series_display }}</span>
+                    <span class="shelfmark-detail-meta-list__context-detail">{{ note.detail_value }}</span>
+                  </div>
+                {% endfor %}
               </dd>
             {% endif %}
             {% if result.hardcover_id %}
@@ -231,8 +235,10 @@
               <dt>{{ _("Editions") }}</dt>
               <dd>{{ result.editions_count }}</dd>
             {% endif %}
-            <dt>{{ _("Provider") }}</dt>
-            <dd>{{ result.provider }}</dd>
+            {% if result.provider and result.provider|lower != 'hardcover' %}
+              <dt>{{ _("Provider") }}</dt>
+              <dd>{{ result.provider }}</dd>
+            {% endif %}
             {% if result.provider_id and not (result.provider == 'hardcover' and result.hardcover_id and result.provider_id == result.hardcover_id) %}
               <dt>{{ _("Provider ID") }}</dt>
               <dd>{{ result.provider_id }}</dd>

@@ -476,6 +476,17 @@ def _base_context():
             "facts": ["1 book owned in this series", "Owned through 1"],
             "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
         },
+        "series_context_notes": [
+            {
+                "series_display": "The Lord of the Rings (2)",
+                "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
+            }
+        ],
+        "request_badges": [
+            {"label": "Next missing", "badge_class": "label-primary"},
+            {"label": "Well rated", "badge_class": "label-success"},
+            {"label": "Popular", "badge_class": "label-info"},
+        ],
         "secondary_series_note": "Also in Middle-earth",
         "workflow_state": {
             "key": "available",
@@ -821,6 +832,13 @@ def _request_page_context():
             "next_page_url": "/request?query=Dune&page=3&sort=popularity&requestable=1&has_cover=1",
             "clear_filters_url": "/request?query=Dune",
             "state_url": "/request?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1",
+            "page_links": [
+                {"page": 1, "current": False, "url": "/request?query=Dune&page=1&sort=popularity&requestable=1&has_cover=1"},
+                {"page": 2, "current": True, "url": "/request?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"},
+                {"page": 3, "current": False, "url": "/request?query=Dune&page=3&sort=popularity&requestable=1&has_cover=1"},
+                {"ellipsis": True},
+                {"page": 5, "current": False, "url": "/request?query=Dune&page=5&sort=popularity&requestable=1&has_cover=1"},
+            ],
             "preferred_release_settings": {
                 "enabled": False,
                 "provider": "",
@@ -1133,7 +1151,7 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
     assert "Next missing" in html
     assert "1 book owned in this series" in html
     assert "Owned through 1" in html
-    assert "Library series context" in html
+    assert "Library series context" not in html
     assert "Well rated" in html
     assert "Popular" in html
     assert "Reviews" in html
@@ -1153,6 +1171,7 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
     assert "Genres" in html
     assert "Fantasy" in html
     assert "Adventurous" in html
+    assert ">Provider</dt>" not in html
 
 
 def test_detail_template_hides_request_ready_browser_copy_for_requestable_result():
@@ -1178,11 +1197,12 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "4.3 ★" in html
     assert "5,900 ratings" in html
     assert "9,893 readers" in html
+    assert "304 pages" in html
     assert "The Lord of the Rings (2)" in html
     assert "Middle-earth (5)" in html
     assert "Strong candidate" not in html
     assert "Next missing" in html
-    assert "Library series" in html
+    assert "Library series context" not in html
     assert "Available to request" in html
     assert html.count("Hardcover ID") == 1
     assert 'class="shelfmark-detail-status is-hidden"' in html
@@ -1374,11 +1394,11 @@ def test_request_template_renders_summary_and_pagination_for_requestable_results
     with app.test_request_context("/request?query=Dune&page=2&sort=popularity&requestable=1&has_cover=1"):
         html = render_template("request.html", **_request_page_context())
 
-    assert "Request Book" in html
+    assert '<h2 class="shelfmark-request-page__band-title">Request Book</h2>' in html
     assert "Search Shelfmark for a specific book" in html
     assert "224 Shelfmark matches" in html
     assert "Showing 13-24 of 58 requestable books from 224 Shelfmark matches" in html
-    assert "Page 2 of 5" in html
+    assert html.count("Page 2 of 5") == 1
     assert "4 non-book results suppressed" in html
     assert "19 owned books hidden" in html
     assert "11 coverless books hidden" in html
@@ -1394,10 +1414,49 @@ def test_request_template_renders_summary_and_pagination_for_requestable_results
     assert "shelfmark_external_search.js" in html
     assert "shelfmark_request_flow.js" in html
     assert "External Candidate" in html
+    assert "304 pages" in html
+    assert "The Lord of the Rings (2)" in html
+    assert "Next missing" in html
+    assert "Well rated" in html
+    assert "Popular" in html
+    assert 'class="shelfmark-pagination-footer__page-number is-current" aria-current="page">2<' in html
+    assert 'href="/request?query=Dune&amp;page=5&amp;sort=popularity&amp;requestable=1&amp;has_cover=1"' in html
     assert "Middle-earth (5)" not in html
     assert "No cover" in html
     assert 'id="shelfmarkDetailModal"' in html
     assert 'data-search-state-url="/request?query=Dune&amp;page=2&amp;sort=popularity&amp;requestable=1&amp;has_cover=1"' in html
+
+
+def test_request_detail_modal_separates_series_metadata_from_library_context():
+    app = _create_app()
+    context = _base_context()
+    result = context["shelfmark_section"]["results"][1]
+    result["request_badges"] = [
+        {"label": "Next missing", "badge_class": "label-primary"},
+        {"label": "Well rated", "badge_class": "label-success"},
+        {"label": "Popular", "badge_class": "label-info"},
+    ]
+    result["series_context_notes"] = [
+        {
+            "series_display": "The Lord of the Rings (2)",
+            "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
+        }
+    ]
+
+    with app.test_request_context("/request/detail/hardcover/222?query=Dune&view=modal"):
+        html = render_template(
+            "shelfmark_external_detail_content.html",
+            result=result,
+            modal_mode=True,
+            shelfmark_error=None,
+        )
+
+    assert "Library series context" not in html
+    assert "Library context" in html
+    assert ">Series</dt>" in html
+    assert "The Lord of the Rings (2)" in html
+    assert "1 book owned in this series" in html
+    assert "Next missing · 1 book owned in this series · Owned through 1" in html
 
 
 def test_request_template_renders_empty_state_for_filtered_request_results():
@@ -1484,7 +1543,14 @@ def test_real_layout_renders_request_book_link_on_normal_blur_page():
     assert 'class="nav navbar-nav cwa-navbar-primary"' in html
     assert 'id="advanced_search"' in html
     assert 'id="request_book"' in html
-    assert 'href="/request"' in html
+
+
+def test_request_modal_scroll_lock_hook_updates_html_and_body_classes():
+    script_path = Path(__file__).resolve().parents[2] / "cps" / "static" / "js" / "shelfmark_external_search.js"
+    script = script_path.read_text(encoding="utf-8")
+
+    assert "document.documentElement.classList[method]('modal-open')" in script
+    assert "document.body.classList[method]('modal-open')" in script
 
 
 def test_detail_template_back_link_preserves_full_saved_search_state():
