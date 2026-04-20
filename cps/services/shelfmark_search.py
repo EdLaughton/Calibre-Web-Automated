@@ -1421,15 +1421,9 @@ def _build_series_context_facts(
 
 
 def _build_series_context_detail_value(context: ShelfmarkSeriesContext) -> str | None:
-    if not context.matched:
+    if not context.matched or not context.facts:
         return None
-    parts: list[str] = []
-    if context.is_next_missing:
-        parts.append(_("Next missing"))
-    else:
-        parts.append(_("Owned series"))
-    parts.extend(context.facts)
-    return " \u00b7 ".join(part for part in parts if part)
+    return " \u00b7 ".join(part for part in context.facts if part)
 
 
 def _build_series_context_for_membership(

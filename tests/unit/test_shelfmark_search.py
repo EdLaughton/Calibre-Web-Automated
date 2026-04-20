@@ -941,12 +941,12 @@ def test_series_context_flags_next_missing_and_owned_series(shelfmark_module):
     assert contexts[0].badges[0]["label"] == "Next missing"
     assert "3 books owned in this series" in contexts[0].facts
     assert "Owned through 1" in contexts[0].facts
-    assert contexts[0].detail_value == "Next missing · 3 books owned in this series · Owned through 1"
+    assert contexts[0].detail_value == "3 books owned in this series · Owned through 1"
     assert contexts[1] is not None
     assert contexts[1].is_continuation is True
     assert contexts[1].is_next_missing is False
     assert contexts[1].badges[0]["label"] == "Owned series"
-    assert contexts[1].detail_value == "Owned series · 3 books owned in this series · Owned through 1"
+    assert contexts[1].detail_value == "3 books owned in this series · Owned through 1"
     assert contexts[2] is None
 
 
@@ -1414,6 +1414,7 @@ def test_fetch_shelfmark_detail_promotes_genres_pages_and_editions(shelfmark_mod
         "authors": ["Terry Pratchett"],
         "rating": 4.2,
         "ratings_count": 12034,
+        "reviews_count": 74,
         "users_count": 22221,
         "publish_year": 1989,
         "series_name": "Discworld",
@@ -1473,7 +1474,9 @@ def test_fetch_shelfmark_detail_promotes_genres_pages_and_editions(shelfmark_mod
     assert result.genres == ("Fantasy", "Humour", "Comedy")
     assert result.moods == ("Whimsical", "Wry")
     assert result.content_warnings == ("Violence", "Death")
+    assert result.reviews_count == 74
     assert result.detail_stats == (
+        {"label": "Reviews", "value": "74"},
         {"label": "Editions", "value": "57"},
         {"label": "Lists", "value": "128"},
     )

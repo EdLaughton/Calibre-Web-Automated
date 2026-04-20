@@ -422,7 +422,7 @@ def _base_context():
             "is_next_missing": True,
             "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
             "facts": ["1 book owned in this series", "Owned through 1"],
-            "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
+            "detail_value": "1 book owned in this series · Owned through 1",
         },
         "series_contexts": [
             {
@@ -448,7 +448,7 @@ def _base_context():
                 "is_next_missing": True,
                 "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
                 "facts": ["1 book owned in this series", "Owned through 1"],
-                "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
+                "detail_value": "1 book owned in this series · Owned through 1",
             }
         ],
         "best_series_context": {
@@ -474,18 +474,19 @@ def _base_context():
             "is_next_missing": True,
             "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
             "facts": ["1 book owned in this series", "Owned through 1"],
-            "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
+            "detail_value": "1 book owned in this series · Owned through 1",
         },
         "series_context_notes": [
             {
                 "series_display": "The Lord of the Rings (2)",
-                "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
+                "detail_value": "1 book owned in this series · Owned through 1",
             }
         ],
         "request_badges": [
             {"label": "Next missing", "badge_class": "label-primary"},
             {"label": "Well rated", "badge_class": "label-success"},
             {"label": "Popular", "badge_class": "label-info"},
+            {"label": "Complete metadata", "badge_class": "label-default"},
         ],
         "secondary_series_note": "Also in Middle-earth",
         "workflow_state": {
@@ -1545,7 +1546,7 @@ def test_request_detail_modal_keeps_series_metadata_and_moves_context_to_hero_co
     result["series_context_notes"] = [
         {
             "series_display": "The Lord of the Rings (2)",
-            "detail_value": "Next missing · 1 book owned in this series · Owned through 1",
+            "detail_value": "1 book owned in this series · Owned through 1",
         }
     ]
 
@@ -1562,8 +1563,12 @@ def test_request_detail_modal_keeps_series_metadata_and_moves_context_to_hero_co
     assert ">Series</dt>" in html
     assert "The Lord of the Rings (2)" in html
     assert "1 book owned in this series" in html
-    assert "Next missing · 1 book owned in this series · Owned through 1" in html
+    assert "Next missing · 1 book owned in this series · Owned through 1" not in html
+    assert "1 book owned in this series · Owned through 1" in html
     assert 'class="shelfmark-detail-hero__context-note"' in html
+    assert "shelfmark-detail-hero__summary" not in html
+    assert "shelfmark-detail-top-stats" not in html
+    assert ">Reviews</dt>" in html
 
 
 def test_request_template_renders_empty_state_for_filtered_request_results():
