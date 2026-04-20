@@ -418,6 +418,14 @@ def _base_context():
             "owned_book_count": 1,
             "owned_max_position": 1.0,
             "owned_contiguous_position": 1,
+            "owned_books": [
+                {
+                    "book_id": 17,
+                    "title": "The Fellowship of the Ring",
+                    "series_position": 1.0,
+                    "display": "The Fellowship of the Ring (1)",
+                }
+            ],
             "is_continuation": True,
             "is_next_missing": True,
             "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
@@ -444,6 +452,14 @@ def _base_context():
                 "owned_book_count": 1,
                 "owned_max_position": 1.0,
                 "owned_contiguous_position": 1,
+                "owned_books": [
+                    {
+                        "book_id": 17,
+                        "title": "The Fellowship of the Ring",
+                        "series_position": 1.0,
+                        "display": "The Fellowship of the Ring (1)",
+                    }
+                ],
                 "is_continuation": True,
                 "is_next_missing": True,
                 "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
@@ -470,6 +486,14 @@ def _base_context():
             "owned_book_count": 1,
             "owned_max_position": 1.0,
             "owned_contiguous_position": 1,
+            "owned_books": [
+                {
+                    "book_id": 17,
+                    "title": "The Fellowship of the Ring",
+                    "series_position": 1.0,
+                    "display": "The Fellowship of the Ring (1)",
+                }
+            ],
             "is_continuation": True,
             "is_next_missing": True,
             "badges": [{"label": "Next missing", "badge_class": "label-primary"}],
@@ -1249,6 +1273,7 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
     assert "Rating</dt>" not in html
     assert "Ratings</dt>" not in html
     assert "Readers</dt>" not in html
+    assert ">Series size</dt>" not in html
     assert 'href="https://hardcover.app/series/the-lord-of-the-rings"' in html
     assert "The Lord of the Rings (2)" in html
     assert "Middle-earth (5)" in html
@@ -1262,6 +1287,8 @@ def test_detail_partial_renders_modal_ready_content_without_back_link():
     assert "Fantasy" in html
     assert "Adventurous" in html
     assert ">Provider</dt>" not in html
+    hero_facts = html.split('class="shelfmark-detail-hero__facts"', 1)[1].split("</p>", 1)[0]
+    assert "The Lord of the Rings (2)" not in hero_facts
 
 
 def test_detail_template_hides_request_ready_browser_copy_for_requestable_result():
@@ -1304,6 +1331,7 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "Complete metadata" in html
     assert "Ratings</dt>" not in html
     assert "Readers</dt>" not in html
+    assert ">Series size</dt>" not in html
     assert 'href="https://hardcover.app/series/the-lord-of-the-rings"' in html
     assert "Genres" in html
     assert "Fantasy" in html
@@ -1312,6 +1340,8 @@ def test_detail_template_hides_request_ready_browser_copy_for_requestable_result
     assert "128 lists" in html
     assert "Whimsical" in html
     assert "Content notes" in html
+    hero_facts = html.split('class="shelfmark-detail-hero__facts"', 1)[1].split("</p>", 1)[0]
+    assert "The Lord of the Rings (2)" not in hero_facts
     assert "Violence" in html
     assert "Death" in html
 
@@ -1534,7 +1564,7 @@ def test_request_template_renders_summary_and_pagination_for_requestable_results
     assert 'data-search-state-url="/request?query=Dune&amp;page=2&amp;sort=popularity&amp;requestable=1&amp;has_cover=1&amp;english_only=1' in html
 
 
-def test_request_detail_modal_keeps_series_metadata_and_moves_context_to_hero_copy():
+def test_request_detail_modal_integrates_owned_series_context_into_series_metadata():
     app = _create_app()
     context = _base_context()
     result = context["shelfmark_section"]["results"][1]
@@ -1542,12 +1572,6 @@ def test_request_detail_modal_keeps_series_metadata_and_moves_context_to_hero_co
         {"label": "Next missing", "badge_class": "label-primary"},
         {"label": "Well rated", "badge_class": "label-success"},
         {"label": "Popular", "badge_class": "label-info"},
-    ]
-    result["series_context_notes"] = [
-        {
-            "series_display": "The Lord of the Rings (2)",
-            "detail_value": "1 book owned in this series · Owned through 1",
-        }
     ]
 
     with app.test_request_context("/request/detail/hardcover/222?query=Dune&view=modal"):
@@ -1563,12 +1587,18 @@ def test_request_detail_modal_keeps_series_metadata_and_moves_context_to_hero_co
     assert ">Series</dt>" in html
     assert "The Lord of the Rings (2)" in html
     assert "1 book owned in this series" in html
-    assert "Next missing · 1 book owned in this series · Owned through 1" not in html
-    assert "1 book owned in this series · Owned through 1" in html
-    assert 'class="shelfmark-detail-hero__context-note"' in html
+    assert "Owned through 1" in html
+    assert "The Fellowship of the Ring (1)" in html
+    assert 'class="shelfmark-detail-hero__context-note"' not in html
+    assert 'class="shelfmark-detail-meta-list__series-owned"' not in html
+    assert 'href="/book/17"' not in html
+    assert 'title="Owned in library: The Fellowship of the Ring (1)"' in html
     assert "shelfmark-detail-hero__summary" not in html
     assert "shelfmark-detail-top-stats" not in html
     assert ">Reviews</dt>" in html
+    assert ">Series size</dt>" not in html
+    hero_facts = html.split('class="shelfmark-detail-hero__facts"', 1)[1].split("</p>", 1)[0]
+    assert "The Lord of the Rings (2)" not in hero_facts
 
 
 def test_request_template_renders_empty_state_for_filtered_request_results():
@@ -1655,6 +1685,8 @@ def test_real_layout_renders_request_book_link_on_normal_blur_page():
     assert 'class="nav navbar-nav cwa-navbar-primary"' in html
     assert 'id="advanced_search"' in html
     assert 'id="request_book"' in html
+    assert 'cwa-navbar-primary__item--advanced' in html
+    assert 'cwa-navbar-primary__item--request' in html
 
 
 def test_request_modal_scroll_lock_hook_updates_html_and_body_classes():

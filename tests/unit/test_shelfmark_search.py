@@ -838,9 +838,9 @@ def test_build_result_view_omits_unreliable_subtitle_from_presentation(shelfmark
 def test_build_owned_series_map_tracks_counts_and_contiguous_run(shelfmark_module):
     owned_series = shelfmark_module.build_owned_series_map(
         (
-            {"series_name": "The Expanse", "book_id": 10, "series_position": "1"},
-            {"series_name": "The Expanse", "book_id": 11, "series_position": "2"},
-            {"series_name": "The Expanse", "book_id": 12, "series_position": "4"},
+            {"series_name": "The Expanse", "book_id": 10, "book_title": "Leviathan Wakes", "series_position": "1"},
+            {"series_name": "The Expanse", "book_id": 11, "book_title": "Caliban's War", "series_position": "2"},
+            {"series_name": "The Expanse", "book_id": 12, "book_title": "Cibola Burn", "series_position": "4"},
         )
     )
 
@@ -850,6 +850,11 @@ def test_build_owned_series_map_tracks_counts_and_contiguous_run(shelfmark_modul
     assert expanse.owned_positions == (1.0, 2.0, 4.0)
     assert expanse.max_position == 4.0
     assert expanse.contiguous_position == 2
+    assert [book.display for book in expanse.owned_books] == [
+        "Leviathan Wakes (1)",
+        "Caliban's War (2)",
+        "Cibola Burn (4)",
+    ]
 
 
 def test_build_workflow_state_prefers_imported_and_available_request_states(shelfmark_module):
@@ -932,6 +937,13 @@ def test_series_context_flags_next_missing_and_owned_series(shelfmark_module):
                 owned_positions=(1.0,),
                 max_position=1.0,
                 contiguous_position=1,
+                owned_books=(
+                    shelfmark_module.ShelfmarkOwnedSeriesBook(
+                        book_id=10,
+                        title="Leviathan Wakes",
+                        series_position=1.0,
+                    ),
+                ),
             )
         },
     )
@@ -942,11 +954,13 @@ def test_series_context_flags_next_missing_and_owned_series(shelfmark_module):
     assert "3 books owned in this series" in contexts[0].facts
     assert "Owned through 1" in contexts[0].facts
     assert contexts[0].detail_value == "3 books owned in this series · Owned through 1"
+    assert [book.display for book in contexts[0].owned_books] == ["Leviathan Wakes (1)"]
     assert contexts[1] is not None
     assert contexts[1].is_continuation is True
     assert contexts[1].is_next_missing is False
     assert contexts[1].badges[0]["label"] == "Owned series"
     assert contexts[1].detail_value == "3 books owned in this series · Owned through 1"
+    assert [book.display for book in contexts[1].owned_books] == ["Leviathan Wakes (1)"]
     assert contexts[2] is None
 
 

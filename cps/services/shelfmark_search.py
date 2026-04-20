@@ -213,6 +213,28 @@ class ShelfmarkLibraryState:
 
 
 @dataclass(frozen=True)
+class ShelfmarkOwnedSeriesBook:
+    book_id: int | None
+    title: str
+    series_position: float | None = None
+
+    @property
+    def display(self) -> str:
+        position = _format_series_position(self.series_position)
+        if position:
+            return f"{self.title} ({position})"
+        return self.title
+
+    def to_template_dict(self) -> dict[str, Any]:
+        return {
+            "book_id": self.book_id,
+            "title": self.title,
+            "series_position": self.series_position,
+            "display": self.display,
+        }
+
+
+@dataclass(frozen=True)
 class ShelfmarkOwnedSeries:
     key: str
     series_name: str
@@ -220,6 +242,7 @@ class ShelfmarkOwnedSeries:
     owned_positions: tuple[float, ...]
     max_position: float | None
     contiguous_position: int | None
+    owned_books: tuple[ShelfmarkOwnedSeriesBook, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -252,6 +275,7 @@ class ShelfmarkSeriesContext:
     owned_book_count: int = 0
     owned_max_position: float | None = None
     owned_contiguous_position: int | None = None
+    owned_books: tuple[ShelfmarkOwnedSeriesBook, ...] = field(default_factory=tuple)
     is_continuation: bool = False
     is_next_missing: bool = False
     badges: tuple[dict[str, str], ...] = field(default_factory=tuple)
@@ -286,6 +310,10 @@ class ShelfmarkSeriesContext:
             "owned_book_count": self.owned_book_count,
             "owned_max_position": self.owned_max_position,
             "owned_contiguous_position": self.owned_contiguous_position,
+            "owned_books": [
+                owned_book.to_template_dict()
+                for owned_book in self.owned_books
+            ],
             "is_continuation": self.is_continuation,
             "is_next_missing": self.is_next_missing,
             "badges": [dict(badge) for badge in self.badges],
@@ -1325,26 +1353,59 @@ def build_owned_series_map(rows: Iterable[Mapping[str, Any]]) -> dict[str, Shelf
                 "series_name": series_name or "",
                 "book_ids": set(),
                 "positions": [],
+                "books": {},
             },
         )
         book_id = _normalize_int(row.get("book_id"))
         if book_id is not None:
             item["book_ids"].add(book_id)
+        book_title = _normalize_text(row.get("book_title")) or _("Unknown title")
         series_position = _normalize_series_position(row.get("series_position"))
         if series_position is not None:
             item["positions"].append(series_position)
+        book_key = book_id if book_id is not None else (book_title.casefold(), series_position)
+        book_entry = item["books"].get(book_key)
+        if book_entry is None:
+            item["books"][book_key] = {
+                "book_id": book_id,
+                "title": book_title,
+                "series_position": series_position,
+            }
+        else:
+            if not book_entry.get("title") and book_title:
+                book_entry["title"] = book_title
+            if book_entry.get("series_position") is None and series_position is not None:
+                book_entry["series_position"] = series_position
 
     owned_series: dict[str, ShelfmarkOwnedSeries] = {}
     for key, item in grouped.items():
         owned_positions = tuple(sorted(set(item["positions"])))
         max_position = owned_positions[-1] if owned_positions else None
+        owned_books = tuple(
+            ShelfmarkOwnedSeriesBook(
+                book_id=_normalize_int(book.get("book_id")),
+                title=_normalize_text(book.get("title")) or _("Unknown title"),
+                series_position=_normalize_series_position(book.get("series_position")),
+            )
+            for book in sorted(
+                item["books"].values(),
+                key=lambda book: (
+                    _normalize_series_position(book.get("series_position"))
+                    if _normalize_series_position(book.get("series_position")) is not None
+                    else float("inf"),
+                    (_normalize_text(book.get("title")) or "").casefold(),
+                    _normalize_int(book.get("book_id")) if _normalize_int(book.get("book_id")) is not None else float("inf"),
+                ),
+            )
+        )
         owned_series[key] = ShelfmarkOwnedSeries(
             key=key,
             series_name=item["series_name"],
-            book_count=len(item["book_ids"]),
+            book_count=max(len(item["book_ids"]), len(owned_books)),
             owned_positions=owned_positions,
             max_position=max_position,
             contiguous_position=_largest_contiguous_series_prefix(owned_positions),
+            owned_books=owned_books,
         )
     return owned_series
 
@@ -1362,13 +1423,19 @@ def lookup_visible_owned_series(series_names: Sequence[str]) -> dict[str, Shelfm
         calibre_db.session.query(
             db.Series.name.label("series_name"),
             db.Books.id.label("book_id"),
+            db.Books.title.label("book_title"),
             db.Books.series_index.label("series_position"),
         )
         .join(db.books_series_link, db.books_series_link.c.series == db.Series.id)
         .join(db.Books, db.books_series_link.c.book == db.Books.id)
         .filter(func.lower(db.Series.name).in_(tuple(normalized_names)))
         .filter(calibre_db.common_filters())
-        .order_by(db.Series.name.asc(), db.Books.id.asc())
+        .order_by(
+            db.Series.name.asc(),
+            db.Books.series_index.asc(),
+            db.Books.title.asc(),
+            db.Books.id.asc(),
+        )
         .all()
     )
 
@@ -1376,6 +1443,7 @@ def lookup_visible_owned_series(series_names: Sequence[str]) -> dict[str, Shelfm
         {
             "series_name": row.series_name,
             "book_id": row.book_id,
+            "book_title": row.book_title,
             "series_position": row.series_position,
         }
         for row in rows
@@ -1461,6 +1529,7 @@ def _build_series_context_for_membership(
         owned_book_count=owned.book_count,
         owned_max_position=owned.max_position,
         owned_contiguous_position=owned.contiguous_position,
+        owned_books=owned.owned_books,
         is_continuation=is_continuation,
         is_next_missing=is_next_missing,
     )

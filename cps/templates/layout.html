@@ -122,9 +122,9 @@
         <div class="navbar-collapse collapse cwa-navbar-collapse">
           {% if current_user.is_authenticated or g.allow_anonymous %}
           <ul class="nav navbar-nav cwa-navbar-primary">
-            <li class="cwa-navbar-primary__item"><a href="{{url_for('search.advanced_search')}}" id="advanced_search"><span class="glyphicon glyphicon-search" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Advanced Search')}}</span></a></li>
+            <li class="cwa-navbar-primary__item cwa-navbar-primary__item--advanced"><a href="{{url_for('search.advanced_search')}}" id="advanced_search"><span class="glyphicon glyphicon-search" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Advanced Search')}}</span></a></li>
             {% if config.config_shelfmark_search and config.config_shelfmark_url %}
-            <li class="cwa-navbar-primary__item"><a href="{{url_for('search.request_page')}}" id="request_book"><span class="glyphicon glyphicon-send" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Request Book')}}</span></a></li>
+            <li class="cwa-navbar-primary__item cwa-navbar-primary__item--request"><a href="{{url_for('search.request_page')}}" id="request_book"><span class="glyphicon glyphicon-send" style="padding-left: 10px; padding-right: 6px;"></span><span class="hidden-sm"> {{_('Request Book')}}</span></a></li>
             {% endif %}
           </ul>
           {% endif %}

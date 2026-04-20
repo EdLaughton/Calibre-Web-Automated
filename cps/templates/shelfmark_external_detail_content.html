@@ -5,7 +5,14 @@
 {% set primary_context = result.best_series_context if result and result.best_series_context is defined and result.best_series_context else (result.series_context if result and result.series_context else None) %}
 {% set primary_series_display = result.series_display if result and result.series_display else (primary_context.series_display if primary_context and primary_context.series_display is defined else '') %}
 {% set request_badges = result.request_badges if result and result.request_badges is defined and result.request_badges else [] %}
-{% set series_context_notes = result.series_context_notes if result and result.series_context_notes is defined and result.series_context_notes else [] %}
+{% set detail_facts = namespace(values=[]) %}
+{% if result and result.facts %}
+  {% for fact in result.facts %}
+    {% if fact != primary_series_display %}
+      {% set detail_facts.values = detail_facts.values + [fact] %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
 <div
   class="shelfmark-detail-pane{% if modal_mode %} shelfmark-detail-pane--modal{% endif %}{% if result and result.workflow_state %} js-shelfmark-status-target{% endif %}"
   {% if result and result.title %}data-detail-title="{{ result.title }}"{% endif %}
@@ -66,26 +73,15 @@
               </div>
             {% endif %}
 
-            {% if result.facts or (result.pages and 'page' not in facts_text|lower) or (primary_series_display and primary_series_display not in facts_text) %}
+            {% if detail_facts.values or (result.pages and 'page' not in facts_text|lower) %}
               <p class="shelfmark-detail-hero__facts" aria-label="{{ _('Shelfmark facts') }}">
-                {% for fact in result.facts if result.facts %}
+                {% for fact in detail_facts.values %}
                   <span class="shelfmark-detail-hero__fact">{{ fact }}</span>
                 {% endfor %}
                 {% if result.pages and 'page' not in facts_text|lower %}
                   <span class="shelfmark-detail-hero__fact">{{ _('%(count)s pages', count=result.pages) }}</span>
                 {% endif %}
-                {% if primary_series_display and primary_series_display not in facts_text %}
-                  <span class="shelfmark-detail-hero__fact">{{ primary_series_display }}</span>
-                {% endif %}
               </p>
-            {% endif %}
-
-            {% if series_context_notes %}
-              <div class="shelfmark-detail-hero__context-notes" aria-label="{{ _('Series context') }}">
-                {% for note in series_context_notes %}
-                  <p class="shelfmark-detail-hero__context-note">{{ note.detail_value }}</p>
-                {% endfor %}
-              </div>
             {% endif %}
 
             {% if result.workflow_state %}
@@ -142,14 +138,45 @@
               <dt>{{ _("Series") }}</dt>
               <dd class="shelfmark-detail-meta-list__series-list">
                 {% for series in series_memberships %}
+                  {% set series_context_match = namespace(value=None) %}
+                  {% set owned_titles = namespace(values=[]) %}
+                  {% for context in series_contexts %}
+                    {% set context_membership = context.membership if context.membership is defined and context.membership else None %}
+                    {% if context_membership and context_membership.key == series.key %}
+                      {% set series_context_match.value = context %}
+                    {% endif %}
+                  {% endfor %}
+                  {% if series_context_match.value and series_context_match.value.owned_books %}
+                    {% for owned_book in series_context_match.value.owned_books %}
+                      {% set owned_titles.values = owned_titles.values + [owned_book.display] %}
+                    {% endfor %}
+                  {% endif %}
                   <div class="shelfmark-detail-meta-list__series-entry">
                     <div class="shelfmark-detail-meta-list__series-primary">
                       {% if series.url %}
-                        <a class="shelfmark-detail-meta-list__link" href="{{ series.url }}" target="_blank" rel="noopener noreferrer">{{ series.display }}</a>
+                        <a
+                          class="shelfmark-detail-meta-list__link"
+                          href="{{ series.url }}"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          {% if owned_titles.values %}
+                            title="{{ _('Owned in library: %(books)s', books=owned_titles.values|join(' · ')) }}"
+                          {% endif %}
+                        >{{ series.display }}</a>
                       {% else %}
-                        <span>{{ series.display }}</span>
+                        <span{% if owned_titles.values %} title="{{ _('Owned in library: %(books)s', books=owned_titles.values|join(' · ')) }}"{% endif %}>{{ series.display }}</span>
+                      {% endif %}
+                      {% if series_context_match.value and series_context_match.value.badges %}
+                        <span class="shelfmark-detail-meta-list__series-badges">
+                          {% for badge in series_context_match.value.badges %}
+                            <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
+                          {% endfor %}
+                        </span>
                       {% endif %}
                     </div>
+                    {% if series_context_match.value and series_context_match.value.facts %}
+                      <div class="shelfmark-detail-meta-list__series-detail">{{ series_context_match.value.facts|join(' · ') }}</div>
+                    {% endif %}
                   </div>
                 {% endfor %}
               </dd>
@@ -166,10 +193,6 @@
             {% if result.hardcover_id %}
               <dt>{{ _("Hardcover ID") }}</dt>
               <dd>{{ result.hardcover_id }}</dd>
-            {% endif %}
-            {% if result.series_count %}
-              <dt>{{ _("Series size") }}</dt>
-              <dd>{{ _('%(count)s books', count=result.series_count) }}</dd>
             {% endif %}
             {% if result.genres %}
               <dt>{{ _("Genres") }}</dt>
