@@ -68,9 +68,6 @@
         {% endif %}
       </p>
     {% endif %}
-    {% if show_request_chrome and primary_context and primary_context.detail_value %}
-      <p class="shelfmark-result-card__series-note shelfmark-result-card__series-note--context">{{ primary_context.detail_value }}</p>
-    {% endif %}
     {% if result.secondary_series_note %}
       <p class="shelfmark-result-card__series-note text-muted">{{ result.secondary_series_note }}</p>
     {% endif %}

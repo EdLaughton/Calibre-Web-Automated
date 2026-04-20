@@ -1573,6 +1573,47 @@ def test_request_detail_modal_integrates_owned_series_context_into_series_metada
         {"label": "Well rated", "badge_class": "label-success"},
         {"label": "Popular", "badge_class": "label-info"},
     ]
+    result["series_contexts"].append(
+        {
+            "membership": {
+                "key": "middle-earth",
+                "name": "Middle-earth",
+                "position": 5.0,
+                "featured": False,
+                "display": "Middle-earth (5)",
+                "url": "https://hardcover.app/series/middle-earth",
+            },
+            "series_name": "Middle-earth",
+            "series_position": 5.0,
+            "series_display": "Middle-earth (5)",
+            "series_url": "https://hardcover.app/series/middle-earth",
+            "featured": False,
+            "matched": True,
+            "owned_series_name": "Middle-earth",
+            "owned_book_count": 2,
+            "owned_max_position": 3.0,
+            "owned_contiguous_position": 2,
+            "owned_books": [
+                {
+                    "book_id": 23,
+                    "title": "The Hobbit",
+                    "series_position": 1.0,
+                    "display": "The Hobbit (1)",
+                },
+                {
+                    "book_id": 24,
+                    "title": "The Fellowship of the Ring",
+                    "series_position": 2.0,
+                    "display": "The Fellowship of the Ring (2)",
+                },
+            ],
+            "is_continuation": True,
+            "is_next_missing": False,
+            "badges": [{"label": "Owned series", "badge_class": "label-default"}],
+            "facts": ["2 books owned in this series"],
+            "detail_value": "2 books owned in this series",
+        }
+    )
 
     with app.test_request_context("/request/detail/hardcover/222?query=Dune&view=modal"):
         html = render_template(
@@ -1593,6 +1634,8 @@ def test_request_detail_modal_integrates_owned_series_context_into_series_metada
     assert 'class="shelfmark-detail-meta-list__series-owned"' not in html
     assert 'href="/book/17"' not in html
     assert 'title="Owned in library: The Fellowship of the Ring (1)"' in html
+    assert 'title="Owned in library: The Hobbit (1) · The Fellowship of the Ring (2)"' in html
+    assert "2 books owned in this series" not in html
     assert "shelfmark-detail-hero__summary" not in html
     assert "shelfmark-detail-top-stats" not in html
     assert ">Reviews</dt>" in html
@@ -1671,14 +1714,7 @@ def test_real_layout_renders_request_book_link_on_normal_blur_page():
             current_user=anonymous_user,
             sidebar=[],
             magic_shelf_routes=type("MagicRoutes", (), {"render": False, "create": False})(),
-            config=type(
-                "Config",
-                (),
-                {
-                    "config_shelfmark_search": True,
-                    "config_shelfmark_url": "https://shelfmark.example.com",
-                },
-            )(),
+            request_feature_enabled=True,
         )
 
     assert 'class="navbar-form navbar-left cwa-navbar-search"' in html

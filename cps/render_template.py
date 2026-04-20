@@ -311,6 +311,7 @@ def render_title_template(*args, **kwargs):
         return render_template(instance=config.config_calibre_web_title, sidebar=sidebar, simple=simple,
                        accept=config.config_upload_formats.split(','),
                        magic_shelf_routes=magic_shelf_routes,
+                       request_feature_enabled=bool(config.config_shelfmark_search and config.config_shelfmark_url),
                        duplicate_notification=duplicate_notification,
                        *args, **kwargs)
     except PermissionError:

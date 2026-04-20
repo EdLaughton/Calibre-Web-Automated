@@ -214,20 +214,24 @@ a#request_book > span.hidden-sm {
         display: flex !important;
         align-items: center;
         justify-content: space-between;
+        overflow: visible !important;
     }
 
     body.blur .cwa-navbar-primary {
         display: flex;
-        flex: 0 1 auto;
+        flex: 0 0 auto;
         flex-wrap: nowrap;
         align-items: center;
         gap: 0;
         margin: 0 0 0 6px;
+        min-width: max-content;
+        overflow: visible;
     }
 
     body.blur .cwa-navbar-primary__item {
         float: none;
         flex: 0 0 auto;
+        display: list-item;
     }
 
     body.blur .cwa-navbar-primary__item > a {
@@ -242,6 +246,10 @@ a#request_book > span.hidden-sm {
     body.blur #request_book {
         display: flex;
         align-items: center;
+    }
+
+    body.blur .cwa-navbar-primary__item--request {
+        display: list-item !important;
     }
 
     body.blur #advanced_search > span.hidden-sm,

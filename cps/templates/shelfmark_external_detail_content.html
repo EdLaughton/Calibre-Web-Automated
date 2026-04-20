@@ -166,7 +166,7 @@
                       {% else %}
                         <span{% if owned_titles.values %} title="{{ _('Owned in library: %(books)s', books=owned_titles.values|join(' · ')) }}"{% endif %}>{{ series.display }}</span>
                       {% endif %}
-                      {% if series_context_match.value and series_context_match.value.badges %}
+                      {% if series_context_match.value and series_context_match.value.is_next_missing and series_context_match.value.badges %}
                         <span class="shelfmark-detail-meta-list__series-badges">
                           {% for badge in series_context_match.value.badges %}
                             <span class="label {{ badge.badge_class }}">{{ badge.label }}</span>
@@ -174,7 +174,7 @@
                         </span>
                       {% endif %}
                     </div>
-                    {% if series_context_match.value and series_context_match.value.facts %}
+                    {% if series_context_match.value and series_context_match.value.is_next_missing and series_context_match.value.facts %}
                       <div class="shelfmark-detail-meta-list__series-detail">{{ series_context_match.value.facts|join(' · ') }}</div>
                     {% endif %}
                   </div>

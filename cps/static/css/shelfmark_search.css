@@ -1089,6 +1089,9 @@ body.request > div.container-fluid > div > div.col-sm-10 > div.discover.shelfmar
 
 .shelfmark-result-card__primary-action,
 .shelfmark-detail-hero__primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
   min-height: 40px;
   padding: 8px 14px;
@@ -1592,6 +1595,7 @@ body.request > div.container-fluid > div > div.col-sm-10 > div.discover.shelfmar
 .shelfmark-detail-hero__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   margin-top: 8px;
 }
