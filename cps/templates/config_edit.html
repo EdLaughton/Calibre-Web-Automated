@@ -309,7 +309,7 @@
     <div class="form-group">
       <input type="checkbox" id="config_shelfmark_search" name="config_shelfmark_search" data-control="shelfmark-search-settings" {% if config.config_shelfmark_search %}checked{% endif %}>
       <label for="config_shelfmark_search">{{_('Enable Shelfmark External Search')}}</label>
-      <div class="help-block">{{_('Optionally shows Shelfmark results beside library search. Duplicate checks stay exact: metadata.db plus exact Hardcover ID only. Direct Request in Shelfmark remains a browser-side upgrade, so it depends on a same-origin or reverse-proxied Shelfmark Browser URL, a live Shelfmark login in that browser, and Shelfmark policy allowing a direct book request. When those conditions are not met, CWA falls back to Open in Shelfmark.')}}</div>
+      <div class="help-block">{{_('Adds a dedicated Shelfmark-powered Request Book page. Normal library search and advanced search remain local to CWA. Duplicate checks stay exact: metadata.db plus exact Hardcover ID only. Direct Request in Shelfmark remains a browser-side upgrade, so it depends on a same-origin or reverse-proxied Shelfmark Browser URL, a live Shelfmark login in that browser, and Shelfmark policy allowing a direct book request. When those conditions are not met, CWA falls back to Open in Shelfmark.')}}</div>
     </div>
     <div data-related="shelfmark-search-settings">
       <div class="form-group">

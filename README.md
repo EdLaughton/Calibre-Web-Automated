@@ -259,11 +259,11 @@ Built-in KOReader progress sync with automatic book identification:
 - Graceful handling of invalid tokens
 
 #### **Shelfmark External Search (Stage 4)** 🔎📚
-- Optional CWA-side integration that shows Shelfmark external results alongside normal library search results
-- Simple search and advanced search can both surface Shelfmark results:
-  - simple search forwards the search term directly
-  - advanced search only sends title, author, and publisher metadata when those fields are present
-  - other advanced filters stay local to CWA
+- Optional CWA-side integration that adds a dedicated Shelfmark-powered `Request Book` page
+- Normal library search and advanced search remain local to CWA:
+  - the dedicated request page sends title, author, or ISBN-style queries to Shelfmark
+  - local search filters stay local to CWA
+  - request results are separate from the normal library result list
 - Duplicate awareness is deliberately exact and read-only:
   - `metadata.db`
   - exact `hardcover-id`
@@ -272,7 +272,7 @@ Built-in KOReader progress sync with automatic book identification:
   - already in your library
   - external candidates with an exact Hardcover ID but no local match
   - external results where duplicate status is unavailable because Shelfmark returned no exact Hardcover ID
-- The search and detail views now highlight those states visually with grouped headers, quick-jump links back into CWA, and clearer primary actions for:
+- The request and detail views now highlight those states visually with grouped headers, quick-jump links back into CWA, and clearer primary actions for:
   - opening the existing CWA book
   - requesting in Shelfmark
   - opening Shelfmark directly

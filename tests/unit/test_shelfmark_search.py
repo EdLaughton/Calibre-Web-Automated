@@ -3775,6 +3775,132 @@ def test_request_search_paginates_over_filtered_visible_results(shelfmark_module
     assert section.next_page == 3
 
 
+def test_request_search_enriches_missing_cover_before_cover_filter(shelfmark_module, monkeypatch):
+    shelfmark_module.clear_shelfmark_detail_cache()
+    shelfmark_module.config.config_shelfmark_search = True
+    shelfmark_module.config.config_shelfmark_url = "https://shelfmark.example.com"
+    shelfmark_module.config.config_shelfmark_browser_url = "https://library.example.com/shelfmark"
+    monkeypatch.setattr(shelfmark_module, "_normalize_page_size", lambda value: int(value))
+
+    fake_client = mock.Mock()
+
+    def fake_client_factory(config_data):
+        fake_client.config = config_data
+        return fake_client
+
+    monkeypatch.setattr(shelfmark_module, "ShelfmarkClient", fake_client_factory)
+    monkeypatch.setattr(
+        shelfmark_module,
+        "_fetch_shelfmark_search_page",
+        lambda client, query, *, page, page_size, sort: shelfmark_module.ShelfmarkSearchResponse(
+            books=(
+                {
+                    "provider": "hardcover",
+                    "provider_id": "222",
+                    "title": "Detail Cover",
+                    "authors": ["Author"],
+                    "identifiers": {"hardcover-id": "222"},
+                },
+            ),
+            page=1,
+            total_found=1,
+            has_more=False,
+        ),
+    )
+    fake_client.fetch_book.return_value = {
+        "provider": "hardcover",
+        "provider_id": "222",
+        "title": "Detail Cover",
+        "authors": ["Author"],
+        "cover_url": "https://covers.example.com/222.jpg",
+        "identifiers": {"hardcover-id": "222"},
+    }
+    monkeypatch.setattr(shelfmark_module, "lookup_visible_library_matches", lambda ids: {})
+    monkeypatch.setattr(shelfmark_module, "lookup_visible_owned_series", lambda ids: {})
+
+    section = shelfmark_module.search_request_shelfmark_results(
+        "detail cover",
+        detail_url_builder=lambda book: f"/request/detail/{book['provider']}/{book['provider_id']}",
+        page=1,
+        page_size=2,
+        sort="popularity",
+        filter_requestable=True,
+        filter_has_cover=True,
+    )
+
+    fake_client.fetch_book.assert_called_once_with("hardcover", "222")
+    assert [result.provider_id for result in section.results] == ["222"]
+    assert section.results[0].cover_url is not None
+    assert section.filtered_coverless == 0
+
+
+def test_request_search_stops_at_source_page_cap(shelfmark_module, monkeypatch):
+    shelfmark_module.config.config_shelfmark_search = True
+    shelfmark_module.config.config_shelfmark_url = "https://shelfmark.example.com"
+    shelfmark_module.config.config_shelfmark_browser_url = "https://library.example.com/shelfmark"
+    monkeypatch.setattr(shelfmark_module, "_normalize_page_size", lambda value: int(value))
+    monkeypatch.setattr(shelfmark_module, "SHELFMARK_REQUEST_MAX_SOURCE_PAGES", 2)
+
+    class DummyClient:
+        def __init__(self, config_data):
+            self.config = config_data
+
+    monkeypatch.setattr(shelfmark_module, "ShelfmarkClient", DummyClient)
+
+    page_calls = []
+
+    def fake_fetch_page(client, query, *, page, page_size, sort):
+        page_calls.append(page)
+        return shelfmark_module.ShelfmarkSearchResponse(
+            books=(
+                {
+                    "provider": "hardcover",
+                    "provider_id": str(page),
+                    "title": f"Owned {page}",
+                    "authors": ["Author"],
+                    "identifiers": {"hardcover-id": str(page)},
+                },
+            ),
+            page=page,
+            total_found=10,
+            has_more=True,
+        )
+
+    monkeypatch.setattr(shelfmark_module, "_fetch_shelfmark_search_page", fake_fetch_page)
+    monkeypatch.setattr(
+        shelfmark_module,
+        "_build_search_result_views",
+        lambda books, **kwargs: (
+            tuple(
+                _make_request_result(
+                    shelfmark_module,
+                    book["provider_id"],
+                    title=book["title"],
+                    already_in_library=True,
+                    has_cover=True,
+                )
+                for book in books
+            ),
+            tuple(books),
+        ),
+    )
+
+    section = shelfmark_module.search_request_shelfmark_results(
+        "dune",
+        detail_url_builder=lambda book: f"/request/detail/{book['provider']}/{book['provider_id']}",
+        page=1,
+        page_size=1,
+        sort="popularity",
+        filter_requestable=True,
+        filter_has_cover=False,
+    )
+
+    assert page_calls == [1, 2]
+    assert section.results == tuple()
+    assert section.filtered_owned == 2
+    assert section.raw_total_available == 10
+
+
 def test_request_search_suppresses_probable_non_book_entities(shelfmark_module, monkeypatch):
     shelfmark_module.config.config_shelfmark_search = True
     shelfmark_module.config.config_shelfmark_url = "https://shelfmark.example.com"

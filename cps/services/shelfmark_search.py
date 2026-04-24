@@ -106,6 +106,8 @@ SHELFMARK_SCAN_PAGE_SIZE = 100
 DEFAULT_SHELFMARK_CONTEXTUAL_LIMIT = 12
 SHELFMARK_CONTEXT_MAX_SOURCE_PAGES = 4
 SHELFMARK_CONTEXT_SCAN_PAGE_SIZE = 24
+SHELFMARK_REQUEST_MAX_SOURCE_PAGES = 6
+SHELFMARK_REQUEST_VISIBLE_LOOKAHEAD = 1
 SHELFMARK_QUALITY_MIN_METADATA_SIGNALS = 5
 SHELFMARK_TRIAGE_MIN_RATINGS = 200
 SHELFMARK_TRIAGE_MIN_READERS = 1000
@@ -3173,6 +3175,11 @@ def _filter_request_results(
     return tuple(visible_results), tuple(visible_raw_books), counts
 
 
+def _add_request_filter_counts(target: dict[str, int], source: Mapping[str, int]) -> None:
+    for key, value in source.items():
+        target[key] = int(target.get(key, 0) or 0) + int(value or 0)
+
+
 def _refine_request_page_results(
     client: "ShelfmarkClient",
     raw_books: Sequence[Mapping[str, Any]],
@@ -3819,12 +3826,15 @@ def search_request_shelfmark_results(
 
     client = ShelfmarkClient(config_data)
     try:
-        collected_books: list[Mapping[str, Any]] = []
-        filtered_non_books = 0
+        visible_results: list[ShelfmarkResultView] = []
+        filtered_counts: dict[str, int] = {}
         total_found = 0
         source_page = 1
+        target_visible_count = (
+            requested_page * requested_page_size
+        ) + SHELFMARK_REQUEST_VISIBLE_LOOKAHEAD
 
-        while True:
+        while source_page <= SHELFMARK_REQUEST_MAX_SOURCE_PAGES:
             search_response = _fetch_shelfmark_search_page(
                 client,
                 normalized_query,
@@ -3838,8 +3848,6 @@ def search_request_shelfmark_results(
                 query=normalized_query,
                 suppress_non_book=bool(request_filter_state.get("suppress_non_book")),
             )
-            filtered_non_books += page_filtered_non_books
-            collected_books.extend(page_books)
 
             total_pages = (
                 max(1, math.ceil(total_found / requested_page_size))
@@ -3850,39 +3858,43 @@ def search_request_shelfmark_results(
                 search_response.has_more
                 or (total_pages and source_page < total_pages)
             )
-            if not has_more:
+
+            enriched_books = _apply_hardcover_query_enrichment(
+                normalized_query,
+                tuple(page_books),
+            )
+            page_results, page_raw_books = _build_search_result_views(
+                enriched_books,
+                detail_url_builder=detail_url_builder,
+                shelfmark_browser_base_url=config_data.browser_base_url,
+                exclude_audiobooks=False,
+            )
+            if request_filter_state.get("has_cover") and page_raw_books:
+                page_results = _refine_request_page_results(
+                    client,
+                    page_raw_books,
+                    detail_url_builder=detail_url_builder,
+                )
+
+            page_visible_results, _page_visible_raw_books, page_filter_counts = _filter_request_results(
+                page_results,
+                page_raw_books,
+                request_filters=request_filter_state,
+                filtered_non_books=page_filtered_non_books,
+            )
+            visible_results.extend(page_visible_results)
+            _add_request_filter_counts(filtered_counts, page_filter_counts)
+
+            if len(visible_results) >= target_visible_count or not has_more:
                 break
             source_page += 1
 
-        enriched_books = _apply_hardcover_query_enrichment(
-            normalized_query,
-            tuple(collected_books),
-        )
-        results, raw_books = _build_search_result_views(
-            enriched_books,
-            detail_url_builder=detail_url_builder,
-            shelfmark_browser_base_url=config_data.browser_base_url,
-            exclude_audiobooks=False,
-        )
-        visible_results, visible_raw_books, filtered_counts = _filter_request_results(
-            results,
-            raw_books,
-            request_filters=request_filter_state,
-            filtered_non_books=filtered_non_books,
-        )
         visible_total = len(visible_results)
         total_pages = max(1, math.ceil(visible_total / requested_page_size)) if visible_total else 0
         current_page = min(requested_page, total_pages) if total_pages else DEFAULT_SHELFMARK_PAGE
         start_index = (current_page - 1) * requested_page_size
         end_index = start_index + requested_page_size
         page_results = tuple(visible_results[start_index:end_index])
-        page_raw_books = tuple(visible_raw_books[start_index:end_index])
-        if page_raw_books:
-            page_results = _refine_request_page_results(
-                client,
-                page_raw_books,
-                detail_url_builder=detail_url_builder,
-            )
         visible_start = start_index + 1 if page_results else 0
         visible_end = start_index + len(page_results) if page_results else 0
         has_next = bool(total_pages and current_page < total_pages)
@@ -6152,7 +6164,7 @@ def _normalize_compact_values(value: Any, *, limit: int | None = None) -> tuple[
         )
         if not normalized or normalized.casefold() in generic_labels:
             return tuple()
-        return (normalized,) 
+        return (normalized,)
 
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return _normalize_tag_list(value, limit=limit)
