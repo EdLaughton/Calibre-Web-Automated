@@ -655,8 +655,21 @@
                                 </p>
                             {% endif %}
                         </div>
-                        {% if entry.series|length > 0 %}
-                            <p id="book_of">{{ _("Book %(index)s of %(range)s", index=entry.series_index|formatfloat(2), range=(url_for('web.books_list', data='series', sort_param='stored', book_id=entry.series[0].id)|escapedlink(entry.series[0].name))|safe) }}</p>
+                        {% set additional_series = extra_series_for_book(entry.id) %}
+                        {% if entry.series|length > 0 or additional_series %}
+                            <p id="book_of">
+                            {% if entry.series|length > 0 %}{{ _("Book %(index)s of %(range)s", index=entry.series_index|formatfloat(2), range=(url_for('web.books_list', data='series', sort_param='stored', book_id=entry.series[0].id)|escapedlink(entry.series[0].name))|safe) }}{% endif %}
+                            {% for item in additional_series %}
+                              {% if entry.series|length > 0 or not loop.first %} · {% endif %}
+                              {% set series_link = url_for('extra_series.group', kind=item.kind, name=item.name) %}
+                              {% if item.position is not none %}
+                                {{ _("Book %(index)s of %(range)s", index=item.position|formatfloat(2), range=(series_link|escapedlink(item.name))|safe) }}
+                              {% else %}
+                                Part of <a href="{{ series_link }}">{{ item.name }}</a>
+                              {% endif %}
+                              <small>({{ item.kind[7:] if item.kind.startswith('custom:') else item.kind.replace('_', ' ').title() }})</small>
+                            {% endfor %}
+                            </p>
                         {% endif %}
 
                         <div class="book-metadata">
@@ -799,7 +812,7 @@
                             {% endif %}
                             {% if cc|length > 0 %}
                                 {% for c in cc %}
-                                    {% if entry['custom_column_' ~ c.id]|length > 0 %}
+                                    {% if not is_extra_series_column(c) and entry['custom_column_' ~ c.id]|length > 0 %}
                                         <div class="real_custom_columns meta-chip">
                                             <span class="meta-label">{{ c.name }}:</span>
                                             <span class="meta-value">

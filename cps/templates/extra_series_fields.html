@@ -1,0 +1,54 @@
+<div class="form-group" id="nova-series-fields">
+  <label>Series</label>
+  <table class="table" id="nova-series-table"><tbody id="nova-series-rows">
+    <tr class="nova-series-primary">
+      <td style="width: 24%"><span style="display: inline-block; padding: 9px 0" aria-label="Main series type is fixed"><span class="glyphicon glyphicon-lock" aria-hidden="true"></span> Main series</span></td>
+      <td style="width: 43%"><input type="text" class="form-control typeahead" autocomplete="off" name="series" id="series" aria-label="Main series name" placeholder="Series" value="{% if book.series %}{{ book.series[0].name }}{% endif %}"></td>
+      <td style="width: 15%"><input type="number" step="0.01" min="0" class="form-control" name="series_index" id="series_index" aria-label="Main series ID" placeholder="Series ID" value="{{ book.series_index|formatfloat(2) }}"></td>
+      <td style="width: 18%"><button type="button" class="btn btn-default" id="nova-clear-primary">Clear</button></td>
+    </tr>
+    {% if current_user.role_admin() %}
+      {% set extra_series_rows = extra_series_for_book(book.id) %}
+      {% for item in extra_series_rows %}
+        <tr class="nova-series-row" data-index="{{ loop.index0 }}" data-existing="1">
+          <td>
+            <input type="hidden" name="nova_old_kind_{{ loop.index0 }}" value="{{ item.kind }}">
+            <input type="hidden" name="nova_old_name_{{ loop.index0 }}" value="{{ item.name }}">
+            <input type="hidden" name="nova_remove_{{ loop.index0 }}" value="0">
+            <select class="form-control nova-series-kind" name="nova_kind_{{ loop.index0 }}" aria-label="Series type">
+            {% for key, label in extra_series_kinds.items() %}<option value="{{ key }}" {% if item.kind == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+              <option value="custom" {% if item.kind.startswith('custom:') %}selected{% endif %}>Custom…</option>
+            </select>
+            <input class="form-control nova-series-custom-kind" name="nova_custom_kind_{{ loop.index0 }}" aria-label="Custom series type" maxlength="40" placeholder="Type name" value="{% if item.kind.startswith('custom:') %}{{ item.kind[7:] }}{% endif %}" {% if not item.kind.startswith('custom:') %}style="display:none" disabled{% endif %}>
+          </td>
+          <td><input class="form-control" name="nova_name_{{ loop.index0 }}" aria-label="Additional series name" value="{{ item.name }}" maxlength="120" placeholder="Series"></td>
+          <td><input class="form-control" type="number" step="0.001" min="0" max="100000" name="nova_position_{{ loop.index0 }}" aria-label="Additional series ID" placeholder="Series ID" value="{% if item.position is not none %}{{ item.position }}{% endif %}"></td>
+          <td><button type="button" class="btn btn-default nova-series-remove">Remove</button></td>
+        </tr>
+      {% endfor %}
+    {% endif %}
+  </tbody></table>
+  {% if current_user.role_admin() %}
+    <input type="hidden" name="nova_series_form" value="1">
+    <input type="hidden" name="nova_series_count" id="nova-series-count" value="{{ extra_series_rows|length }}">
+    <button class="btn btn-default" type="button" id="nova-add-series">Add Series</button>
+    <span class="help-block">Leave Series ID blank for an unnumbered entry.</span>
+    <template id="nova-series-template"><table><tbody>
+      <tr class="nova-series-row" data-index="__INDEX__" data-existing="0">
+        <td>
+          <input type="hidden" name="nova_old_kind___INDEX__" value="">
+          <input type="hidden" name="nova_old_name___INDEX__" value="">
+          <input type="hidden" name="nova_remove___INDEX__" value="0">
+          <select class="form-control nova-series-kind" name="nova_kind___INDEX__" aria-label="Series type">
+          {% for key, label in extra_series_kinds.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            <option value="custom">Custom…</option>
+          </select>
+          <input class="form-control nova-series-custom-kind" name="nova_custom_kind___INDEX__" aria-label="Custom series type" maxlength="40" placeholder="Type name" style="display:none" disabled>
+        </td>
+        <td><input class="form-control" name="nova_name___INDEX__" aria-label="Additional series name" maxlength="120" placeholder="Series"></td>
+        <td><input class="form-control" type="number" step="0.001" min="0" max="100000" name="nova_position___INDEX__" aria-label="Additional series ID" placeholder="Series ID"></td>
+        <td><button type="button" class="btn btn-default nova-series-remove">Remove</button></td>
+      </tr>
+    </tbody></table></template>
+  {% endif %}
+</div>

@@ -1,0 +1,18 @@
+{% if page == 'serieslist' %}
+  {% set extra_groups = extra_series_groups() %}
+  {% if extra_groups %}
+    <div class="container nova-extra-series" style="margin-top: 2rem">
+      <h2>Additional series and reading orders</h2>
+      <div class="col-xs-12 col-sm-6 list-container">
+        {% for item in extra_groups %}
+          <div class="row" data-name="{{ item.name }}" data-id="{{ item.name }}">
+            <div class="col-xs-2 col-sm-2 col-md-1" align="left"><span class="badge">{{ item.count }}</span></div>
+            <div class="col-xs-10 col-sm-10 col-md-11">
+              <a style="width: -webkit-fill-available; display: block" href="{{ url_for('extra_series.group', kind=item.kind, name=item.name) }}">{{ item.name }} <small>({{ item.type }})</small></a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+{% endif %}

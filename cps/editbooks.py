@@ -866,6 +866,12 @@ def do_edit_book(book_id, upload_formats=None):
 
     try:
         title_change = False
+        extra_series_changes = None
+        if request.form.get("nova_series_form") == "1":
+            if not current_user.role_admin():
+                raise ValueError("Only administrators can edit additional series")
+            from .extra_series_form import prepare as prepare_extra_series
+            extra_series_changes = prepare_extra_series(book_id, request.form)
         author_change = False
         title_author_error = None
         input_authors = [author.name for author in book.authors]
@@ -1038,6 +1044,17 @@ def do_edit_book(book_id, upload_formats=None):
                 log.debug(f"Skipped metadata change log for book {book.id} - no meaningful changes detected (modify_date={modify_date}, changes={list(meaningful_changes.keys())})")
         except Exception as e:
             log.error_or_exception(f"Failed to write metadata change log for book {book.id}: {e}")
+
+        if extra_series_changes is not None and not edit_error:
+            from .extra_series_form import apply as apply_extra_series
+            calibre_db.session.rollback()
+            try:
+                apply_extra_series(book_id, extra_series_changes)
+            except (ValueError, RuntimeError) as error:
+                log.error("Additional series save failed for book %s: %s", book_id, error)
+                flash("Other metadata was saved, but additional series could not be saved: "
+                      + str(error), category="error")
+                edit_error = True
 
         # Stage 4: Post-commit operations.
         if config.config_use_google_drive:

@@ -78,6 +78,7 @@ See CONTRIBUTORS for full list of authors. -->
     {% endfor %}
     </div>
   </div>
+{% include 'extra_series_native_list.html' %}
 {% endblock %}
 {% block js %}
 <script src="{{ url_for('static', filename='js/filter_list.js') }}"></script>
