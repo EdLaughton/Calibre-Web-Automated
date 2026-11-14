@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 {% block header %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/nova_reader_requests.css', v='8') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/nova_reader_requests.css', v='9') }}">
 {% endblock %}
 {% block body %}
 {% if admin_view %}
@@ -140,6 +140,6 @@
   </details>
   {% if manual_book_search_url %}<a class="request-manual-link" href="{{ manual_book_search_url }}">Browse books manually</a>{% endif %}
 </div>
-<script defer src="{{ url_for('static', filename='js/nova_reader_requests.js', v='8') }}"></script>
+<script defer src="{{ url_for('static', filename='js/nova_reader_requests.js', v='9') }}"></script>
 {% endif %}
 {% endblock %}

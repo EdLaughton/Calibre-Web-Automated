@@ -151,22 +151,25 @@
                 const row = item(job.title, jobs, byline);
                 row.append(job.book_url
                     ? openBook(job.book_url, job.title) : status(states[job.state] || job.state));
+                const options = document.createElement("div");
+                options.className = "request-options";
                 if (data.can_notify && activeStates.has(job.state)) {
-                    row.append(notificationOption(job, "email", "Email me when added", job.notice === "pending"));
+                    options.append(notificationOption(job, "email", "Email me when added", job.notice === "pending"));
                 } else if (job.notice === "failed") {
                     const note = document.createElement("span");
                     note.className = "request-notify";
                     note.textContent = "Notification email could not be confirmed.";
-                    row.append(note);
+                    options.append(note);
                 }
                 if (data.can_kindle && activeStates.has(job.state)) {
-                    row.append(notificationOption(job, "kindle", "Send to Kindle when added", job.kindle === "pending"));
+                    options.append(notificationOption(job, "kindle", "Send to Kindle when added", job.kindle === "pending"));
                 } else if (job.kindle === "sent" || job.kindle === "failed") {
                     const note = document.createElement("span");
                     note.className = "request-notify";
                     note.textContent = job.kindle === "sent" ? "Kindle email sent" : "Kindle email could not be confirmed.";
-                    row.append(note);
+                    options.append(note);
                 }
+                if (options.childElementCount) row.append(options);
             }
         } catch (error) {
             showError(jobsMessage, error, "Request status is temporarily unavailable.");
