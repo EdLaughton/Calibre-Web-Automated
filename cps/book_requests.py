@@ -36,6 +36,7 @@ STATUS_LABELS = {
     "excluded": "Unavailable for automatic requests",
     "held": "Needs review",
     "dismissed": "Closed by an administrator",
+    "denied": "Denied by an administrator",
 }
 SEARCH_QUERY = """
 query($query: String!) {
@@ -48,12 +49,12 @@ query($query: String!) {
 }
 """
 SERIES_BOOKS_QUERY = """
-query($id: Int!) {
+query($id: Int!, $offset: Int!) {
   series_by_pk(id: $id) {
     id name
-    book_series(limit: 301, order_by: {position: asc}) {
+    book_series(limit: 300, offset: $offset, order_by: {position: asc}) {
       position compilation
-      book { id title canonical_id release_year
+      book { id title canonical_id release_year image { url }
         contributions { contribution author { name } } }
     }
     book_series_aggregate { aggregate { count } }
@@ -151,15 +152,23 @@ def search_catalogue(term, time_bucket):
 
 
 def series_members(series_id):
-    series = hardcover(SERIES_BOOKS_QUERY, {"id": series_id})["series_by_pk"]
-    if not series or len(series["book_series"]) > 300:
+    series = hardcover(SERIES_BOOKS_QUERY, {"id": series_id, "offset": 0})["series_by_pk"]
+    if not series:
         return None
     total = ((series.get("book_series_aggregate") or {}).get("aggregate") or {}).get("count")
-    if total is not None and total > 300:
-        return None
+    memberships = list(series["book_series"])
+    while len(memberships) == 300 or (total is not None and len(memberships) < total):
+        page = hardcover(SERIES_BOOKS_QUERY, {"id": series_id, "offset": len(memberships)})["series_by_pk"]
+        if not page or not page["book_series"]:
+            break
+        memberships.extend(page["book_series"])
+        if len(page["book_series"]) < 300:
+            break
+    if total is not None and len(memberships) != total:
+        raise ValueError("Incomplete Hardcover series")
     books = []
     seen = set()
-    for membership in series["book_series"]:
+    for membership in memberships:
         book = membership.get("book") or {}
         work = book.get("id")
         if type(work) is not int or work in seen or book.get("canonical_id") not in (None, work):
@@ -172,10 +181,25 @@ def series_members(series_id):
         if not book.get("title") or not authors:
             continue
         seen.add(work)
+        image = urlsplit((book.get("image") or {}).get("url") or "")
+        cover = image.geturl() if image.scheme == "https" and image.netloc == "assets.hardcover.app" else None
         books.append({"work": work, "title": book["title"], "authors": authors,
                       "position": membership.get("position"), "owned": bool(owned(work)),
-                      "compilation": bool(membership.get("compilation"))})
+                      "compilation": bool(membership.get("compilation")), "cover_url": cover})
     return {"id": series["id"], "name": series["name"], "books": books}
+
+
+def review_guidance(reason):
+    reason = (reason or "").casefold()
+    if "import guard" in reason or "downloaded file" in reason:
+        return "Inspect the exact download and its handoff record. Confirm the EPUB's identity, language, completeness and existing library match; resolve the file hold before approval."
+    if "earlier grab" in reason or "history" in reason or "24 hours" in reason:
+        return "Check the Bookshelf queue and grab history, downloader status and handoff record. Reconcile the prior grab before authorising another attempt."
+    if "already" in reason or "same title" in reason or "another identity" in reason:
+        return "Compare Hardcover work IDs, CWA identifiers and existing Bookshelf files. Correct the duplicate or identity conflict before approval."
+    if "hardcover" in reason or "worker" in reason:
+        return "Check the exact Hardcover work and author, then the protected worker log. Fix the lookup or worker error before approval."
+    return "Inspect the Hardcover work, Bookshelf queue and history, and protected handoff record. Resolve the stated cause before approval."
 
 
 @requests_ui.get("/")
@@ -213,7 +237,7 @@ def admin():
         page_number = min(last_page, max(1, request.args.get("page", 1, type=int)))
         jobs = [dict(row) for row in db.execute(
             "SELECT j.work,j.title,j.authors,j.state,j.updated,j.book_id,j.release_title,"
-            "j.protocol,j.indexer,j.size_bytes,j.format,j.review_reason,s.release_date,s.next_check "
+            "j.protocol,j.indexer,j.size_bytes,j.format,j.review_reason,j.download_id,s.release_date,s.next_check "
             "FROM jobs j LEFT JOIN request_releases s USING(work) "
             "WHERE (?='' OR j.state=?) AND (? IS NULL OR EXISTS "
             "(SELECT 1 FROM readers r WHERE r.work=j.work AND r.reader=?)) "
@@ -232,6 +256,10 @@ def admin():
             alert = db.execute("SELECT status FROM request_admin_alerts WHERE work=? "
                                "ORDER BY id DESC LIMIT 1", (job["work"],)).fetchone()
             job["alert"] = alert["status"] if alert else None
+            job["review_guidance"] = review_guidance(job["review_reason"]) if job["state"] == "held" else None
+            decision = db.execute("SELECT action,note FROM request_admin_actions WHERE work=? "
+                                  "ORDER BY id DESC LIMIT 1", (job["work"],)).fetchone()
+            job["decision"] = dict(decision) if decision else None
             job["book_url"] = library_book_url(owned(job["work"])) if job["state"] in ("owned", "imported") else None
     names = dict(ub.session.query(ub.User.id, ub.User.name).filter(ub.User.id.in_(reader_ids)).all()) if reader_ids else {}
     return render_title_template(
@@ -294,7 +322,7 @@ def series_preview():
     except (OSError, RuntimeError, ValueError, KeyError):
         return jsonify(error="The series could not be checked right now."), 503
     if series is None:
-        return jsonify(error="This series has more than 300 entries or is unavailable for automatic requests."), 422
+        return jsonify(error="This series is unavailable for requests."), 422
     series["ticket"] = series_ticket().dumps([current_user.get_id(), series_id,
                                               [book["work"] for book in series["books"]]])
     return jsonify(series=series)
@@ -316,7 +344,7 @@ def series_request():
         abort(400)
     if str(ticket_reader) != str(current_user.get_id()) or type(series_id) is not int:
         abort(403)
-    if not isinstance(works, list) or len(works) > 300 or any(type(work) is not int for work in works):
+    if not isinstance(works, list) or any(type(work) is not int for work in works):
         abort(400)
     try:
         series = series_members(series_id)
@@ -326,30 +354,20 @@ def series_request():
         return jsonify(error="The series changed. Preview it again before requesting books."), 409
     reader = int(current_user.get_id())
     added = []
-    remaining = 0
     with closing(open_queue()) as db, db:
         db.execute("BEGIN IMMEDIATE")
-        pending = db.execute(
-            "SELECT COUNT(*) FROM readers JOIN jobs USING(work) WHERE reader=? "
-            f"AND state IN ({','.join('?' for _ in ACTIVE)})", (reader, *ACTIVE),
-        ).fetchone()[0]
         for book in series["books"]:
             if book["owned"] or book["compilation"]:
                 continue
             if db.execute("SELECT 1 FROM readers WHERE work=? AND reader=?",
                           (book["work"], reader)).fetchone():
                 continue
-            if pending >= 5:
-                remaining += 1
-                continue
             db.execute("INSERT OR IGNORE INTO jobs(work,title,authors,state,updated) "
                        "VALUES(?,?,?,'queued',?)",
                        (book["work"], book["title"], ", ".join(book["authors"]), int(time.time())))
             db.execute("INSERT OR IGNORE INTO readers VALUES(?,?)", (book["work"], reader))
             added.append(book["work"])
-            new_state = db.execute("SELECT state FROM jobs WHERE work=?", (book["work"],)).fetchone()[0]
-            pending += new_state in ACTIVE
-    return jsonify(queued=added, remaining=remaining, limit=5)
+    return jsonify(queued=added)
 
 
 @requests_ui.route("/jobs", methods=["GET", "POST"])
@@ -359,12 +377,12 @@ def jobs():
     with closing(open_queue()) as db:
         if request.method == "GET":
             rows = db.execute(
-                "SELECT j.work,j.title,j.authors,j.state,n.state AS notice,k.state AS kindle,s.release_date "
+                "SELECT j.work,j.title,j.authors,j.state,j.review_reason,n.state AS notice,k.state AS kindle,s.release_date "
                 "FROM jobs j JOIN readers r USING(work) "
                 "LEFT JOIN request_notices n ON n.work=j.work AND n.reader=r.reader "
                 "LEFT JOIN request_kindles k ON k.work=j.work AND k.reader=r.reader "
                 "LEFT JOIN request_releases s ON s.work=j.work "
-                "WHERE r.reader=? ORDER BY j.updated DESC LIMIT 30",
+                "WHERE r.reader=? ORDER BY j.updated DESC LIMIT 1000",
                 (reader,),
             )
             return jsonify(can_notify=bool(current_user.email), can_kindle=can_send_to_kindle(), jobs=[
@@ -463,7 +481,8 @@ def admin_action():
         abort(400)
     work = request.form.get("work", "")
     action = request.form.get("action", "")
-    if not work.isdecimal() or action not in ("retry", "dismiss"):
+    note = " ".join(request.form.get("note", "").split())
+    if not work.isdecimal() or action not in ("approve", "deny") or not 12 <= len(note) <= 1000:
         abort(400)
     work_id = int(work)
     with closing(open_queue()) as db, db:
@@ -473,11 +492,15 @@ def admin_action():
             abort(404)
         if row["state"] != "held":
             abort(409)
-        next_state = "queued" if action == "retry" else "dismissed"
-        db.execute("UPDATE jobs SET state=?,updated=? WHERE work=? AND state='held'",
-                   (next_state, int(time.time()), work_id))
-        db.execute("INSERT INTO request_admin_actions(work,admin,action,previous_state,created) "
-                   "VALUES(?,? ,?,'held',?)",
-                   (work_id, int(current_user.get_id()), action, int(time.time())))
+        if action == "approve" and owned(work_id):
+            next_state = "imported"
+        else:
+            next_state = "queued" if action == "approve" else "denied"
+        reason = None if action == "approve" else "Denied by an administrator: " + note
+        db.execute("UPDATE jobs SET state=?,review_reason=?,updated=? WHERE work=? AND state='held'",
+                   (next_state, reason, int(time.time()), work_id))
+        db.execute("INSERT INTO request_admin_actions(work,admin,action,previous_state,created,note) "
+                   "VALUES(?,? ,?,'held',?,?)",
+                   (work_id, int(current_user.get_id()), action, int(time.time()), note))
     return redirect(url_for("nova_reader_requests.admin", state=request.form.get("state", ""),
                             person=request.form.get("person", "")), code=303)

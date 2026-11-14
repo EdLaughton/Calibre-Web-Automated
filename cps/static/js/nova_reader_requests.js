@@ -24,6 +24,7 @@
         excluded: "Unavailable for automatic requests",
         held: "Needs review",
         dismissed: "Closed by an administrator",
+        denied: "Denied by an administrator",
     };
     const activeStates = new Set(["queued", "searching", "submitting", "downloading", "checking",
         "waiting_release", "waiting_epub"]);
@@ -151,6 +152,12 @@
                 const row = item(job.title, jobs, byline);
                 row.append(job.book_url
                     ? openBook(job.book_url, job.title) : status(states[job.state] || job.state));
+                if ((job.state === "held" || job.state === "denied") && job.review_reason) {
+                    const reason = document.createElement("p");
+                    reason.className = "request-review-note";
+                    reason.textContent = job.review_reason;
+                    row.append(reason);
+                }
                 const options = document.createElement("div");
                 options.className = "request-options";
                 if (data.can_notify && activeStates.has(job.state)) {
@@ -246,10 +253,30 @@
             const eligible = series.books.filter(book => !book.owned && !book.compilation);
             for (const book of series.books) {
                 const row = document.createElement("li");
-                const place = book.position == null ? "" : "#" + book.position + " · ";
-                row.textContent = place + book.title + " — " + book.authors.join(", ");
-                if (book.owned) row.textContent += " · In your library";
-                if (book.compilation) row.textContent += " · Compilation, skipped";
+                row.className = "request-series-book";
+                const slot = document.createElement("span");
+                slot.className = "request-cover-slot";
+                if (book.cover_url) {
+                    const cover = document.createElement("img");
+                    cover.className = "request-cover";
+                    cover.alt = "";
+                    cover.loading = "lazy";
+                    cover.referrerPolicy = "no-referrer";
+                    cover.addEventListener("error", () => cover.remove(), {once: true});
+                    cover.src = book.cover_url;
+                    slot.append(cover);
+                }
+                const details = document.createElement("span");
+                const title = document.createElement("strong");
+                title.textContent = book.title;
+                details.append(title);
+                const byline = document.createElement("span");
+                byline.className = "request-byline";
+                byline.textContent = [book.position == null ? "Unnumbered" : "Series #" + book.position,
+                    book.authors.join(", "), book.owned ? "In your library" : null,
+                    book.compilation ? "Compilation, skipped" : null].filter(Boolean).join(" · ");
+                details.append(byline);
+                row.append(slot, details);
                 list.append(row);
             }
             seriesPreview.append(heading, list);
@@ -257,7 +284,7 @@
                 const button = document.createElement("button");
                 button.type = "button";
                 button.className = "request-action";
-                button.textContent = "Queue missing books (up to five)";
+                button.textContent = "Request all " + eligible.length + " missing books";
                 button.addEventListener("click", async () => {
                     button.disabled = true;
                     try {
@@ -267,8 +294,8 @@
                             body: JSON.stringify({ticket: series.ticket}),
                         });
                         seriesMessage.textContent = reply.queued.length
-                            ? "Queued " + reply.queued.length + " book(s). Check Your requests below."
-                            : "No additional books queued. Check existing requests or wait for active requests to finish.";
+                            ? "Requested " + reply.queued.length + " book(s). Bookshelf will process them one at a time."
+                            : "All eligible books are already requested.";
                         await refreshJobs();
                     } catch (error) {
                         showError(seriesMessage, error);

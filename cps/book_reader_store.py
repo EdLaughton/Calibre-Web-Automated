@@ -67,7 +67,8 @@ def open_queue(path=QUEUE):
             admin INTEGER NOT NULL,
             action TEXT NOT NULL,
             previous_state TEXT NOT NULL,
-            created INTEGER NOT NULL
+            created INTEGER NOT NULL,
+            note TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS request_admin_alerts (
             id INTEGER PRIMARY KEY,
@@ -92,6 +93,9 @@ def open_queue(path=QUEUE):
     alert_columns = {row[1] for row in db.execute("PRAGMA table_info(request_admin_alerts)")}
     if "reason" not in alert_columns:
         db.execute("ALTER TABLE request_admin_alerts ADD COLUMN reason TEXT NOT NULL DEFAULT ''")
+    action_columns = {row[1] for row in db.execute("PRAGMA table_info(request_admin_actions)")}
+    if "note" not in action_columns:
+        db.execute("ALTER TABLE request_admin_actions ADD COLUMN note TEXT NOT NULL DEFAULT ''")
     db.commit()
     return db
 

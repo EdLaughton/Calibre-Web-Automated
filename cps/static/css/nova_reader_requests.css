@@ -258,8 +258,32 @@
     display: grid;
     gap: 8px;
     margin: 12px 0 16px;
-    padding-left: 24px;
+    padding: 0;
+    list-style: none;
     line-height: 1.45;
+}
+
+#reader-book-requests .request-series-book {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    min-height: 76px;
+    padding: 8px 12px;
+    border: 1px solid var(--request-edge);
+    border-radius: 8px;
+    background: var(--request-surface);
+}
+
+#reader-book-requests .request-series-book .request-cover-slot {
+    display: block;
+    width: 40px;
+    min-height: 60px;
+}
+
+#reader-book-requests .request-series-book strong {
+    display: block;
+    overflow-wrap: anywhere;
 }
 
 #reader-book-requests #reader-series-preview h3 {
@@ -303,10 +327,27 @@
 }
 
 #reader-book-requests .request-review-actions form {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     margin-top: 10px;
+}
+
+#reader-book-requests .request-review-actions form label,
+#reader-book-requests .request-review-actions form textarea {
+    grid-column: 1 / -1;
+}
+
+#reader-book-requests .request-review-actions form textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 76px;
+    padding: 9px 12px;
+    border: 1px solid var(--request-edge);
+    border-radius: 8px;
+    background: var(--request-surface);
+    color: var(--request-ink);
+    font: inherit;
 }
 
 #reader-book-requests .request-secondary {

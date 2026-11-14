@@ -27,9 +27,9 @@ stays in CWA's saved settings; browser responses contain no token.
 1. A signed-in reader chooses a Hardcover work or previews a series. Each book
    request is bound to a short-lived, reader-specific ticket and checked with
    CWA's CSRF protection. Existing Calibre work IDs are shown as owned.
-2. A series preview lists its exact member works and marks owned books and
-   compilations. One action queues at most five missing individual books,
-   respecting the reader's existing five-active-request limit.
+2. A series preview lists every member with cover, name, series position and
+   author. It marks owned books and compilations. One action queues all missing
+   individual works; the worker processes one queued work per cycle.
 3. The external worker checks work identity, author, exclusions, English EPUB
    editions, existing Bookshelf files, active downloads and prior grabs. It
    selects one eligible release from Bookshelf's native results and submits it
@@ -43,11 +43,13 @@ stays in CWA's saved settings; browser responses contain no token.
 A book added directly in Bookshelf also uses the guarded handoff. It appears
 in request history only when a reader requested the same Hardcover work.
 
-`Needs review` is a safety hold, not a pending approval queue. The admin view
-shows the reason, release metadata and alert status. Administrators can close
-the request or retry the ordinary checks after investigating. Retry never
-overrides an unsafe file or resubmits an ambiguous prior grab. Actual file
-exceptions require investigation in Bookshelf and the handoff record before
-the normal import can complete. The external worker sends one admin email when
+`Needs review` displays the actual hold reason to the reader. The admin view
+shows the reason, release metadata, download ID, alert status and a suggested
+research path. The admin records an investigation note and either approves
+continuation after resolving the cause or denies the shared work for every
+reader. Approval requeues the guarded checks or immediately recognises an
+exactly owned CWA book. It cannot override an unsafe EPUB or resubmit an
+ambiguous prior grab; those need manual reconciliation before approval. The
+decision and note are audited. The external worker sends one admin email when
 a request first enters the held state; ambiguous SMTP failures are recorded
 and are not automatically resent.

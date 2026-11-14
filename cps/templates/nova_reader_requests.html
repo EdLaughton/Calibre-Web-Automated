@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 {% block header %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/nova_reader_requests.css', v='9') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/nova_reader_requests.css', v='10') }}">
 {% endblock %}
 {% block body %}
 {% if admin_view %}
@@ -51,22 +51,27 @@
         {% if job.release_date and job.state in ('waiting_release', 'waiting_epub') %}
         <p class="request-byline">Release {{ job.release_date }}{% if job.next_check %} · Next check {{ format_request_time(job.next_check) }}{% endif %}</p>
         {% endif %}
-        {% if job.review_reason %}<p class="request-review-note">{{ job.review_reason }}</p>{% endif %}
+        {% if job.review_reason %}<p class="request-review-note"><strong>{% if job.state == 'held' %}Why this needs review{% else %}Decision{% endif %}:</strong> {{ job.review_reason }}</p>{% endif %}
         {% if job.state == 'held' %}
         <div class="request-review-actions">
+          <p class="request-byline">Research: {{ job.review_guidance }} Check the exact Hardcover work {{ job.work }}{% if job.book_id %}, Bookshelf book {{ job.book_id }}{% endif %}{% if job.download_id %}, download {{ job.download_id }}{% endif %}.</p>
           <form method="post" action="{{ url_for('nova_reader_requests.admin_action') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="work" value="{{ job.work }}"><input type="hidden" name="state" value="{{ state_filter }}"><input type="hidden" name="person" value="{{ person_filter }}">
-            <button class="request-action" name="action" value="retry" type="submit">Retry checks</button>
-            <button class="request-secondary" name="action" value="dismiss" type="submit">Close request</button>
+            <label for="request-review-note-{{ job.work }}">Investigation and decision reason</label>
+            <textarea id="request-review-note-{{ job.work }}" name="note" required minlength="12" maxlength="1000" rows="3" placeholder="What did you verify or fix? Why approve or deny?"></textarea>
+            <button class="request-action" name="action" value="approve" type="submit">Approve after resolving cause</button>
+            <button class="request-secondary" name="action" value="deny" type="submit">Deny request</button>
           </form>
-          <span class="request-byline">Retry checks the work again. It does not approve an unsafe file.</span>
+          <span class="request-byline">Approval resumes guarded processing after the cause is fixed. It cannot force-import an unsafe file or repeat an ambiguous grab. Denial closes this shared work for every requester.</span>
         </div>
         {% endif %}
+        {% if job.decision and job.decision.note %}<p class="request-byline">Latest admin decision: {{ job.decision.action }} — {{ job.decision.note }}</p>{% endif %}
         <details class="request-byline">
           <summary>Acquisition details</summary>
           <div>Hardcover work {{ job.work }}{% if job.book_id %} · Bookshelf book {{ job.book_id }}{% endif %}</div>
           {% if job.release_title %}<div>Selected release {{ job.release_title }}</div>{% endif %}
+          {% if job.download_id %}<div>Download ID {{ job.download_id }}</div>{% endif %}
           {% if job.protocol %}<div>Method {{ 'Torrent' if job.protocol == 'torrent' else 'NZB' if job.protocol == 'usenet' else job.protocol }}</div>{% endif %}
           {% if job.indexer %}<div>Indexer {{ job.indexer }}</div>{% endif %}
           {% if job.size_bytes %}<div>Release size {{ (job.size_bytes / 1048576)|round(1) }} MiB</div>{% endif %}
@@ -112,7 +117,7 @@
   <ul id="reader-book-results" class="request-list" aria-label="Search results"></ul>
   <section class="request-series" aria-labelledby="reader-series-title">
     <h2 id="reader-series-title">Request a series</h2>
-    <p class="request-intro">Find a Hardcover series, review its books, then queue up to five missing titles at a time. Compilations are shown but skipped.</p>
+    <p class="request-intro">Find a Hardcover series, review every book with its cover and position, then request all missing individual titles. Bookshelf processes them in turn. Compilations are shown but skipped.</p>
     <form id="reader-series-search" role="search">
       <label for="reader-series-query">Series name</label>
       <div class="request-search-row">
@@ -134,12 +139,12 @@
       <li>Choose a Hardcover work. Existing books open directly in your library.</li>
       <li>The worker checks identity, exclusions, English EPUB editions, duplicates and pending downloads. Eligible releases are sent to Bookshelf.</li>
       <li>Bookshelf downloads through its configured client. The guarded handoff verifies the completed file and gives it to CWA for normal import.</li>
-      <li>Needs review means a safety check stopped automatic processing. An administrator inspects Bookshelf and the handoff record, then can retry the normal checks or close the request.</li>
+      <li>Needs review shows the reason below your request. An administrator investigates the exact Bookshelf grab and handoff record, fixes the cause, then approves continued guarded processing or denies the request with a reason.</li>
     </ol>
     <p>A book added directly in Bookshelf follows the same guarded handoff. It is shown here only if someone also requested that Hardcover work.</p>
   </details>
   {% if manual_book_search_url %}<a class="request-manual-link" href="{{ manual_book_search_url }}">Browse books manually</a>{% endif %}
 </div>
-<script defer src="{{ url_for('static', filename='js/nova_reader_requests.js', v='9') }}"></script>
+<script defer src="{{ url_for('static', filename='js/nova_reader_requests.js', v='10') }}"></script>
 {% endif %}
 {% endblock %}
