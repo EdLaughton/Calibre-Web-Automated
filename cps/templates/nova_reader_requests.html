@@ -1,0 +1,145 @@
+{% extends "layout.html" %}
+{% block header %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/nova_reader_requests.css', v='8') }}">
+{% endblock %}
+{% block body %}
+{% if admin_view %}
+<div id="reader-book-requests" class="{% if g.current_theme == 1 %}request-dark{% endif %}">
+  <div class="request-page-heading"><div><h1>All book requests</h1>
+  <p class="request-intro">Track requests, inspect held books, and see what Bookshelf selected.</p></div>
+  <a class="request-manual-link" href="{{ url_for('nova_reader_requests.page') }}">Your requests</a></div>
+  <form class="request-admin-filter" action="{{ url_for('nova_reader_requests.admin') }}" method="get">
+    <label for="request-state">Status</label>
+    <select class="form-control" id="request-state" name="state">
+      <option value="">All statuses ({{ counts.values()|sum }})</option>
+      {% for state, label in status_labels.items() if counts.get(state) %}
+      <option value="{{ state }}"{% if state_filter == state %} selected{% endif %}>{{ label }} ({{ counts[state] }})</option>
+      {% endfor %}
+    </select>
+    <label for="request-person">Reader</label>
+    <select class="form-control" id="request-person" name="person">
+      <option value="">Everyone</option>
+      {% for person in people %}
+      <option value="{{ person.id }}"{% if person_filter == person.id|string %} selected{% endif %}>{{ person.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="request-action" type="submit">Filter</button>
+  </form>
+  {% if request_jobs %}
+  <p class="request-byline">{{ total }} {{ 'request' if total == 1 else 'requests' }}</p>
+  {% else %}
+  <p class="request-message">No requests found.</p>
+  {% endif %}
+  <ul class="request-list" aria-label="Book requests">
+    {% for job in request_jobs %}
+    <li class="request-card">
+      <div>
+        <span class="request-title">{% if job.book_url %}<a href="{{ job.book_url }}">{{ job.title }}</a>{% else %}{{ job.title }}{% endif %}</span>
+        {% if job.authors %}<span class="request-byline">by {{ job.authors }}</span>{% endif %}
+        <span class="request-byline">Updated {{ format_request_time(job.updated) }}</span>
+      </div>
+      <span class="request-status">{{ status_labels.get(job.state, job.state) }}</span>
+      <div class="request-admin-details">
+        <ul class="list-unstyled">
+          {% for reader in job.readers %}
+          <li class="request-byline">{{ reader_names.get(reader.reader, 'Former user #' ~ reader.reader) }}
+            {% if reader.notice %} · Email {{ reader.notice }}{% endif %}
+            {% if reader.kindle %} · Kindle {{ reader.kindle }}{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% if job.release_date and job.state in ('waiting_release', 'waiting_epub') %}
+        <p class="request-byline">Release {{ job.release_date }}{% if job.next_check %} · Next check {{ format_request_time(job.next_check) }}{% endif %}</p>
+        {% endif %}
+        {% if job.review_reason %}<p class="request-review-note">{{ job.review_reason }}</p>{% endif %}
+        {% if job.state == 'held' %}
+        <div class="request-review-actions">
+          <form method="post" action="{{ url_for('nova_reader_requests.admin_action') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="work" value="{{ job.work }}"><input type="hidden" name="state" value="{{ state_filter }}"><input type="hidden" name="person" value="{{ person_filter }}">
+            <button class="request-action" name="action" value="retry" type="submit">Retry checks</button>
+            <button class="request-secondary" name="action" value="dismiss" type="submit">Close request</button>
+          </form>
+          <span class="request-byline">Retry checks the work again. It does not approve an unsafe file.</span>
+        </div>
+        {% endif %}
+        <details class="request-byline">
+          <summary>Acquisition details</summary>
+          <div>Hardcover work {{ job.work }}{% if job.book_id %} · Bookshelf book {{ job.book_id }}{% endif %}</div>
+          {% if job.release_title %}<div>Selected release {{ job.release_title }}</div>{% endif %}
+          {% if job.protocol %}<div>Method {{ 'Torrent' if job.protocol == 'torrent' else 'NZB' if job.protocol == 'usenet' else job.protocol }}</div>{% endif %}
+          {% if job.indexer %}<div>Indexer {{ job.indexer }}</div>{% endif %}
+          {% if job.size_bytes %}<div>Release size {{ (job.size_bytes / 1048576)|round(1) }} MiB</div>{% endif %}
+          {% if job.format %}<div>Reported format {{ job.format }}</div>{% endif %}
+          {% if job.alert %}<div>Admin alert {{ job.alert }}</div>{% endif %}
+        </details>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if last_page > 1 %}
+  <nav class="request-admin-filter" aria-label="Request pages">
+    {% if page_number > 1 %}<a href="{{ url_for('nova_reader_requests.admin', state=state_filter, person=person_filter, page=page_number - 1) }}">Previous</a>{% endif %}
+    <span>Page {{ page_number }} of {{ last_page }}</span>
+    {% if page_number < last_page %}<a href="{{ url_for('nova_reader_requests.admin', state=state_filter, person=person_filter, page=page_number + 1) }}">Next</a>{% endif %}
+  </nav>
+  {% endif %}
+</div>
+{% else %}
+<div id="reader-book-requests"
+     class="{% if g.current_theme == 1 %}request-dark{% endif %}"
+     data-search="{{ url_for('nova_reader_requests.search') }}"
+     data-jobs="{{ url_for('nova_reader_requests.jobs') }}"
+     data-notify="{{ url_for('nova_reader_requests.notify') }}"
+     data-series-search="{{ url_for('nova_reader_requests.series_search') }}"
+     data-series-preview="{{ url_for('nova_reader_requests.series_preview') }}"
+     data-series-request="{{ url_for('nova_reader_requests.series_request') }}"
+     data-csrf="{{ csrf_token() }}">
+  <div class="request-page-heading"><div><h1>Request a book</h1>
+  <p class="request-intro">Search Hardcover for a title or author. We check for a matching English EPUB before Bookshelf downloads it.</p></div>
+  {% if current_user.role_admin() %}
+  <a class="request-manual-link" href="{{ url_for('nova_reader_requests.admin') }}">View all requests</a>
+  {% endif %}</div>
+  <form id="reader-book-search" role="search">
+    <label for="reader-book-query">Title or author</label>
+    <div class="request-search-row">
+      <input id="reader-book-query" type="search"
+             minlength="3" maxlength="100" autocomplete="off">
+      <button class="request-action" type="submit">Search</button>
+    </div>
+  </form>
+  <p id="reader-book-message" class="request-message" role="status"></p>
+  <ul id="reader-book-results" class="request-list" aria-label="Search results"></ul>
+  <section class="request-series" aria-labelledby="reader-series-title">
+    <h2 id="reader-series-title">Request a series</h2>
+    <p class="request-intro">Find a Hardcover series, review its books, then queue up to five missing titles at a time. Compilations are shown but skipped.</p>
+    <form id="reader-series-search" role="search">
+      <label for="reader-series-query">Series name</label>
+      <div class="request-search-row">
+        <input id="reader-series-query" type="search" minlength="3" maxlength="100" autocomplete="off">
+        <button class="request-action" type="submit">Find series</button>
+      </div>
+    </form>
+    <p id="reader-series-message" class="request-message" role="status"></p>
+    <ul id="reader-series-results" class="request-list" aria-label="Series matches"></ul>
+    <div id="reader-series-preview"></div>
+  </section>
+  <section class="request-history" aria-labelledby="reader-book-history-title">
+    <h2 id="reader-book-history-title">Your requests</h2>
+    <p id="reader-book-jobs-message" class="request-message" role="status"></p>
+    <ul id="reader-book-jobs" class="request-list"></ul>
+  </section>
+  <details class="request-how-it-works"><summary>How requests work</summary>
+    <ol>
+      <li>Choose a Hardcover work. Existing books open directly in your library.</li>
+      <li>The worker checks identity, exclusions, English EPUB editions, duplicates and pending downloads. Eligible releases are sent to Bookshelf.</li>
+      <li>Bookshelf downloads through its configured client. The guarded handoff verifies the completed file and gives it to CWA for normal import.</li>
+      <li>Needs review means a safety check stopped automatic processing. An administrator inspects Bookshelf and the handoff record, then can retry the normal checks or close the request.</li>
+    </ol>
+    <p>A book added directly in Bookshelf follows the same guarded handoff. It is shown here only if someone also requested that Hardcover work.</p>
+  </details>
+  {% if manual_book_search_url %}<a class="request-manual-link" href="{{ manual_book_search_url }}">Browse books manually</a>{% endif %}
+</div>
+<script defer src="{{ url_for('static', filename='js/nova_reader_requests.js', v='8') }}"></script>
+{% endif %}
+{% endblock %}

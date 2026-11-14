@@ -34,6 +34,7 @@ def main():
     from .remotelogin import remotelogin
     from .progress_syncing.protocols.kosync import kosync
     from .duplicates import duplicates
+    from .book_requests import requests_ui
     try:
         from .kobo import kobo, get_kobo_activated
         from .kobo_auth import kobo_auth
@@ -66,6 +67,7 @@ def main():
     app.register_blueprint(cwa_logs)
     app.register_blueprint(profile_pictures)
     app.register_blueprint(cwa_internal)
+    app.register_blueprint(requests_ui)
 
     # Stock CW
     app.register_blueprint(search)
