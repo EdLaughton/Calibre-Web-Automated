@@ -17,6 +17,7 @@
         submitting: "Sending to Bookshelf",
         downloading: "Downloading",
         checking: "Checking the downloaded book",
+        reviewing_file: "Checking approved file",
         waiting_release: "Waiting for release",
         waiting_epub: "Watching for an EPUB",
         imported: "Added to the library",
@@ -78,7 +79,7 @@
         }
         const summary = document.createElement("div");
         summary.className = "request-summary";
-        if (parent === results) {
+        if (parent === results || parent === jobs) {
             const slot = document.createElement("div");
             slot.className = "request-cover-slot";
             if (coverUrl) {
@@ -149,7 +150,7 @@
                 const release = job.state === "waiting_release" && job.release_date
                     ? "Expected " + dateFormat.format(new Date(job.release_date)) : null;
                 const byline = [job.authors ? "by " + job.authors : null, release].filter(Boolean).join(" · ");
-                const row = item(job.title, jobs, byline);
+                const row = item(job.title, jobs, byline, null, job.cover_url);
                 row.append(job.book_url
                     ? openBook(job.book_url, job.title) : status(states[job.state] || job.state));
                 if ((job.state === "held" || job.state === "denied") && job.review_reason) {

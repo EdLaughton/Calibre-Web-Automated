@@ -166,13 +166,15 @@
     min-width: 0;
 }
 
-#reader-book-results .request-summary {
+#reader-book-results .request-summary,
+#reader-book-jobs .request-summary {
     display: grid;
     grid-template-columns: 40px minmax(0, 1fr);
     justify-items: start;
 }
 
-#reader-book-results .request-cover-slot {
+#reader-book-results .request-cover-slot,
+#reader-book-jobs .request-cover-slot {
     width: 40px;
     height: 60px;
     margin: 0;
@@ -186,6 +188,11 @@
     object-fit: contain;
     object-position: left center;
     border-radius: 4px;
+}
+
+#reader-book-requests .request-admin-cover {
+    float: left;
+    margin-right: 12px;
 }
 
 #reader-book-requests .request-options {
@@ -336,6 +343,65 @@
 #reader-book-requests .request-review-actions form label,
 #reader-book-requests .request-review-actions form textarea {
     grid-column: 1 / -1;
+}
+
+#reader-book-requests .request-file-review {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--request-edge);
+    border-radius: 8px;
+}
+
+#reader-book-requests .request-file-review > summary {
+    cursor: pointer;
+    font-weight: 650;
+}
+
+#reader-book-requests .request-file-review form {
+    grid-template-columns: 1fr;
+}
+
+#reader-book-requests .request-file-review form > * {
+    grid-column: 1;
+}
+
+#reader-book-requests .request-file-review input,
+#reader-book-requests .request-file-review select {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 40px;
+    padding: 7px 9px;
+    border: 1px solid var(--request-edge);
+    border-radius: 6px;
+    background: var(--request-surface);
+    color: var(--request-ink);
+    font: inherit;
+}
+
+#reader-book-requests .request-file-review input[type=hidden] { display: none; }
+
+#reader-book-requests .request-work-matches {
+    display: grid;
+    gap: 6px;
+}
+
+#reader-book-requests .request-work-match {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 6px;
+    border: 1px solid var(--request-edge);
+    border-radius: 6px;
+    background: var(--request-surface);
+    color: var(--request-ink);
+    text-align: left;
+}
+
+#reader-book-requests .request-work-match img {
+    width: 32px;
+    height: 48px;
+    object-fit: contain;
 }
 
 #reader-book-requests .request-review-actions form textarea {

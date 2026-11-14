@@ -32,14 +32,15 @@ def test_existing_queue_upgrade_preserves_jobs_and_readers(tmp_path):
     store = load_store()
     db = store.open_queue(path)
     try:
-        row = db.execute("SELECT title,state,book_id,authors,protocol,indexer,size_bytes,format "
+        row = db.execute("SELECT title,state,book_id,authors,protocol,indexer,size_bytes,format,cover_url "
                          "FROM jobs WHERE work=1477434").fetchone()
-        assert tuple(row) == ("The Unworthy", "imported", 3120, "", None, None, None, None)
+        assert tuple(row) == ("The Unworthy", "imported", 3120, "", None, None, None, None, None)
         assert db.execute("SELECT reader FROM readers WHERE work=1477434").fetchone()[0] == 2
         assert {name for name in ("request_admin_actions", "request_admin_alerts")
                 if db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone()} == {
                     "request_admin_actions", "request_admin_alerts"}
         assert db.execute("SELECT note FROM request_admin_actions WHERE id=1").fetchone()[0] == ""
+        assert db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='request_file_reviews'").fetchone()
     finally:
         db.close()
     # Upgrade is durable and repeatable after the connection is closed.

@@ -29,6 +29,7 @@ STATUS_LABELS = {
     "submitting": "Sending to Bookshelf",
     "downloading": "Downloading",
     "checking": "Checking the download",
+    "reviewing_file": "Checking approved file",
     "waiting_release": "Waiting for release",
     "waiting_epub": "Watching for an EPUB",
     "imported": "Added to the library",
@@ -58,6 +59,28 @@ query($id: Int!, $offset: Int!) {
         contributions { contribution author { name } } }
     }
     book_series_aggregate { aggregate { count } }
+  }
+}
+"""
+REVIEW_WORK_QUERY = """
+query($id: Int!) {
+  books(where: {id: {_eq: $id}}) {
+    id title canonical_id image { url }
+    contributions { contribution author { name } }
+  }
+}
+"""
+REVIEW_EDITIONS_QUERY = """
+query($isbns: [String!]!) {
+  editions(where: {isbn_13: {_in: $isbns}}, limit: 50) {
+    id title book_id isbn_13 language_id reading_format_id publisher { name }
+  }
+}
+"""
+REVIEW_EDITION_QUERY = """
+query($id: Int!) {
+  editions(where: {id: {_eq: $id}}, limit: 1) {
+    id title book_id isbn_13 language_id reading_format_id publisher { name }
   }
 }
 """
@@ -236,7 +259,7 @@ def admin():
         last_page = max(1, (total + ADMIN_PAGE_SIZE - 1) // ADMIN_PAGE_SIZE)
         page_number = min(last_page, max(1, request.args.get("page", 1, type=int)))
         jobs = [dict(row) for row in db.execute(
-            "SELECT j.work,j.title,j.authors,j.state,j.updated,j.book_id,j.release_title,"
+            "SELECT j.work,j.title,j.authors,j.cover_url,j.state,j.updated,j.book_id,j.release_title,"
             "j.protocol,j.indexer,j.size_bytes,j.format,j.review_reason,j.download_id,s.release_date,s.next_check "
             "FROM jobs j LEFT JOIN request_releases s USING(work) "
             "WHERE (?='' OR j.state=?) AND (? IS NULL OR EXISTS "
@@ -260,6 +283,13 @@ def admin():
             decision = db.execute("SELECT action,note FROM request_admin_actions WHERE work=? "
                                   "ORDER BY id DESC LIMIT 1", (job["work"],)).fetchone()
             job["decision"] = dict(decision) if decision else None
+            review = db.execute("SELECT * FROM request_file_reviews WHERE work=?",
+                                (job["work"],)).fetchone()
+            job["file_review"] = dict(review) if review else None
+            if job["file_review"]:
+                for field in ("source_authors", "source_languages", "source_isbns",
+                              "source_excerpt", "source_evidence"):
+                    job["file_review"][field] = json.loads(job["file_review"][field])
             job["book_url"] = library_book_url(owned(job["work"])) if job["state"] in ("owned", "imported") else None
     names = dict(ub.session.query(ub.User.id, ub.User.name).filter(ub.User.id.in_(reader_ids)).all()) if reader_ids else {}
     return render_title_template(
@@ -288,7 +318,7 @@ def search():
     results = []
     for row in matches:
         match = owned(row["work"])
-        ticket = signer.dumps([reader, row["work"], row["title"], row["authors"]]) if pilot_work in (None, row["work"]) else None
+        ticket = signer.dumps([reader, row["work"], row["title"], row["authors"], row["cover_url"]]) if pilot_work in (None, row["work"]) else None
         results.append(dict(row, owned=bool(match), book_url=library_book_url(match), ticket=ticket))
     return jsonify(results=results)
 
@@ -362,9 +392,10 @@ def series_request():
             if db.execute("SELECT 1 FROM readers WHERE work=? AND reader=?",
                           (book["work"], reader)).fetchone():
                 continue
-            db.execute("INSERT OR IGNORE INTO jobs(work,title,authors,state,updated) "
-                       "VALUES(?,?,?,'queued',?)",
-                       (book["work"], book["title"], ", ".join(book["authors"]), int(time.time())))
+            db.execute("INSERT OR IGNORE INTO jobs(work,title,authors,cover_url,state,updated) "
+                       "VALUES(?,?,?,?,'queued',?)",
+                       (book["work"], book["title"], ", ".join(book["authors"]),
+                        book["cover_url"], int(time.time())))
             db.execute("INSERT OR IGNORE INTO readers VALUES(?,?)", (book["work"], reader))
             added.append(book["work"])
     return jsonify(queued=added)
@@ -377,7 +408,7 @@ def jobs():
     with closing(open_queue()) as db:
         if request.method == "GET":
             rows = db.execute(
-                "SELECT j.work,j.title,j.authors,j.state,j.review_reason,n.state AS notice,k.state AS kindle,s.release_date "
+                "SELECT j.work,j.title,j.authors,j.cover_url,j.state,j.review_reason,n.state AS notice,k.state AS kindle,s.release_date "
                 "FROM jobs j JOIN readers r USING(work) "
                 "LEFT JOIN request_notices n ON n.work=j.work AND n.reader=r.reader "
                 "LEFT JOIN request_kindles k ON k.work=j.work AND k.reader=r.reader "
@@ -399,12 +430,19 @@ def jobs():
         if not isinstance(ticket, str) or len(ticket) > 2048:
             abort(400)
         try:
-            ticket_reader, work, title, authors = search_ticket().loads(ticket, max_age=900)
+            ticket_values = search_ticket().loads(ticket, max_age=900)
+            if not isinstance(ticket_values, list) or len(ticket_values) not in (4, 5):
+                abort(400)
+            ticket_reader, work, title, authors = ticket_values[:4]
+            cover_url = ticket_values[4] if len(ticket_values) == 5 else None
         except (BadData, ValueError):
             abort(400)
         if (type(work) is not int or not isinstance(title, str) or len(title) > 300
                 or not isinstance(authors, list) or len(authors) > 8
-                or any(not isinstance(author, str) or len(author) > 200 for author in authors)):
+                or any(not isinstance(author, str) or len(author) > 200 for author in authors)
+                or (cover_url is not None and (not isinstance(cover_url, str) or
+                    urlsplit(cover_url).scheme != "https" or
+                    urlsplit(cover_url).netloc != "assets.hardcover.app"))):
             abort(400)
         if str(ticket_reader) != str(reader):
             abort(403)
@@ -425,8 +463,8 @@ def jobs():
             if pending >= 5 and not followed:
                 return jsonify(error="You already have five active requests."), 429
             db.execute(
-                "INSERT OR IGNORE INTO jobs(work,title,authors,state,updated) VALUES(?,?,?,'queued',?)",
-                (work, title, ", ".join(authors), int(time.time())),
+                "INSERT OR IGNORE INTO jobs(work,title,authors,cover_url,state,updated) VALUES(?,?,?,?,'queued',?)",
+                (work, title, ", ".join(authors), cover_url, int(time.time())),
             )
             db.execute("INSERT OR IGNORE INTO readers VALUES(?,?)", (work, reader))
             state = db.execute("SELECT state FROM jobs WHERE work=?", (work,)).fetchone()[0]
@@ -482,16 +520,18 @@ def admin_action():
     work = request.form.get("work", "")
     action = request.form.get("action", "")
     note = " ".join(request.form.get("note", "").split())
-    if not work.isdecimal() or action not in ("approve", "deny") or not 12 <= len(note) <= 1000:
+    if not work.isdecimal() or action not in ("approve", "deny") or len(note) > 1000:
         abort(400)
     work_id = int(work)
     with closing(open_queue()) as db, db:
         db.execute("BEGIN IMMEDIATE")
-        row = db.execute("SELECT state FROM jobs WHERE work=?", (work_id,)).fetchone()
+        row = db.execute("SELECT state,download_id FROM jobs WHERE work=?", (work_id,)).fetchone()
         if row is None:
             abort(404)
         if row["state"] != "held":
             abort(409)
+        if action == "approve" and row["download_id"]:
+            return jsonify(error="Match the preserved file to Hardcover below. Approving checks would repeat this hold."), 409
         if action == "approve" and owned(work_id):
             next_state = "imported"
         else:
@@ -502,5 +542,79 @@ def admin_action():
         db.execute("INSERT INTO request_admin_actions(work,admin,action,previous_state,created,note) "
                    "VALUES(?,? ,?,'held',?,?)",
                    (work_id, int(current_user.get_id()), action, int(time.time()), note))
+    return redirect(url_for("nova_reader_requests.admin", state=request.form.get("state", ""),
+                            person=request.form.get("person", "")), code=303)
+
+
+@requests_ui.get("/admin/review-editions")
+@login_required
+def review_editions():
+    if not current_user.role_admin():
+        abort(403)
+    work = request.args.get("work", type=int)
+    target = request.args.get("target", type=int)
+    if not work or not target or work <= 0 or target <= 0:
+        abort(400)
+    with closing(open_queue()) as db:
+        review = db.execute("SELECT source_isbns FROM request_file_reviews WHERE work=?",
+                            (work,)).fetchone()
+    if review is None:
+        abort(404)
+    isbns = json.loads(review["source_isbns"])
+    if not isbns:
+        return jsonify(editions=[])
+    try:
+        candidates = hardcover(REVIEW_EDITIONS_QUERY, {"isbns": isbns})["editions"]
+    except (OSError, RuntimeError, ValueError, KeyError):
+        return jsonify(error="Hardcover editions are temporarily unavailable."), 503
+    return jsonify(editions=[row for row in candidates if row["book_id"] == target
+                            and row["language_id"] == 1 and row["reading_format_id"] == 4])
+
+
+@requests_ui.post("/admin/file-review")
+@login_required
+def approve_file_review():
+    if not current_user.role_admin():
+        abort(403)
+    try:
+        validate_csrf(request.form.get("csrf_token"))
+    except ValidationError:
+        abort(400)
+    values = [request.form.get(key, "") for key in ("work", "selected_work", "selected_edition")]
+    if not values[0].isdecimal() or not values[1].isdecimal() or not values[2].isdecimal():
+        abort(400)
+    work, selected_work, selected_edition = map(int, values)
+    note = " ".join(request.form.get("note", "").split())
+    if work <= 0 or selected_work <= 0 or selected_edition < 0 or len(note) > 1000:
+        abort(400)
+    try:
+        works = hardcover(REVIEW_WORK_QUERY, {"id": selected_work})["books"]
+        if len(works) != 1 or works[0]["id"] != selected_work or works[0]["canonical_id"] not in (None, selected_work):
+            return jsonify(error="Select one canonical Hardcover work."), 422
+        if selected_edition:
+            editions = hardcover(REVIEW_EDITION_QUERY, {"id": selected_edition})["editions"]
+            if len(editions) != 1 or editions[0]["book_id"] != selected_work or editions[0]["language_id"] != 1 or editions[0]["reading_format_id"] != 4:
+                return jsonify(error="The edition must be an English ebook for the selected work."), 422
+    except (OSError, RuntimeError, ValueError, KeyError):
+        return jsonify(error="Hardcover could not verify the selected work and edition."), 503
+    with closing(open_queue()) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        job = db.execute("SELECT state,download_id FROM jobs WHERE work=?", (work,)).fetchone()
+        review = db.execute("SELECT status,download_id,source_sha256 FROM request_file_reviews "
+                            "WHERE work=?", (work,)).fetchone()
+        if not job or not review or job["state"] != "held" or review["status"] not in ("available", "failed") or job["download_id"] != review["download_id"] or request.form.get("source_sha256") != review["source_sha256"]:
+            return jsonify(error="The file review changed. Refresh the page."), 409
+        if selected_work != work and db.execute("SELECT 1 FROM jobs WHERE work=?", (selected_work,)).fetchone():
+            return jsonify(error="The selected Hardcover work already has a request; reconcile it first."), 409
+        db.execute("UPDATE request_file_reviews SET selected_work=?,selected_edition=?,status='pending',"
+                   "note=?,admin=?,updated=? WHERE work=?",
+                   (selected_work, selected_edition or None, note, int(current_user.get_id()),
+                    int(time.time()), work))
+        db.execute("UPDATE jobs SET state='reviewing_file',review_reason=NULL,updated=? WHERE work=?",
+                   (int(time.time()), work))
+        db.execute("INSERT INTO request_admin_actions(work,admin,action,previous_state,created,note) "
+                   "VALUES(?,?,'approve_file','held',?,?)",
+                   (work, int(current_user.get_id()), int(time.time()),
+                    f"Hardcover work {selected_work}, edition {selected_edition or 'unverified'}. {note}".strip()))
     return redirect(url_for("nova_reader_requests.admin", state=request.form.get("state", ""),
                             person=request.form.get("person", "")), code=303)

@@ -36,7 +36,8 @@ def open_queue(path=QUEUE):
             indexer TEXT,
             size_bytes INTEGER,
             format TEXT,
-            review_reason TEXT
+            review_reason TEXT,
+            cover_url TEXT
         );
         CREATE TABLE IF NOT EXISTS readers (
             work INTEGER NOT NULL,
@@ -78,6 +79,25 @@ def open_queue(path=QUEUE):
             created INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending'
         );
+        CREATE TABLE IF NOT EXISTS request_file_reviews (
+            work INTEGER PRIMARY KEY,
+            download_id TEXT NOT NULL,
+            source_sha256 TEXT NOT NULL,
+            source_name TEXT NOT NULL,
+            source_title TEXT NOT NULL,
+            source_authors TEXT NOT NULL,
+            source_languages TEXT NOT NULL,
+            source_isbns TEXT NOT NULL,
+            source_excerpt TEXT NOT NULL,
+            source_evidence TEXT NOT NULL DEFAULT '{}',
+            reading_words INTEGER NOT NULL,
+            selected_work INTEGER,
+            selected_edition INTEGER,
+            status TEXT NOT NULL DEFAULT 'available',
+            note TEXT NOT NULL DEFAULT '',
+            admin INTEGER,
+            updated INTEGER NOT NULL
+        );
     """)
     columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
     for name, definition in {
@@ -87,6 +107,7 @@ def open_queue(path=QUEUE):
         "size_bytes": "INTEGER",
         "format": "TEXT",
         "review_reason": "TEXT",
+        "cover_url": "TEXT",
     }.items():
         if name not in columns:
             db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
